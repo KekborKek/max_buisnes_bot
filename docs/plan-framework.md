@@ -1,6 +1,6 @@
 # План: доведение каркаса до рабочего состояния
 
-> Составлен 16.09.2026, до выбора идеи продукта (по STATUS — выбор 18.09).
+> Составлен 16.09.2026, обновлён 17.09.2026. Выбор идеи продукта — 18.09.
 > Задачи в нём **не зависят от идеи**: это несущие конструкции, на которые ляжет продукт.
 > Источник истины по каждой задаче — GitHub Issue. Здесь — карта, порядок и связи.
 
@@ -37,10 +37,11 @@ CI (ruff, pytest, сборка фронта, `docker compose build` с лими�
 
 | # | Задача | Дорожка | Зависит от | Суть |
 |---|---|---|---|---|
-| [#7](https://github.com/KekborKek/max_buisnes_bot/issues/7) | Маршрутизация `/docs` и `/openapi.json` за прокси | LEAD | — | 2 красных теста в репозитории; SPA-фолбэк проглатывает `/docs` |
-| [#8](https://github.com/KekborKek/max_buisnes_bot/issues/8) | Явный флаг `ALLOW_DEV_INITDATA` | LEAD | — | dev-режим мини-аппа привязан к пустому токену и сломается в час его получения |
-| [#9](https://github.com/KekborKek/max_buisnes_bot/issues/9) | SQLite: WAL и `busy_timeout` | LEAD | — | параллельные писатели дадут `database is locked` ровно на демо |
-| [#10](https://github.com/KekborKek/max_buisnes_bot/issues/10) | `MaxClient`: ретраи 429/5xx, лимит 30 rps | LEAD | — | сейчас любая ошибка MAX = пользователь не получил ничего |
+| [#27](https://github.com/KekborKek/max_buisnes_bot/issues/27) | **Нет корня Russian Trusted Root CA** — TLS к MAX не поднимается | LEAD | — | блокирует всё исходящее: `/me`, `/messages`, `/subscriptions`, polling |
+| [#10](https://github.com/KekborKek/max_buisnes_bot/issues/10) | `MaxClient`: ретраи 429/5xx, лимит 30 rps | LEAD | **#27** | общий файл с #27; пока нет TLS — ретраить нечего |
+| ~~#7~~ | ~~Маршрутизация `/docs` за прокси~~ | LEAD | — | закрыта 16.09 (PR #23) |
+| ~~#8~~ | ~~Флаг `ALLOW_DEV_INITDATA`~~ | LEAD | — | закрыта 17.09 (PR #28) |
+| ~~#9~~ | ~~SQLite: WAL и `busy_timeout`~~ | LEAD | — | закрыта 16.09 (PR #25), но см. #26 |
 
 ### P1 — несущие конструкции
 
@@ -52,6 +53,7 @@ CI (ruff, pytest, сборка фронта, `docker compose build` с лими�
 | [#14](https://github.com/KekborKek/max_buisnes_bot/issues/14) | Чтение `start_param` из MAX Bridge | FRONT | #12 | вход по QR не замкнут на мини-апп |
 | [#15](https://github.com/KekborKek/max_buisnes_bot/issues/15) | Каркас мини-аппа: экраны, BackButton, 401, пустые состояния | FRONT | — | один экран в одном файле, класть продукт некуда |
 | [#16](https://github.com/KekborKek/max_buisnes_bot/issues/16) | Тесты `/api/me`, `/api/events`, вебхука | API | — | слой API не покрыт вообще |
+| [#26](https://github.com/KekborKek/max_buisnes_bot/issues/26) | Короткая транзакция записи в диспетчере | BOT | — | транзакция держится на время запроса к MAX — #9 закрыта не полностью |
 
 ### P2 — гигиена разработки
 
@@ -62,6 +64,8 @@ CI (ruff, pytest, сборка фронта, `docker compose build` с лими�
 | [#19](https://github.com/KekborKek/max_buisnes_bot/issues/19) | CI: дрейф `openapi.yaml`, typecheck фронта | LEAD | — | контракт обновляется руками и разъедется молча |
 | [#20](https://github.com/KekborKek/max_buisnes_bot/issues/20) | Жизненный цикл БД: схема, `make db-reset`, чистка | LEAD | — | `create_all` не добавляет колонки — после 18.09 выстрелит на сервере |
 | [#21](https://github.com/KekborKek/max_buisnes_bot/issues/21) | Диагностика: тексты, `/health` с БД, логи, `webhook list` | LEAD | — | отказ на демо сейчас неразбираем |
+| [#24](https://github.com/KekborKek/max_buisnes_bot/issues/24) | CI: синтаксис `nginx.conf` и `Caddyfile` | LEAD | — | опечатка в конфиге прокси всплывёт только при деплое |
+| [#29](https://github.com/KekborKek/max_buisnes_bot/issues/29) | Прод поднимается с `APP_ENV=dev` | LEAD | — | защита держится на ручной правке `.env` |
 
 ### Ждёт токен MAX
 
@@ -102,10 +106,10 @@ CI (ruff, pytest, сборка фронта, `docker compose build` с лими�
 
 | Трек | Задачи по порядку | Почему вместе |
 |---|---|---|
-| Инфра и БД | #7 → #9 → #20 | #9 и #20 обе правят `backend/app/core/db.py` |
-| Клиент MAX | #10 → #21 | #21 добавляет метод в `max_client.py`, который переписывает #10 |
-| API | #12 → #16, плюс #8 | #12 фиксирует контракт, #16 покрывает его тестами |
-| BOT | #11 → #13 | обе внутри `backend/app/bot/` |
+| Инфра и БД | #20 (#7, #9 закрыты) | #20 правит `backend/app/core/db.py` |
+| Клиент MAX | **#27 → #10 → #21** | все три правят `max_client.py`; без #27 остальным нечего делать |
+| API | #12 → #16 (#8 закрыта) | #12 фиксирует контракт, #16 покрывает его тестами |
+| BOT | #26 → #11 → #13 | все внутри `backend/app/bot/` |
 | FRONT | #15 → #14 → #18 | все внутри `miniapp/src/` |
 
 Вне треков, не конфликтуют ни с чем: #17 и #19 — можно отдать в любой момент кому угодно.
