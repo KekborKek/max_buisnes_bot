@@ -1,8 +1,11 @@
+# Python 3.12 — как в Docker; если его нет, берём системный python3
+PYTHON ?= $(shell command -v python3.12 || command -v python3)
+
 help:
 	@echo "make setup | dev-api | dev-bot | dev-miniapp | test | lint | fmt | openapi | up | down"
 
-setup:
-	cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+setup: check-tools
+	cd backend && $(PYTHON) -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 	cd miniapp && npm ci
 	[ -f .env ] || cp .env.example .env
 
@@ -34,4 +37,9 @@ up:
 down:
 	docker compose down
 
-.PHONY: help setup dev-api dev-bot dev-miniapp test lint fmt openapi up down
+check-tools:
+	@command -v $(PYTHON) >/dev/null || { echo "Нет Python. Mac: brew install python@3.12"; exit 1; }
+	@command -v npm >/dev/null || { echo "Нет Node.js/npm. Mac: brew install node@22 && brew link --overwrite node@22"; exit 1; }
+	@echo "Python: $$($(PYTHON) --version), Node: $$(node --version)"
+
+.PHONY: check-tools help setup dev-api dev-bot dev-miniapp test lint fmt openapi up down
