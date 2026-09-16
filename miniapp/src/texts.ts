@@ -7,4 +7,5 @@ export const texts = {
   retry: "Повторить",
   demoBadge: "Демо-режим: вне MAX, тестовый пользователь",
   primaryAction: "Начать",
+  primaryActionError: "Не получилось. Попробуйте ещё раз.",
 };

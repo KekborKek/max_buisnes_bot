@@ -5,9 +5,21 @@ import { api, type Me } from "./api";
 import { texts } from "./texts";
 
 type State = { kind: "loading" } | { kind: "error" } | { kind: "ready"; me: Me };
+type ActionState = "idle" | "pending" | "error";
 
 export default function App() {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [action, setAction] = useState<ActionState>("idle");
+
+  const handlePrimaryAction = useCallback(async () => {
+    setAction("pending");
+    try {
+      await api.track("primary_action_clicked");
+      setAction("idle");
+    } catch {
+      setAction("error");
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -50,9 +62,16 @@ export default function App() {
       <CellList mode="island">
         <CellSimple title={texts.title} subtitle={`user_id: ${me.user_id}`} />
       </CellList>
-      <Button stretched size="large" onClick={() => api.track("primary_action_clicked")}>
+      <Button
+        stretched
+        size="large"
+        disabled={action === "pending"}
+        loading={action === "pending"}
+        onClick={handlePrimaryAction}
+      >
         {texts.primaryAction}
       </Button>
+      {action === "error" && <Typography.Label>{texts.primaryActionError}</Typography.Label>}
     </Panel>
   );
 }
