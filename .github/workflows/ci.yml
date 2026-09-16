@@ -12,8 +12,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -29,8 +29,8 @@ jobs:
       run:
         working-directory: miniapp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -41,17 +41,23 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: docker compose build (лимит кейса — 5 минут)
         timeout-minutes: 5
         run: docker compose build
 
   secrets:
+    # Ищем случайно закоммиченные токены во всей истории.
+    # Запускаем бинарник gitleaks напрямую: gitleaks-action падает на первом пуше (у корневого коммита нет родителя).
     runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.24.3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Установить gitleaks
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz gitleaks
+      - name: Проверить историю на секреты
+        run: ./gitleaks git --redact --verbose --exit-code 1 .
