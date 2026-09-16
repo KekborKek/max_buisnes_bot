@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     capture_updates: bool = False  # dev: сохранять сырые апдейты в data/captured_updates/
     data_mode: str = "mock"  # mock | real — какой адаптер внешних данных использовать
     initdata_max_age_seconds: int = 86400
+    # dev: принимать X-Max-Init-Data: dev вместо настоящей подписи. В проде всегда false
+    allow_dev_initdata: bool = False
 
 
 @lru_cache

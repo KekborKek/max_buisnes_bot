@@ -65,6 +65,7 @@ docker compose down -v     # остановить и удалить данные
 | `APP_ENV` | `dev` / `prod` | `dev` |
 | `DATA_MODE` | `mock` — тестовые данные, `real` — интеграции | `mock` |
 | `CAPTURE_UPDATES` | Сохранять сырые апдейты для отладки | `false` |
+| `ALLOW_DEV_INITDATA` | Принимать `X-Max-Init-Data: dev` без проверки подписи (работает только при `APP_ENV=dev`). Только разработка, в проде всегда `false` | `true` |
 | `API_PORT`, `MINIAPP_PORT`, `VITE_PORT` | Порты на локальной машине | `8000`, `8080`, `5173` |
 | `DOMAIN` | Домен сервера для Caddy | `bot.example.com` |
 
