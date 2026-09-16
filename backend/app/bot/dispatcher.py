@@ -44,24 +44,27 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
         _capture(update)
 
     async with SessionLocal() as session:
-        key = update_key(update)
-        if key:
-            session.add(ProcessedUpdate(key=key))
-            try:
-                await session.flush()
-            except IntegrityError:
-                log.info("duplicate update skipped: %s", key)
-                return
-
         ctx = Ctx.from_update(update, session, max_client)
-        handler = await router.resolve(ctx)
         try:
+            key = update_key(update)
+            if key:
+                session.add(ProcessedUpdate(key=key))
+                try:
+                    await session.flush()
+                except IntegrityError:
+                    log.info("duplicate update skipped: %s", key)
+                    return
+
+            handler = await router.resolve(ctx)
             if handler:
                 await handler(ctx)
             await session.commit()
         except Exception:
             log.exception("handler failed for %s", ctx.update_type)
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                log.exception("rollback failed for %s", ctx.update_type)
             try:
                 await ctx.reply(t("errors.internal"))
             except Exception:
