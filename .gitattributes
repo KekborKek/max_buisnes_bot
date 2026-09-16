@@ -1,0 +1,5 @@
+# Единые переводы строк (LF) на Mac, Windows и Linux — иначе Docker и скрипты ломаются
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary

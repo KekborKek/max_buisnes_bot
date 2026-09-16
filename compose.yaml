@@ -1,0 +1,49 @@
+# Запуск всех компонентов одной командой:  docker compose up --build
+# Прод с HTTPS (на сервере с доменом):     docker compose --profile prod up -d --build
+name: max-business-bot
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - app-data:/srv/data
+    restart: unless-stopped
+
+  miniapp:
+    build:
+      context: ./miniapp
+    depends_on:
+      - backend
+    ports:
+      - "${MINIAPP_PORT:-8080}:80"
+    restart: unless-stopped
+
+  caddy:
+    # Реверс-прокси с автоматическим HTTPS (Let's Encrypt). Только на сервере.
+    image: caddy:2-alpine
+    profiles: ["prod"]
+    depends_on:
+      - backend
+      - miniapp
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  caddy-data:

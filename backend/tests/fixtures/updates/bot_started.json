@@ -1,0 +1,7 @@
+{
+  "update_type": "bot_started",
+  "timestamp": 1758000000000,
+  "chat_id": 1001,
+  "user": {"user_id": 42, "first_name": "Борис", "name": "Борис"},
+  "payload": "point_7"
+}

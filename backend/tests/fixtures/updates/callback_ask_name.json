@@ -1,0 +1,10 @@
+{
+  "update_type": "message_callback",
+  "timestamp": 1758000001000,
+  "callback": {
+    "callback_id": "cb-123",
+    "payload": "menu:ask_name",
+    "user": {"user_id": 42, "first_name": "Борис"}
+  },
+  "message": {"recipient": {"chat_id": 1001}, "body": {"mid": "mid-1", "text": "Меню"}}
+}

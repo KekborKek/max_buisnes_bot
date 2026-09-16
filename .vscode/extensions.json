@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "dbaeumer.vscode-eslint",
+    "ms-azuretools.vscode-docker",
+    "redhat.vscode-yaml",
+    "johnpapa.vscode-peacock",
+    "editorconfig.editorconfig"
+  ]
+}

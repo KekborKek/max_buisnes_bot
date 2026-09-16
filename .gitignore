@@ -1,0 +1,29 @@
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+backend/data/
+
+# Node
+node_modules/
+dist/
+
+# Системное
+.DS_Store
+Thumbs.db
+*.log
+
+# Редакторы (кроме общих настроек)
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.tsbuildinfo
