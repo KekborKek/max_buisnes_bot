@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,13 @@ class Settings(BaseSettings):
     initdata_max_age_seconds: int = 86400
     # dev: принимать X-Max-Init-Data: dev вместо настоящей подписи. В проде всегда false
     allow_dev_initdata: bool = False
+
+    @model_validator(mode="after")
+    def _forbid_dev_initdata_in_prod(self) -> "Settings":
+        """Лучше не подняться, чем молча принимать непроверенный initData в проде."""
+        if self.app_env == "prod" and self.allow_dev_initdata:
+            raise ValueError("ALLOW_DEV_INITDATA=true недопустим при APP_ENV=prod")
+        return self
 
 
 @lru_cache

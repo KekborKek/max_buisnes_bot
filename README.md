@@ -38,12 +38,13 @@ MAX Bot API ──вебхук──▶ backend (FastAPI)  ◀──/api── m
 ## Запуск одной командой (Docker)
 ```bash
 cp .env.example .env      # заполнить MAX_BOT_TOKEN и остальные значения
+# мини-апп вне MAX (http://localhost:5173) — поставьте ALLOW_DEV_INITDATA=true
 docker compose up --build
 ```
 - API: http://localhost:8000 (документация: http://localhost:8000/docs)
 - Мини-приложение: http://localhost:8080 (вне MAX работает с тестовым пользователем)
 
-На сервере с доменом и HTTPS:
+На сервере с доменом и HTTPS (в `.env` обязательно `APP_ENV=prod` и `ALLOW_DEV_INITDATA=false`):
 ```bash
 docker compose --profile prod up -d --build
 python backend/scripts/webhook.py set     # подписать вебхук на https://$DOMAIN/webhook/max
@@ -65,7 +66,7 @@ docker compose down -v     # остановить и удалить данные
 | `APP_ENV` | `dev` / `prod` | `dev` |
 | `DATA_MODE` | `mock` — тестовые данные, `real` — интеграции | `mock` |
 | `CAPTURE_UPDATES` | Сохранять сырые апдейты для отладки | `false` |
-| `ALLOW_DEV_INITDATA` | Принимать `X-Max-Init-Data: dev` без проверки подписи (работает только при `APP_ENV=dev`). Только разработка, в проде всегда `false` | `true` |
+| `ALLOW_DEV_INITDATA` | Принимать `X-Max-Init-Data: dev` без проверки подписи — мини-апп вне MAX. Работает только при `APP_ENV=dev`. В проде всегда `false` | `false` |
 | `API_PORT`, `MINIAPP_PORT`, `VITE_PORT` | Порты на локальной машине | `8000`, `8080`, `5173` |
 | `DOMAIN` | Домен сервера для Caddy | `bot.example.com` |
 
@@ -117,3 +118,5 @@ make dev-bot         # терминал 2 — бот через long polling (б
 make dev-miniapp     # терминал 3 — http://localhost:5173
 make test && make lint
 ```
+
+Мини-апп вне MAX работает с тестовым пользователем только при `ALLOW_DEV_INITDATA=true` в `.env`. `make setup` не трогает уже существующий `.env` — если он создан раньше, допишите переменную руками, иначе API будет отвечать 401.
