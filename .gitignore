@@ -27,3 +27,7 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/settings.json
 *.tsbuildinfo
+
+# Claude Code: личные настройки и рабочие копии агентов
+.claude/settings.local.json
+.claude/worktrees/
