@@ -56,7 +56,9 @@ export default function App() {
 
   const { me } = state;
   return (
-    <Panel style={{ minHeight: "100vh", padding: 16, display: "grid", gap: 16, alignContent: "start" }}>
+    <Panel
+      style={{ minHeight: "100vh", padding: 16, display: "grid", gap: 16, alignContent: "start" }}
+    >
       <Typography.Headline>{texts.greeting(me.first_name ?? "")}</Typography.Headline>
       {me.is_dev && <Typography.Label>{texts.demoBadge}</Typography.Label>}
       <CellList mode="island">

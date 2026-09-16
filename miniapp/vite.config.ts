@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 // В разработке запросы /api проксируются на бэкенд (порт из API_PORT, по умолчанию 8000).
 export default defineConfig({
@@ -7,5 +7,11 @@ export default defineConfig({
   server: {
     port: Number(process.env.VITE_PORT ?? 5173),
     proxy: { "/api": `http://localhost:${process.env.API_PORT ?? 8000}` },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/setupTests.ts"],
+    css: false,
   },
 });
