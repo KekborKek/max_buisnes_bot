@@ -10,10 +10,13 @@
 		reverse_proxy backend:8000
 	}
 	# Панель с API и схема — иначе уходят на miniapp вместе со всем остальным
-	handle /docs* {
+	handle /docs {
 		reverse_proxy backend:8000
 	}
 	handle /openapi.json {
+		reverse_proxy backend:8000
+	}
+	handle /redoc {
 		reverse_proxy backend:8000
 	}
 	handle {
