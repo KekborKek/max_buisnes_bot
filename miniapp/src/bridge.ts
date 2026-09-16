@@ -13,7 +13,12 @@ export interface MaxWebApp {
   openCodeReader?: () => Promise<unknown>;
   openLink?: (url: string) => void;
   openMaxLink?: (url: string) => void;
-  BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
+  BackButton?: {
+    show(): void;
+    hide(): void;
+    onClick(cb: () => void): void;
+    offClick(cb: () => void): void;
+  };
   HapticFeedback?: unknown;
 }
 
