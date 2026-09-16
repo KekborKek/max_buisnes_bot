@@ -2,7 +2,9 @@
 
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -14,14 +16,43 @@ class Base(DeclarativeBase):
 
 
 _settings = get_settings()
-if _settings.database_url.startswith("sqlite"):
-    # для SQLite создаём папку под файл базы
-    db_path = _settings.database_url.split("///", 1)[-1]
-    if db_path and db_path != ":memory:":
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+_url = _settings.database_url
+_is_sqlite = _url.startswith("sqlite")
+_db_path = _url.split("///", 1)[1] if _is_sqlite and "///" in _url else ""
+_is_memory = _is_sqlite and (not _db_path or _db_path == ":memory:")
 
-engine = create_async_engine(_settings.database_url)
+if _is_sqlite and not _is_memory:
+    # для SQLite создаём папку под файл базы
+    Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
+
+# timeout — сколько секунд драйвер ждёт освобождения блокировки, прежде чем
+# бросить "database is locked". По умолчанию 5 секунд, нам мало: вебхук и
+# мини-приложение пишут в базу одновременно.
+_connect_args: dict[str, Any] = {"timeout": 30} if _is_sqlite else {}
+
+engine = create_async_engine(_settings.database_url, connect_args=_connect_args)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+if _is_sqlite:
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
+        """PRAGMA живут в рамках соединения, поэтому выставляем на каждом.
+
+        WAL разводит читателей и писателя: без него SQLite берёт эксклюзивную
+        блокировку на запись и параллельные апдейты падают с "database is locked".
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            if not _is_memory:
+                # для :memory: WAL неприменим — база живёт в памяти процесса
+                cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 
 async def init_db() -> None:
