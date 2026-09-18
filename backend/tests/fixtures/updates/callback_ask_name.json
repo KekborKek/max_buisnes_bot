@@ -6,5 +6,8 @@
     "payload": "menu:ask_name",
     "user": {"user_id": 42, "first_name": "Борис"}
   },
-  "message": {"recipient": {"chat_id": 1001}, "body": {"mid": "mid-1", "text": "Меню"}}
+  "message": {
+    "recipient": {"chat_id": 1001, "chat_type": "dialog"},
+    "body": {"mid": "mid-1", "text": "Меню"}
+  }
 }

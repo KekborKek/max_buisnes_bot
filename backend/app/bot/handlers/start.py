@@ -28,15 +28,11 @@ async def on_start_command(ctx: Ctx) -> None:
 
 @router.on_callback("menu:about")
 async def on_about(ctx: Ctx) -> None:
-    if ctx.callback_id:
-        await ctx.max.answer_callback(ctx.callback_id)
     await ctx.reply(t("start.about"), attachments=[main_menu()])
 
 
 @router.on_callback("menu:ask_name")
 async def on_ask_name(ctx: Ctx) -> None:
-    if ctx.callback_id:
-        await ctx.max.answer_callback(ctx.callback_id)
     await ctx.set_state("ask_name")
     await ctx.track("scenario_step", {"step": "ask_name"})
     await ctx.reply(t("start.ask_name"))

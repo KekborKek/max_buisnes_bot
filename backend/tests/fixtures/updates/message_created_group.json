@@ -1,0 +1,9 @@
+{
+  "update_type": "message_created",
+  "timestamp": 1758000003000,
+  "message": {
+    "sender": {"user_id": 42, "first_name": "Борис"},
+    "recipient": {"chat_id": 7001, "chat_type": "chat"},
+    "body": {"mid": "mid-3", "text": "привет всем"}
+  }
+}

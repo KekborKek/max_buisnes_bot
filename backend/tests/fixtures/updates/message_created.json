@@ -3,7 +3,7 @@
   "timestamp": 1758000002000,
   "message": {
     "sender": {"user_id": 42, "first_name": "Борис"},
-    "recipient": {"chat_id": 1001},
+    "recipient": {"chat_id": 1001, "chat_type": "dialog"},
     "body": {"mid": "mid-2", "text": "Борис"}
   }
 }
