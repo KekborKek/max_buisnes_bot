@@ -10,6 +10,20 @@ paths:
       summary: Текущий пользователь мини-приложения
       operationId: me_api_me_get
       parameters:
+      - name: start_param
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 'Только для dev-режима (ALLOW_DEV_INITDATA): подменяет start_param,
+            чтобы отлаживать вход по диплинку вне MAX. С настоящей подписанной initData
+            параметр игнорируется.'
+          title: Start Param
+        description: 'Только для dev-режима (ALLOW_DEV_INITDATA): подменяет start_param,
+          чтобы отлаживать вход по диплинку вне MAX. С настоящей подписанной initData
+          параметр игнорируется.'
       - name: x-max-init-data
         in: header
         required: false
@@ -101,6 +115,11 @@ components:
           type: boolean
           title: Is Dev
           default: false
+        start_param:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Start Param
       type: object
       required:
       - user_id
