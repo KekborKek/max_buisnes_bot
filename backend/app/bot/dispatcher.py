@@ -1,4 +1,4 @@
-"""Обработка одного апдейта: идемпотентность → разбор → обработчик → общий catch ошибок."""
+"""Обработка одного апдейта: идемпотентность → разбор → обработчик → отправка → catch ошибок."""
 
 import json
 import logging
@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.bot.handlers  # noqa: F401  регистрирует обработчики
 from app.bot.context import Ctx
@@ -39,21 +40,51 @@ def _capture(update: dict) -> None:
     (folder / name).write_text(json.dumps(update, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+async def _mark_processed(session: AsyncSession, update: dict) -> bool:
+    """Отмечает апдейт обработанным отдельной короткой транзакцией. False — это повтор.
+
+    Ключ коммитится ДО вызова обработчика и остаётся, даже если обработчик упал: повторная
+    доставка того же апдейта будет отброшена (at-most-once). Так выбрано осознанно — при
+    детерминированной ошибке обработчика снятие ключа превратило бы повторы MAX в бесконечный
+    цикл падений и сообщений об ошибке пользователю. Цена решения: апдейт, упавший на случайной
+    ошибке, второго шанса не получит, пользователь увидит t("errors.internal") и повторит
+    действие сам.
+    """
+    key = update_key(update)
+    if not key:
+        return True
+    session.add(ProcessedUpdate(key=key))
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        log.info("duplicate update skipped: %s", key)
+        return False
+    return True
+
+
 async def process_update(update: dict, max_client: MaxClient) -> None:
+    """Обработка апдейта: короткие транзакции, сеть — только вне них.
+
+    Порядок: коммит ключа идемпотентности → обработчик → коммит его записей → отправка
+    накопленных ответов. Отправка вынесена из транзакции через буфер в `Ctx` (`ctx.reply`
+    складывает, `ctx.send_outbox` отправляет): SQLite допускает одного писателя, и пока один
+    апдейт ждёт ответа MAX API (таймаут httpx 35 секунд), все остальные стояли бы за
+    блокировкой записи дольше её busy_timeout (30 секунд) — то есть снова получали бы
+    "database is locked".
+
+    Буфер выбран вместо «коммит прямо перед отправкой» потому, что не требует от обработчиков
+    ничего знать о транзакции: `ctx.reply` можно вызывать в любом месте обработчика, в том
+    числе несколько раз и до записи в БД, и порядок сообщений сохранится.
+    """
     if get_settings().capture_updates:
         _capture(update)
 
     async with SessionLocal() as session:
         ctx = Ctx.from_update(update, session, max_client)
         try:
-            key = update_key(update)
-            if key:
-                session.add(ProcessedUpdate(key=key))
-                try:
-                    await session.flush()
-                except IntegrityError:
-                    log.info("duplicate update skipped: %s", key)
-                    return
+            if not await _mark_processed(session, update):
+                return
 
             handler = await router.resolve(ctx)
             if handler:
@@ -61,11 +92,11 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
             await session.commit()
         except Exception:
             log.exception("handler failed for %s", ctx.update_type)
+            ctx.drop_outbox()  # записей в БД нет — рассказывать о них пользователю нечего
             try:
                 await session.rollback()
             except Exception:
                 log.exception("rollback failed for %s", ctx.update_type)
-            try:
-                await ctx.reply(t("errors.internal"))
-            except Exception:
-                log.exception("failed to send error message")
+            await ctx.reply(t("errors.internal"))
+
+        await ctx.send_outbox()  # транзакция закрыта: и после commit, и после rollback
