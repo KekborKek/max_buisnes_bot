@@ -79,12 +79,13 @@ async def post_event(
     user = launch.get("user") or {}
     props = dict(body.props)
     if body.name == OPENED_EVENT:
-        # Подписанная initData — источник правды: значение от клиента подделывается.
-        # В dev-режиме его там нет, поэтому присланное фронтом сохраняем как есть.
         signed = launch_start_param(launch)
-        if signed is not None:
-            props["start_param"] = signed
+        if launch.get("is_dev"):
+            # Подписи нет вовсе, брать неоткуда — значение от фронта допустимо.
+            props.setdefault("start_param", signed)
         else:
-            props.setdefault("start_param", None)
+            # Источник правды — только подпись, в том числе когда диплинка не было:
+            # иначе конверсию из QR накручивают запросом из браузера.
+            props["start_param"] = signed
     await track(session, user.get("user_id") or user.get("id"), body.name, props)
     await session.commit()

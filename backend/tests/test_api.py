@@ -110,14 +110,17 @@ def test_query_start_param_ignored_for_real_init_data(settings):
     assert r.json()["start_param"] == "promo-42"
 
 
-def test_query_start_param_ignored_without_dev_mode(settings):
-    """Без dev-режима подставить start_param запросом нельзя — вход только 401."""
+def test_query_start_param_ignored_when_signed_has_none(settings):
+    """Подпись без диплинка — query-параметр не дорисовывает start_param из ниоткуда."""
     settings()
     with TestClient(app) as client:
         r = client.get(
-            "/api/me", params={"start_param": "promo-42"}, headers={"X-Max-Init-Data": "dev"}
+            "/api/me",
+            params={"start_param": "attacker"},
+            headers={"X-Max-Init-Data": init_data()},
         )
-    assert r.status_code == 401
+    assert r.status_code == 200
+    assert r.json()["start_param"] is None
 
 
 def test_query_start_param_works_in_dev_mode(settings):
@@ -184,6 +187,52 @@ async def test_opened_event_client_value_does_not_override_signed(settings):
     assert r.status_code == 204
     events = await stored_events()
     assert events[0].props["start_param"] == "promo-42"
+
+
+async def test_opened_event_client_value_ignored_without_signed_start_param(settings):
+    """Подпись без диплинка: клиент не может проставить себе start_param.
+
+    Ветка, которой не было в первой версии: конверсия из QR иначе накручивается
+    одним запросом из браузера.
+    """
+    settings()
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/events",
+            json={"name": "miniapp_opened", "props": {"start_param": "FAKE-QR-777"}},
+            headers={"X-Max-Init-Data": init_data()},
+        )
+    assert r.status_code == 204
+    events = await stored_events()
+    assert events[0].props == {"start_param": None}
+
+
+async def test_opened_event_in_dev_mode_keeps_client_value(settings):
+    """В dev-режиме подписи нет вовсе — значение от фронта сохраняется."""
+    settings(allow_dev_initdata=True)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/events",
+            json={"name": "miniapp_opened", "props": {"start_param": "promo-42"}},
+            headers={"X-Max-Init-Data": "dev"},
+        )
+    assert r.status_code == 204
+    events = await stored_events()
+    assert events[0].props == {"start_param": "promo-42"}
+
+
+async def test_opened_event_in_dev_mode_without_client_value(settings):
+    """Dev-режим без значения от фронта: поле есть и равно null."""
+    settings(allow_dev_initdata=True)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/events",
+            json={"name": "miniapp_opened"},
+            headers={"X-Max-Init-Data": "dev"},
+        )
+    assert r.status_code == 204
+    events = await stored_events()
+    assert events[0].props == {"start_param": None}
 
 
 async def test_other_events_are_not_enriched(settings):
