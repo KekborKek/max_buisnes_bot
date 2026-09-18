@@ -1,6 +1,8 @@
 """Тонкая обёртка над MAX Bot API. Все запросы к MAX — только через этот модуль."""
 
+import asyncio
 import logging
+import random
 import ssl
 from typing import Any
 
@@ -10,6 +12,17 @@ import httpx
 from app.core.config import get_settings
 
 log = logging.getLogger(__name__)
+
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 0.5
+_MAX_SLEEP = 4.0  # потолок ожидания; 2 ретрая * 4с = до ~8с в пределах дедлайна вебхука (30с)
+
+# GET безопасно повторить на любой временной ошибке. POST/PUT/DELETE — только на 429 и сетевых
+# ошибках: 5xx на POST /messages мог долететь до MAX уже после того, как сообщение отправлено,
+# и повтор задвоит его пользователю.
+_RETRY_STATUS_IDEMPOTENT = frozenset({429, 500, 502, 503, 504})
+_RETRY_STATUS_MUTATING = frozenset({429})
+_RETRYABLE_NETWORK_ERRORS = (httpx.ConnectError, httpx.ReadTimeout)
 
 
 def _build_verify(ca_bundle: str) -> ssl.SSLContext | bool:
@@ -21,25 +34,83 @@ def _build_verify(ca_bundle: str) -> ssl.SSLContext | bool:
     return ctx
 
 
+def _retry_delay(attempt: int, retry_after: str | None) -> float:
+    if retry_after is not None:
+        try:
+            return min(float(retry_after), _MAX_SLEEP)
+        except ValueError:
+            pass
+    delay = min(_BACKOFF_BASE * (2 ** (attempt - 1)), _MAX_SLEEP)
+    return random.uniform(0, delay)
+
+
+class _RateLimiter:
+    """Не больше `rps` запросов в секунду: слот освобождается через секунду после захвата."""
+
+    def __init__(self, rps: int = 30) -> None:
+        self._semaphore = asyncio.Semaphore(rps)
+
+    async def acquire(self) -> None:
+        await self._semaphore.acquire()
+        asyncio.get_running_loop().call_later(1.0, self._semaphore.release)
+
+
 class MaxClient:
-    def __init__(self, token: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        base_url: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         s = get_settings()
         self._client = httpx.AsyncClient(
             base_url=base_url or s.max_api_base,
             headers={"Authorization": token if token is not None else s.max_bot_token},
             timeout=httpx.Timeout(35.0),
             verify=_build_verify(s.max_ca_bundle),
+            transport=transport,
         )
+        self._rate_limiter = _RateLimiter()
 
     async def close(self) -> None:
         await self._client.aclose()
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> dict:
-        resp = await self._client.request(method, url, **kwargs)
-        if resp.status_code >= 400:
-            log.error("MAX API %s %s -> %s %s", method, url, resp.status_code, resp.text[:500])
-        resp.raise_for_status()
-        return resp.json() if resp.content else {}
+        retryable_statuses = _RETRY_STATUS_IDEMPOTENT if method == "GET" else _RETRY_STATUS_MUTATING
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            is_last = attempt == _MAX_ATTEMPTS
+            await self._rate_limiter.acquire()
+            try:
+                resp = await self._client.request(method, url, **kwargs)
+            except _RETRYABLE_NETWORK_ERRORS:
+                if is_last:
+                    raise
+                log.warning(
+                    "MAX API %s %s -> сетевая ошибка, попытка %s/%s",
+                    method,
+                    url,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_retry_delay(attempt, None))
+                continue
+
+            if resp.status_code in retryable_statuses and not is_last:
+                log.warning(
+                    "MAX API %s %s -> %s, попытка %s/%s",
+                    method,
+                    url,
+                    resp.status_code,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_retry_delay(attempt, resp.headers.get("Retry-After")))
+                continue
+
+            if resp.status_code >= 400:
+                log.error("MAX API %s %s -> %s %s", method, url, resp.status_code, resp.text[:500])
+            resp.raise_for_status()
+            return resp.json() if resp.content else {}
 
     async def get_me(self) -> dict:
         return await self._request("GET", "/me")
