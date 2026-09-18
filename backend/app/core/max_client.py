@@ -1,13 +1,24 @@
 """Тонкая обёртка над MAX Bot API. Все запросы к MAX — только через этот модуль."""
 
 import logging
+import ssl
 from typing import Any
 
+import certifi
 import httpx
 
 from app.core.config import get_settings
 
 log = logging.getLogger(__name__)
+
+
+def _build_verify(ca_bundle: str) -> ssl.SSLContext | bool:
+    """certifi + корень Минцифры (platform-api2.max.ru им подписан), публичные корни не теряются."""
+    if not ca_bundle:
+        return True
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    ctx.load_verify_locations(cafile=ca_bundle)
+    return ctx
 
 
 class MaxClient:
@@ -17,6 +28,7 @@ class MaxClient:
             base_url=base_url or s.max_api_base,
             headers={"Authorization": token if token is not None else s.max_bot_token},
             timeout=httpx.Timeout(35.0),
+            verify=_build_verify(s.max_ca_bundle),
         )
 
     async def close(self) -> None:

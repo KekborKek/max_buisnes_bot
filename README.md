@@ -69,6 +69,18 @@ docker compose down -v     # остановить и удалить данные
 | `ALLOW_DEV_INITDATA` | Принимать `X-Max-Init-Data: dev` без проверки подписи — мини-апп вне MAX. Работает только при `APP_ENV=dev`. В проде всегда `false` | `false` |
 | `API_PORT`, `MINIAPP_PORT`, `VITE_PORT` | Порты на локальной машине | `8000`, `8080`, `5173` |
 | `DOMAIN` | Домен сервера для Caddy | `bot.example.com` |
+| `MAX_CA_BUNDLE` | Путь к доп. корню TLS для `httpx`. По умолчанию подхватывается `deploy/certs/russian_trusted_root_ca.crt` — трогать не нужно, см. ниже | — |
+
+## TLS: сертификат Минцифры для обращений к MAX API
+
+`platform-api2.max.ru` подписан цепочкой Минцифры (`Russian Trusted Sub CA` → `Russian Trusted Root CA`), корня которой нет в стандартном бандле `certifi`. Без него любой запрос к MAX (`/me`, `/messages`, long polling) падает с `SSL: CERTIFICATE_VERIFY_FAILED`. Это подтверждено и самой документацией MAX (https://dev.max.ru/docs-api): «убедитесь, что добавили сертификат Минцифры в список доверенных».
+
+Решение не в `update-ca-certificates` (он не влияет на проверку сертификатов в `httpx`, только на `curl`/`openssl` внутри контейнера), а в явном добавлении корня в бандл `httpx` — сделано в `backend/app/core/max_client.py` (см. `docs/max-api-notes.md`, раздел TLS). Корневой сертификат лежит в `deploy/certs/russian_trusted_root_ca.crt` и подхватывается автоматически — ни в Docker, ни при `make dev-api`/`make dev-bot` ничего вручную настраивать не нужно.
+
+**Важно:** это именно английский `Russian Trusted Root CA` (RSA, отпечаток SHA256 `D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31`), а не более новый ГОСТ-центр «Минцифры России НУЦ» (2025) — это два разных, не связанных удостоверяющих центра. При замене файла в `deploy/certs/` всегда сверяйте отпечаток:
+```bash
+openssl x509 -in deploy/certs/russian_trusted_root_ca.crt -noout -fingerprint -sha256
+```
 
 ## Порты
 | Порт | Сервис |

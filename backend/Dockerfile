@@ -11,8 +11,10 @@ COPY backend/app ./app
 COPY backend/scripts ./scripts
 COPY content /srv/content
 COPY seed /srv/seed
+COPY deploy/certs/russian_trusted_root_ca.crt /srv/deploy/certs/russian_trusted_root_ca.crt
 
 ENV CONTENT_DIR=/srv/content SEED_DIR=/srv/seed DATABASE_URL=sqlite+aiosqlite:////srv/data/app.db
+ENV MAX_CA_BUNDLE=/srv/deploy/certs/russian_trusted_root_ca.crt
 RUN mkdir -p /srv/data && useradd --create-home appuser && chown -R appuser /srv
 USER appuser
 
