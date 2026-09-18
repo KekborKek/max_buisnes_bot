@@ -89,9 +89,9 @@ async def test_bot_stopped_tracks_event_and_stays_silent(fake_max):
 
 async def test_bot_added_and_removed_track_events(fake_max):
     """bot_added и bot_removed тоже не теряются в fallback."""
-    for update_type, chat_id in (("bot_added", 7001), ("bot_removed", 7001)):
+    for timestamp, update_type in enumerate(("bot_added", "bot_removed"), start=1758001):
         update = dict(
-            load_update("bot_stopped"), update_type=update_type, chat_id=chat_id, timestamp=1758001
+            load_update("bot_stopped"), update_type=update_type, chat_id=7001, timestamp=timestamp
         )
         await process_update(update, fake_max)
 
@@ -99,3 +99,16 @@ async def test_bot_added_and_removed_track_events(fake_max):
     async with SessionLocal() as session:
         names = (await session.execute(select(Event.name).order_by(Event.id))).scalars().all()
     assert names == ["bot_added", "bot_removed"]
+
+
+async def test_callback_is_answered_again_on_redelivery(fake_max):
+    """MAX повторяет доставку как раз когда первый ответ не дошёл — кнопку гасим снова.
+
+    Обработчик при этом второй раз не запускается: идемпотентность не нарушена.
+    """
+    update = load_update("callback_ask_name")
+    await process_update(update, fake_max)
+    await process_update(update, fake_max)
+
+    assert fake_max.answered == ["cb-123", "cb-123"]
+    assert len(fake_max.sent) == 1

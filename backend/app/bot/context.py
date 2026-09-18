@@ -27,6 +27,7 @@ class Ctx:
     user_id: int | None = None
     chat_id: int | None = None
     chat_type: str | None = None  # "dialog" | "chat" | "channel"; None — не указан в апдейте
+    is_channel: bool | None = None  # у служебных апдейтов вместо chat_type приходит этот флаг
     user_name: str | None = None
     text: str | None = None
     payload: str | None = None  # payload callback-кнопки или диплинка ?start=
@@ -60,13 +61,16 @@ class Ctx:
             ctx.chat_id = recipient.get("chat_id")
             ctx.chat_type = recipient.get("chat_type")
         elif ctx.update_type in ("bot_started", "bot_stopped", "bot_added", "bot_removed"):
-            # У всех четырёх одинаковая форма: chat_id, user, is_channel; payload — только
-            # у bot_started (диплинк ?start=). Сверено с https://dev.max.ru/docs-api/objects/Update.
+            # У всех четырёх одна форма: chat_id, user, is_channel; payload — только у
+            # bot_started (диплинк ?start=). Взято из https://dev.max.ru/docs-api/objects/Update,
+            # но **[сверить]**: docs/max-api-notes.md эти поля пока не описывает.
+            # chat_type здесь не читаем — на верхнем уровне апдейта его нет, групповой контекст
+            # различается по is_channel и chat_id.
             user = update.get("user") or {}
             ctx.user_id = user.get("user_id")
             ctx.user_name = user.get("name") or user.get("first_name")
             ctx.chat_id = update.get("chat_id")
-            ctx.chat_type = update.get("chat_type")
+            ctx.is_channel = update.get("is_channel")
             ctx.payload = update.get("payload")
         return ctx
 
@@ -85,8 +89,10 @@ class Ctx:
         Если `chat_type` в апдейте не указан (структура MAX помечена **[сверить]**), считаем
         апдейт диалогом и отвечаем в `user_id` — это прежнее поведение, оно не ломает личку.
         """
-        if self.is_group and self.chat_id is not None:
-            return {"chat_id": self.chat_id}
+        if self.is_group:
+            if self.chat_id is not None:
+                return {"chat_id": self.chat_id}
+            log.warning("групповой апдейт %s без chat_id — отвечаем автору", self.update_type)
         if self.user_id is not None:
             return {"user_id": self.user_id}
         if self.chat_id is not None:
@@ -104,6 +110,10 @@ class Ctx:
 
         Метод остаётся асинхронным: обработчики вызывают `await ctx.reply(...)`, и менять
         их из-за буфера не нужно.
+
+        Ограничение: промежуточное «ищу…» перед долгой работой так не показать — вся очередь
+        уходит одним пакетом после коммита. Понадобится — заводим `flush_outbox` (коммит +
+        отправка + продолжение), сейчас такого сценария нет.
         """
         self.outbox.append({"text": text, "attachments": attachments})
 
@@ -111,24 +121,28 @@ class Ctx:
         """Выбрасывает неотправленное: транзакция откатилась, сообщать не о чем."""
         self.outbox.clear()
 
-    async def send_outbox(self) -> None:
+    async def send_outbox(self) -> int:
         """Отправляет накопленное. Вызывать только когда транзакция уже закрыта.
 
-        Ошибка отправки одного сообщения не мешает остальным: апдейт уже обработан,
-        и повторять его целиком нельзя.
+        Возвращает число сообщений, которые отправить не удалось: вызывающий решает, что с
+        этим делать (`dispatcher` пишет событие аналитики). Ошибка одного сообщения не мешает
+        остальным: апдейт уже обработан и закоммичен, повторять его целиком нельзя.
         """
         pending, self.outbox = self.outbox, []
         target = self._target()
         if pending and not target:
             log.warning("нет адресата для ответа на %s", self.update_type)
-            return
+            return len(pending)
+        failed = 0
         for message in pending:
             try:
                 await self.max.send_message(
                     message["text"], attachments=message["attachments"], **target
                 )
             except Exception:
+                failed += 1
                 log.exception("не удалось отправить ответ на %s", self.update_type)
+        return failed
 
     async def track(self, name: str, props: dict | None = None) -> None:
         await events.track(self.session, self.user_id, name, props)

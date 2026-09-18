@@ -80,6 +80,21 @@ async def _answer_callback(ctx: Ctx) -> None:
         log.exception("answer_callback failed for %s", ctx.callback_id)
 
 
+async def _track_send_failure(ctx: Ctx, failed: int) -> None:
+    """Проваленная отправка должна быть видна в аналитике, а не только в логах.
+
+    Ответ уходит после коммита, поэтому упавшая отправка уже не откатывает работу
+    обработчика: состояние диалога сдвинулось, а пользователь ответа не увидел. Починить
+    это внутри одного апдейта нельзя (отправка — это и есть то, что сломалось), поэтому
+    как минимум делаем расхождение измеримым.
+    """
+    try:
+        await ctx.track("reply_send_failed", {"update_type": ctx.update_type, "count": failed})
+        await ctx.session.commit()
+    except Exception:
+        log.exception("failed to track send failure for %s", ctx.update_type)
+
+
 async def process_update(update: dict, max_client: MaxClient) -> None:
     """Обработка апдейта: короткие транзакции, сеть — только вне них.
 
@@ -93,6 +108,12 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
     Буфер выбран вместо «коммит прямо перед отправкой» потому, что не требует от обработчиков
     ничего знать о транзакции: `ctx.reply` можно вызывать в любом месте обработчика, в том
     числе несколько раз и до записи в БД, и порядок сообщений сохранится.
+
+    Что это НЕ решает — и о чём нужно помнить автору обработчика: сам обработчик выполняется
+    внутри транзакции. Любой другой сетевой вызов из него (например `core/adapters`) снова
+    удержит блокировку записи, если перед ним уже была запись в БД: `ctx.track`/`ctx.set_state`
+    попадают на диск при первом же SELECT (autoflush). Правило: внешние данные забираем
+    в начале обработчика, до первой записи.
     """
     if get_settings().capture_updates:
         _capture(update)
@@ -100,19 +121,21 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
     async with SessionLocal() as session:
         ctx = Ctx.from_update(update, session, max_client)
         try:
+            # Спиннер гасим самым первым: до проверки на повтор и до любой записи в БД.
+            # Повторную доставку MAX присылает как раз тогда, когда первый ответ не дошёл,
+            # то есть когда кнопка и висит, — выходить по ключу идемпотентности раньше,
+            # чем погасили индикатор, нельзя. Транзакции здесь ещё нет.
+            await _answer_callback(ctx)
+
             if not await _mark_processed(session, update):
                 return
-
-            # Транзакции здесь нет: ключ уже закоммичен, обработчик ещё не начал писать —
-            # значит сетевой вызов не держит блокировку записи.
-            await _answer_callback(ctx)
 
             handler = await router.resolve(ctx)
             if handler:
                 await handler(ctx)
             await session.commit()
         except Exception:
-            log.exception("handler failed for %s", ctx.update_type)
+            log.exception("update processing failed for %s", ctx.update_type)
             ctx.drop_outbox()  # записей в БД нет — рассказывать о них пользователю нечего
             try:
                 await session.rollback()
@@ -120,4 +143,7 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
                 log.exception("rollback failed for %s", ctx.update_type)
             await ctx.reply(t("errors.internal"))
 
-        await ctx.send_outbox()  # транзакция закрыта: и после commit, и после rollback
+        # Транзакция закрыта: и после commit, и после rollback
+        failed = await ctx.send_outbox()
+        if failed:
+            await _track_send_failure(ctx, failed)

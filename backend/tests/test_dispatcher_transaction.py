@@ -21,9 +21,9 @@ from app.core.texts import t
 from tests.conftest import FakeMax, load_update
 
 SEND_DELAY_SECONDS = 0.3
-# на последовательной обработке двух апдейтов ушло бы ~2 задержки; порог с запасом на медленную
-# машину, но заведомо ниже суммы
-SERIAL_LIMIT_SECONDS = SEND_DELAY_SECONDS * 1.6
+# Порог считаем от времени одного апдейта, замеренного здесь же: абсолютные секунды на
+# загруженной CI-машине мигают, а отношение «два параллельно ≈ один» устойчиво.
+PARALLEL_OVERHEAD = 1.6
 
 
 def _update_for(user_id: int) -> dict:
@@ -72,15 +72,20 @@ async def test_commit_happens_before_send():
 async def test_parallel_updates_do_not_wait_for_each_other():
     """Два апдейта с медленной отправкой обрабатываются параллельно, а не по очереди."""
     max_client = SlowMax()
-    updates = [_update_for(2000), _update_for(2001)]
 
     started = time.perf_counter()
-    await asyncio.gather(*(process_update(u, max_client) for u in updates))
+    await process_update(_update_for(2000), max_client)
+    baseline = time.perf_counter() - started
+
+    started = time.perf_counter()
+    await asyncio.gather(
+        *(process_update(u, max_client) for u in (_update_for(2001), _update_for(2002)))
+    )
     elapsed = time.perf_counter() - started
 
-    assert [m["text"] for m in max_client.sent] == [t("start.greeting")] * 2
-    assert elapsed < SERIAL_LIMIT_SECONDS, (
-        f"апдейты сериализовались: {elapsed:.2f} с при задержке отправки {SEND_DELAY_SECONDS} с"
+    assert [m["text"] for m in max_client.sent] == [t("start.greeting")] * 3
+    assert elapsed < baseline * PARALLEL_OVERHEAD, (
+        f"апдейты сериализовались: {elapsed:.2f} с на двоих при {baseline:.2f} с на одного"
     )
 
 
@@ -108,3 +113,22 @@ async def test_failed_handler_keeps_key_and_drops_queued_replies(fake_max, monke
     # повторная доставка того же апдейта не обрабатывается заново (at-most-once)
     await process_update(update, fake_max)
     assert len(fake_max.sent) == 1
+
+
+class BrokenMax(FakeMax):
+    """MAX API, который не принимает сообщения."""
+
+    async def send_message(self, text, **kwargs):
+        raise RuntimeError("MAX недоступен")
+
+
+async def test_send_failure_is_visible_in_analytics():
+    """Отправка после коммита не откатывает работу обработчика — провал должен быть измерим."""
+    max_client = BrokenMax()
+
+    await process_update(load_update("bot_started"), max_client)
+
+    async with SessionLocal() as session:
+        names = (await session.execute(select(Event.name).order_by(Event.id))).scalars().all()
+    # событие обработчика осталось (транзакция уже закоммичена), а провал отправки записан
+    assert names == ["bot_started", "reply_send_failed"]

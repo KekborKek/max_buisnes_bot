@@ -13,11 +13,7 @@ from app.bot.router import router
 
 
 def _props(ctx: Ctx) -> dict:
-    return {
-        "chat_id": ctx.chat_id,
-        "chat_type": ctx.chat_type,
-        "is_channel": ctx.update.get("is_channel"),
-    }
+    return {"chat_id": ctx.chat_id, "is_channel": ctx.is_channel}
 
 
 @router.on("bot_stopped")
