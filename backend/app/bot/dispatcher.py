@@ -63,6 +63,23 @@ async def _mark_processed(session: AsyncSession, update: dict) -> bool:
     return True
 
 
+async def _answer_callback(ctx: Ctx) -> None:
+    """Гасит спиннер на кнопке. Место здесь, а не в обработчиках.
+
+    Пока на нажатие не ответили, MAX крутит индикатор на кнопке. Когда `answer_callback`
+    вызывал каждый обработчик сам, забытый вызов в новом обработчике оставлял кнопку
+    «висеть» — отвечаем централизованно, до вызова обработчика.
+
+    Ошибка ответа не прерывает обработку: обработать апдейт важнее, чем погасить индикатор.
+    """
+    if ctx.callback_id is None:
+        return
+    try:
+        await ctx.max.answer_callback(ctx.callback_id)
+    except Exception:
+        log.exception("answer_callback failed for %s", ctx.callback_id)
+
+
 async def process_update(update: dict, max_client: MaxClient) -> None:
     """Обработка апдейта: короткие транзакции, сеть — только вне них.
 
@@ -85,6 +102,10 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
         try:
             if not await _mark_processed(session, update):
                 return
+
+            # Транзакции здесь нет: ключ уже закоммичен, обработчик ещё не начал писать —
+            # значит сетевой вызов не держит блокировку записи.
+            await _answer_callback(ctx)
 
             handler = await router.resolve(ctx)
             if handler:
