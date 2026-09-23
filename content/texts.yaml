@@ -52,6 +52,7 @@ onboarding:
 
 disclaimer:
   profile: "Профиль заполняете вы. Мы не запрашиваем ИНН и не сверяем данные с ФНС."
+  mark: "Вы отметили обязательство выполненным. Продукт не проверяет факт оплаты или отправки отчётности."
 
 # Экран 3 «Ответ про НДС» (docs/screens/03-nds-answer.md). Порог и годы — из content/nds.yaml.
 nds:
@@ -135,3 +136,31 @@ reminder:
   # Названия в {titles}: «А и Б», «А, Б и В».
   titles_sep: ", "
   titles_last_sep: " и "
+
+# Экран 7 «Как сделать» (docs/screens/07-howto.md). Длиннее 4 строк — исключение D4.
+# Последняя строка body — disclaimer.not_advice, встроенный в текст.
+howto:
+  body: |-
+    **{title}**, до {date}.
+
+    1. {step1}
+    2. {step2}
+    3. {step3}
+
+    Основание: {norm}. Сверено {last_checked}. Суммы не считаем, это не налоговая консультация.
+  no_steps: "По этому событию у меня пока нет порядка действий. Срок — {date}, основание — {norm}."
+  btn_done: "Отметить выполненным"
+  btn_wrong: "Неверный срок"
+  wrong_thanks: "Спасибо, проверим и исправим. Вашу отметку записал."
+  # Кнопка-ссылка на source_url в состоянии no_steps: подписи в спеке нет, текст даёт UX.
+  btn_source: "TODO"
+
+# Экран 8 «Отметить выполненным» (docs/screens/08-done.md). {disclaimer} — disclaimer.mark.
+done:
+  body: "Отметил: {title} — выполнено.\n{disclaimer}\nСледующее — {next_date}: {next_title}."
+  last_in_year: "Отметил: {title} — выполнено.\n{disclaimer}\nЭто было последнее обязательное событие в {year} году. Следующее — {next_date}: {next_title}."
+  nothing_next: "Отметил: {title} — выполнено.\n{disclaimer}\nБольше сроков в календаре нет."
+  already: "Это событие уже отмечено {done_date}."
+  undone: "Отменил отметку. Напомню, как планировал."
+  btn_open: "Открыть календарь"
+  btn_undo: "Отменить отметку"

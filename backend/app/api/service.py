@@ -5,7 +5,6 @@
 """
 
 import logging
-import re
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -14,6 +13,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import CalendarItem, HowtoLinkOut, ItemCard, ItemTypeParam
+from app.calendar.howto_text import expand_howto_steps
 from app.calendar.reminders import as_utc
 from app.calendar.status import item_status, today_in
 from app.calendar.types import Obligation, Reference
@@ -22,54 +22,6 @@ from app.core.models import DEFAULT_TIMEZONE, Profile, Task, User, UserObligatio
 log = logging.getLogger(__name__)
 
 NOT_FOUND = "item not found"
-
-# Родительный падеж месяцев для «28 октября» (product.md, «Форма»).
-# TODO(D28): свой форматтер делает T6 в боте — унифицировать после слияния.
-_MONTHS_GENITIVE = (
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
-)
-_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
-
-
-def _format_day(day: date, today: date) -> str:
-    """«28 октября»; год — только если он не текущий: «26 апреля 2027»."""
-    text = f"{day.day} {_MONTHS_GENITIVE[day.month - 1]}"
-    return text if day.year == today.year else f"{text} {day.year}"
-
-
-def expand_howto_steps(ob: Obligation, due_date: date, today: date) -> list[str]:
-    """Раскрывает `{due_date}` в шагах (D28). Прочие `{...}` остаются как есть + warning.
-
-    `{notice_date}` правила не имеет, поэтому тоже остаётся и попадает в лог.
-    """
-    unknown: set[str] = set()
-
-    def repl(match: re.Match[str]) -> str:
-        if match.group(1) == "due_date":
-            return _format_day(due_date, today)
-        unknown.add(match.group(0))
-        return match.group(0)
-
-    steps = [_PLACEHOLDER.sub(repl, step) for step in ob.howto_steps]
-    if unknown:
-        log.warning(
-            "Обязательство %s: в howto_steps нераскрытые подстановки %s",
-            ob.id,
-            ", ".join(sorted(unknown)),
-        )
-    return steps
-
 
 # --- Пользователь и пояс ---------------------------------------------------------------------
 
