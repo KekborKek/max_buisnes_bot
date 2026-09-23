@@ -3,6 +3,328 @@ info:
   title: MAX Business Bot API
   version: 0.1.0
 paths:
+  /api/calendar:
+    get:
+      tags:
+      - miniapp
+      summary: События за период и все просроченные без отметки
+      operationId: get_calendar_api_calendar_get
+      parameters:
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD, включительно
+          title: From
+        description: YYYY-MM-DD, включительно
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          description: YYYY-MM-DD, включительно
+          title: To
+        description: YYYY-MM-DD, включительно
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CalendarItem'
+                title: Response Get Calendar Api Calendar Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/items/{item_type}/{item_id}:
+    get:
+      tags:
+      - miniapp
+      summary: Карточка события
+      operationId: get_item_api_items__item_type___item_id__get
+      parameters:
+      - name: item_type
+        in: path
+        required: true
+        schema:
+          enum:
+          - obligation
+          - task
+          type: string
+          title: Item Type
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCard'
+        '404':
+          description: Нет такого события у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/items/{item_type}/{item_id}/done:
+    post:
+      tags:
+      - miniapp
+      summary: Отметить выполненным (идемпотентно)
+      operationId: mark_done_api_items__item_type___item_id__done_post
+      parameters:
+      - name: item_type
+        in: path
+        required: true
+        schema:
+          enum:
+          - obligation
+          - task
+          type: string
+          title: Item Type
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCard'
+        '404':
+          description: Нет такого события у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - miniapp
+      summary: Снять отметку (идемпотентно)
+      operationId: unmark_done_api_items__item_type___item_id__done_delete
+      parameters:
+      - name: item_type
+        in: path
+        required: true
+        schema:
+          enum:
+          - obligation
+          - task
+          type: string
+          title: Item Type
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCard'
+        '404':
+          description: Нет такого события у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/obligations/{item_id}/report:
+    post:
+      tags:
+      - miniapp
+      summary: «Неверный срок» по обязательству
+      operationId: report_wrong_date_api_obligations__item_id__report_post
+      parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Item Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Нет такого обязательства у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/tasks:
+    post:
+      tags:
+      - miniapp
+      summary: Создать свою задачу
+      operationId: create_task_api_tasks_post
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCard'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/tasks/{task_id}:
+    patch:
+      tags:
+      - miniapp
+      summary: Изменить задачу
+      operationId: update_task_api_tasks__task_id__patch
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Task Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCard'
+        '404':
+          description: Нет такой задачи у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - miniapp
+      summary: Удалить задачу (мягко; повторно — тоже 204)
+      operationId: delete_task_api_tasks__task_id__delete
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Task Id
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '204':
+          description: Successful Response
+        '404':
+          description: Нет такой задачи у пользователя
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/me:
     get:
       tags:
@@ -92,6 +414,65 @@ paths:
                 title: Response Health Health Get
 components:
   schemas:
+    CalendarItem:
+      properties:
+        type:
+          type: string
+          enum:
+          - obligation
+          - task
+          title: Type
+        id:
+          type: integer
+          title: Id
+        title:
+          type: string
+          title: Title
+        category:
+          type: string
+          enum:
+          - taxes
+          - contributions
+          - reports
+          - custom
+          title: Category
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+          description: После переноса на рабочий день
+        original_date:
+          type: string
+          format: date
+          title: Original Date
+          description: По правилу, до переноса; у задачи = due_date
+        status:
+          type: string
+          enum:
+          - done
+          - overdue
+          - today
+          - upcoming
+          title: Status
+          description: Считает бэкенд в часовом поясе пользователя
+        done_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Done At
+      type: object
+      required:
+      - type
+      - id
+      - title
+      - category
+      - due_date
+      - original_date
+      - status
+      title: CalendarItem
+      description: Событие календаря — обязательство или своя задача. Не путать с
+        `Event` (аналитика).
     HTTPValidationError:
       properties:
         detail:
@@ -101,6 +482,120 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    HowtoLinkOut:
+      properties:
+        label:
+          type: string
+          title: Label
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - label
+      - url
+      title: HowtoLinkOut
+    ItemCard:
+      properties:
+        type:
+          type: string
+          enum:
+          - obligation
+          - task
+          title: Type
+        id:
+          type: integer
+          title: Id
+        title:
+          type: string
+          title: Title
+        category:
+          type: string
+          enum:
+          - taxes
+          - contributions
+          - reports
+          - custom
+          title: Category
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+          description: После переноса на рабочий день
+        original_date:
+          type: string
+          format: date
+          title: Original Date
+          description: По правилу, до переноса; у задачи = due_date
+        status:
+          type: string
+          enum:
+          - done
+          - overdue
+          - today
+          - upcoming
+          title: Status
+          description: Считает бэкенд в часовом поясе пользователя
+        done_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Done At
+        norm:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Norm
+        source_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Url
+        howto_steps:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Howto Steps
+          description: Ровно три шага; {due_date} раскрыт в «28 октября»
+        howto_link:
+          anyOf:
+          - $ref: '#/components/schemas/HowtoLinkOut'
+          - type: 'null'
+        penalty_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Penalty Text
+        last_checked_at:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Last Checked At
+        remind_offset_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Offset Days
+        remind_hour:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Hour
+      type: object
+      required:
+      - type
+      - id
+      - title
+      - category
+      - due_date
+      - original_date
+      - status
+      title: ItemCard
+      description: Карточка (экран 16). Поля не своего типа — null.
     MeResponse:
       properties:
         user_id:
@@ -120,10 +615,128 @@ components:
           - type: string
           - type: 'null'
           title: Start Param
+        has_profile:
+          type: boolean
+          title: Has Profile
+          default: false
+        profile:
+          anyOf:
+          - $ref: '#/components/schemas/ProfileOut'
+          - type: 'null'
+        draft:
+          anyOf:
+          - $ref: '#/components/schemas/TaskDraft'
+          - type: 'null'
       type: object
       required:
       - user_id
       title: MeResponse
+    ProfileOut:
+      properties:
+        income_band:
+          type: string
+          title: Income Band
+        regime:
+          type: string
+          title: Regime
+        has_employees:
+          type: boolean
+          title: Has Employees
+        timezone:
+          type: string
+          title: Timezone
+        nds_payer:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Nds Payer
+        calendar_built_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Calendar Built At
+      type: object
+      required:
+      - income_band
+      - regime
+      - has_employees
+      - timezone
+      - nds_payer
+      - calendar_built_at
+      title: ProfileOut
+      description: Ответы онбординга без служебных полей. nds_payer = null — определить
+        нельзя (D25).
+    TaskDraft:
+      properties:
+        title:
+          type: string
+          title: Title
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+      type: object
+      required:
+      - title
+      - due_date
+      title: TaskDraft
+      description: Черновик задачи из бота (DialogState.data["task_draft"], экран
+        9 → 17).
+    TaskInput:
+      properties:
+        title:
+          type: string
+          title: Title
+          description: 1–60 символов после обрезки пробелов
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+          description: Не раньше сегодняшнего дня пользователя
+        remind_offset_days:
+          type: integer
+          title: Remind Offset Days
+          description: 0 · 1 · 3 · 7
+          default: 1
+        remind_hour:
+          type: integer
+          title: Remind Hour
+          description: 9 · 10 · 18
+          default: 10
+      type: object
+      required:
+      - title
+      - due_date
+      title: TaskInput
+      description: Создание своей задачи (экран 17).
+    TaskPatch:
+      properties:
+        title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Title
+        due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Due Date
+          description: Новая дата не раньше сегодняшней; прежнюю можно оставить
+        remind_offset_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Offset Days
+        remind_hour:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Hour
+      type: object
+      title: TaskPatch
+      description: 'Изменение задачи: передаются только меняемые поля.'
     TrackRequest:
       properties:
         name:

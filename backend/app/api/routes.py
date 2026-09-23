@@ -3,17 +3,27 @@
 Контракт — openapi.yaml в корне (генерируется scripts/export_openapi.py).
 """
 
+import logging
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_launch
+from app.api import items, tasks
+from app.api.deps import current_launch, launch_user_id
+from app.api.schemas import MeResponse, ProfileOut, TaskDraft
+from app.calendar.reminders import as_utc
 from app.core.db import get_session
 from app.core.events import track
+from app.core.models import DialogState, Profile
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["miniapp"])
+router.include_router(items.router)
+router.include_router(tasks.router)
 Launch = Annotated[dict, Depends(current_launch)]
 Session = Annotated[AsyncSession, Depends(get_session)]
 
@@ -32,11 +42,44 @@ def launch_start_param(launch: dict) -> str | None:
     return str(value) if value else None
 
 
-class MeResponse(BaseModel):
-    user_id: int
-    first_name: str | None = None
-    is_dev: bool = False
-    start_param: str | None = None
+def profile_out(profile: Profile | None) -> ProfileOut | None:
+    """Профиль считается заполненным, когда есть все ответы онбординга (D24)."""
+    if (
+        profile is None
+        or profile.income_band is None
+        or profile.regime is None
+        or profile.has_employees is None
+    ):
+        return None
+    return ProfileOut(
+        income_band=profile.income_band,
+        regime=profile.regime,
+        has_employees=profile.has_employees,
+        timezone=profile.timezone,
+        nds_payer=profile.nds_payer,
+        calendar_built_at=(
+            as_utc(profile.calendar_built_at) if profile.calendar_built_at else None
+        ),
+    )
+
+
+def task_draft(state: DialogState | None) -> TaskDraft | None:
+    """Черновик из бота: data["task_draft"] = {"title": str, "due_date": "YYYY-MM-DD"} (T8b).
+
+    Битый или неполный черновик — null: форма откроется пустой, а не с ошибкой.
+    """
+    raw = (state.data or {}).get("task_draft") if state is not None else None
+    if not isinstance(raw, dict):
+        return None
+    title, due = raw.get("title"), raw.get("due_date")
+    if not isinstance(title, str) or not isinstance(due, str):
+        return None
+    try:
+        due_date = date.fromisoformat(due)
+    except ValueError:
+        log.warning("task_draft с неразборчивой датой %r", due)
+        return None
+    return TaskDraft(title=title.strip(), due_date=due_date)
 
 
 class TrackRequest(BaseModel):
@@ -47,6 +90,7 @@ class TrackRequest(BaseModel):
 @router.get("/me", response_model=MeResponse, summary="Текущий пользователь мини-приложения")
 async def me(
     launch: Launch,
+    session: Session,
     start_param: Annotated[
         str | None,
         Query(
@@ -62,11 +106,19 @@ async def me(
     effective = launch_start_param(launch)
     if launch.get("is_dev") and start_param:
         effective = start_param
+    user_id = launch_user_id(launch)
+    profile = draft = None
+    if user_id is not None:
+        profile = profile_out(await session.get(Profile, user_id))
+        draft = task_draft(await session.get(DialogState, user_id))
     return MeResponse(
-        user_id=int(user.get("user_id") or user.get("id") or 0),
+        user_id=user_id or 0,
         first_name=user.get("first_name") or user.get("name"),
         is_dev=bool(launch.get("is_dev")),
         start_param=effective,
+        has_profile=profile is not None,
+        profile=profile,
+        draft=draft,
     )
 
 

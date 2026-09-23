@@ -1,7 +1,7 @@
 // HTTP-клиент API мини-приложения. Контракт — openapi.yaml в корне репозитория.
 // Все запросы — с таймаутом; ошибки разделены по видам, чтобы экран показал нужный текст.
 import { getInitData, getWebApp } from "../bridge";
-import type { CalendarItem, Me } from "../types";
+import type { CalendarItem, ItemCard, Me, TaskCard } from "../types";
 import type { DataSource } from "./source";
 
 /** Вид ошибки: 401 ≠ сеть ≠ таймаут ≠ 5xx. */
@@ -20,6 +20,11 @@ export const REQUEST_TIMEOUT_MS = 10_000;
 
 export function errorKind(e: unknown): ErrorKind {
   return e instanceof ApiError ? e.kind : "network";
+}
+
+/** 404: события нет (удалили в другом окне, старая ссылка из бота) — не ошибка сети. */
+export function isNotFound(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404;
 }
 
 export async function request<T>(
@@ -70,6 +75,15 @@ export const httpSource: DataSource = {
       !getWebApp() && startParam ? `/api/me?${query({ start_param: startParam })}` : "/api/me",
     ),
   calendar: (from, to) => request<CalendarItem[]>(`/api/calendar?${query({ from, to })}`),
+  item: (type, id) => request<ItemCard>(`/api/items/${type}/${id}`),
+  markDone: (type, id) => request<ItemCard>(`/api/items/${type}/${id}/done`, { method: "POST" }),
+  undoDone: (type, id) => request<ItemCard>(`/api/items/${type}/${id}/done`, { method: "DELETE" }),
+  reportWrongDate: (id) => request<void>(`/api/obligations/${id}/report`, { method: "POST" }),
+  createTask: (input) =>
+    request<TaskCard>("/api/tasks", { method: "POST", body: JSON.stringify(input) }),
+  updateTask: (id, input) =>
+    request<TaskCard>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
   track: (name, props = {}) =>
     request<void>("/api/events", { method: "POST", body: JSON.stringify({ name, props }) }),
 };

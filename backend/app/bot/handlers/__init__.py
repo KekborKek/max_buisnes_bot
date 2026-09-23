@@ -5,6 +5,7 @@ from app.bot.handlers import (  # noqa: F401
     fallback,
     nds_answer,
     onboarding,
+    reminders,
     service,
     start,
 )
