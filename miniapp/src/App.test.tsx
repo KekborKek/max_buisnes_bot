@@ -98,17 +98,19 @@ test("бэкенд недоступен: плашка, «Повторить» з
   expect(source.calendar).toHaveBeenCalledTimes(2);
 });
 
-test("401 посреди работы и 5xx показывают свои тексты, а не common.error", async () => {
+test("5xx — общий common.error с «Повторить»; 401 посреди работы — свой текст", async () => {
   const { source, lastMe, lastCalendar } = fakeSource();
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
-  await act(async () => lastCalendar().reject(new ApiError("server", 503)));
-  expect(screen.getByRole("alert")).toHaveTextContent(texts.common.serviceError);
-  expect(screen.getByRole("alert")).not.toHaveTextContent(texts.common.error);
+  await act(async () => lastCalendar().reject(new ApiError("server", 502)));
+  expect(screen.getByRole("alert")).toHaveTextContent(texts.common.error);
+  expect(document.body.textContent).not.toMatch(/TODO/);
+  expect(source.track).toHaveBeenCalledWith("error", { where: "calendar", kind: "server" });
 
   await userEvent.click(screen.getByRole("button", { name: texts.common.retry }));
   await act(async () => lastCalendar().reject(new ApiError("unauthorized", 401)));
   expect(screen.getByRole("alert")).toHaveTextContent(texts.common.reopen);
+  expect(screen.getByRole("alert")).not.toHaveTextContent(texts.common.error);
   // Повтор при 401 не поможет — кнопки нет.
   expect(screen.queryByRole("button", { name: texts.common.retry })).not.toBeInTheDocument();
 });

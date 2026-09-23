@@ -5,10 +5,9 @@ import { Button, Typography } from "@maxhub/max-ui";
 import type { ErrorKind } from "../data/http";
 import { texts } from "../texts";
 
+/** В спеке одна формулировка для любой ошибки (сеть, таймаут, 5xx); отдельно — только 401. */
 export function errorText(kind: ErrorKind): string {
-  if (kind === "unauthorized") return texts.common.reopen;
-  if (kind === "server") return texts.common.serviceError;
-  return texts.common.error;
+  return kind === "unauthorized" ? texts.common.reopen : texts.common.error;
 }
 
 export function ErrorBanner({
