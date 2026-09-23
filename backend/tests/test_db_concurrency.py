@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import func, select, text
 
 from app.bot.dispatcher import process_update
+from app.bot.handlers.common import nds_limit_text
 from app.core.db import SessionLocal, create_engine
 from app.core.models import Event
 from app.core.texts import t
@@ -94,7 +95,7 @@ async def test_reader_does_not_block_writer(tmp_path):
     check.close()
 
 
-async def test_parallel_process_update_does_not_lock_database(fake_max):
+async def test_parallel_process_update_does_not_lock_database(fake_max, fixture_reference):
     updates = [_update_for(1000 + i) for i in range(PARALLEL_UPDATES)]
 
     results = await asyncio.gather(
@@ -107,7 +108,8 @@ async def test_parallel_process_update_does_not_lock_database(fake_max):
     # process_update глушит исключения и отвечает текстом ошибки — проверяем, что
     # все 25 пользователей получили приветствие, а не "что-то пошло не так"
     assert len(fake_max.sent) == PARALLEL_UPDATES
-    assert [m["text"] for m in fake_max.sent] == [t("start.greeting")] * PARALLEL_UPDATES
+    greeting = t("start.greeting", nds_limit=nds_limit_text(None))
+    assert [m["text"] for m in fake_max.sent] == [greeting] * PARALLEL_UPDATES
 
     async with SessionLocal() as session:
         events = await session.scalar(

@@ -54,6 +54,27 @@ def fake_max() -> FakeMax:
     return FakeMax()
 
 
+@pytest.fixture
+def fixture_reference(monkeypatch):
+    """Справочники из backend/tests/fixtures вместо файлов аналитика (их в content/ может не быть).
+
+    Подменяет `loader.get_reference` — бот и сборка зовут его через модуль. Кеш настоящей
+    функции сбрасываем, чтобы она не отдала результат, закешированный другим тестом.
+    """
+    from app.calendar import loader
+    from app.calendar.types import Reference
+
+    folder = Path(__file__).parent / "fixtures"
+    reference = Reference(
+        catalog=loader.load_catalog(folder / "obligations.yaml"),
+        workdays=loader.load_workdays(folder / "workdays.yaml"),
+        nds=loader.load_nds(folder / "nds.yaml"),
+    )
+    loader.get_reference.cache_clear()
+    monkeypatch.setattr(loader, "get_reference", lambda: reference)
+    return reference
+
+
 @pytest.fixture(autouse=True)
 async def fresh_db():
     from app.core.db import Base, engine, init_db
