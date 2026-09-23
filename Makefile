@@ -16,7 +16,7 @@ dev-bot:
 	cd backend && set -a && . ../.env && set +a && CONTENT_DIR=../content SEED_DIR=../seed .venv/bin/python -m app.polling
 
 dev-miniapp:
-	cd miniapp && npm run dev
+	cd miniapp && VITE_BOT_URL="$$(sed -n 's/^VITE_BOT_URL=//p' ../.env 2>/dev/null)" npm run dev
 
 test:
 	cd backend && .venv/bin/pytest -q
