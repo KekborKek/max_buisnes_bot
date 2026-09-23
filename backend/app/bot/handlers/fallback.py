@@ -1,5 +1,10 @@
+"""Непонятое действие. Экран 10 делает T8b; до него — `errors.unknown` + кнопки экрана 1.
+
+Сюда же пока попадает «О сервисе» (`about:open`) — обработчик экрана 11 делает T9.
+"""
+
 from app.bot.context import Ctx
-from app.bot.handlers.start import main_menu
+from app.bot.handlers.start import start_keyboard
 from app.bot.router import router
 from app.core.texts import t
 
@@ -8,4 +13,4 @@ from app.core.texts import t
 async def on_unknown(ctx: Ctx) -> None:
     if ctx.update_type not in ("message_created", "message_callback"):
         return  # служебные события со своими обработчиками — в handlers/service.py
-    await ctx.reply(t("errors.unknown"), attachments=[main_menu()])
+    await ctx.reply(t("errors.unknown"), attachments=[start_keyboard()])

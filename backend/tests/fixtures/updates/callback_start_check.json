@@ -3,11 +3,11 @@
   "timestamp": 1758000001000,
   "callback": {
     "callback_id": "cb-123",
-    "payload": "menu:ask_name",
+    "payload": "start:check",
     "user": {"user_id": 42, "first_name": "Борис"}
   },
   "message": {
     "recipient": {"chat_id": 1001, "chat_type": "dialog"},
-    "body": {"mid": "mid-1", "text": "Меню"}
+    "body": {"mid": "mid-1", "text": "Здравствуйте"}
   }
 }

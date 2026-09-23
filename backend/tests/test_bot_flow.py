@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import func, select
 
 from app.bot.dispatcher import process_update
@@ -6,6 +7,9 @@ from app.core.db import SessionLocal
 from app.core.models import Event
 from app.core.texts import t
 from tests.conftest import load_update
+
+# приветствие берёт порог НДС из справочника — подставляем фикстуры
+pytestmark = pytest.mark.usefixtures("fixture_reference")
 
 
 async def test_bot_started_sends_greeting_with_menu(fake_max):
@@ -21,15 +25,17 @@ async def test_duplicate_update_processed_once(fake_max):
     assert len(fake_max.sent) == 1
 
 
-async def test_fsm_ask_name_scenario(fake_max):
-    await process_update(load_update("callback_ask_name"), fake_max)
-    await process_update(load_update("message_created"), fake_max)
-    assert "Борис" in fake_max.sent[-1]["text"]
+async def test_start_check_scenario_asks_first_question(fake_max):
+    """Сквозная проверка старого шаблона заменена: «Проверить НДС» → вопрос 1 онбординга.
+
+    Подробные сценарии экранов 1–2 — в test_onboarding.py.
+    """
+    await process_update(load_update("callback_start_check"), fake_max)
+
+    assert fake_max.sent[-1]["text"].startswith("Вопрос 1 из 4.")
     async with SessionLocal() as s:
-        n = await s.scalar(
-            select(func.count()).select_from(Event).where(Event.name == "scenario_completed")
-        )
-    assert n == 1
+        n = await s.scalar(select(func.count()).select_from(Event))
+    assert n == 0  # нажатие «Проверить НДС» — не ответ, событий onboarding_answer ещё нет
 
 
 async def test_group_message_is_answered_in_chat_not_in_direct(fake_max):
@@ -51,8 +57,8 @@ async def test_dialog_message_is_answered_in_direct(fake_max):
 
 
 async def test_callback_is_answered_without_handler_doing_it(fake_max):
-    """Кнопка закрывается диспетчером: обработчик menu:ask_name сам answer_callback не зовёт."""
-    await process_update(load_update("callback_ask_name"), fake_max)
+    """Кнопка закрывается диспетчером: обработчик start:check сам answer_callback не зовёт."""
+    await process_update(load_update("callback_start_check"), fake_max)
 
     assert fake_max.answered == ["cb-123"]
 
@@ -68,7 +74,7 @@ async def test_callback_is_answered_even_if_handler_fails(fake_max, monkeypatch)
 
     monkeypatch.setattr(router, "resolve", resolve)
 
-    await process_update(load_update("callback_ask_name"), fake_max)
+    await process_update(load_update("callback_start_check"), fake_max)
 
     assert fake_max.answered == ["cb-123"]
     assert [m["text"] for m in fake_max.sent] == [t("errors.internal")]
@@ -106,7 +112,7 @@ async def test_callback_is_answered_again_on_redelivery(fake_max):
 
     Обработчик при этом второй раз не запускается: идемпотентность не нарушена.
     """
-    update = load_update("callback_ask_name")
+    update = load_update("callback_start_check")
     await process_update(update, fake_max)
     await process_update(update, fake_max)
 

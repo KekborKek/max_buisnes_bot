@@ -1,49 +1,90 @@
-"""Пример сценария: приветствие → меню → вопрос с ответом текстом (FSM).
-Заменяется реальным сценарием после выбора идеи."""
+"""Экран 1 «Первое сообщение» (docs/screens/01-start.md): /start и переход по ссылке.
+
+Payload кнопок: start:check — «Проверить НДС», start:rebuild — «Собрать заново»,
+start:retry — «Повторить» после ошибки справочника, about:open — «О сервисе»
+(обработчик экрана 11 делает T9; до него кнопка уходит в fallback).
+"""
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
+from app.bot.handlers import onboarding
+from app.bot.handlers.common import ensure_profile, nds_limit_text, reply_reference_error
 from app.bot.router import router
+from app.calendar.types import ReferenceFileError
+from app.core.config import get_settings
 from app.core.texts import t
 
+CHECK = "start:check"
+REBUILD = "start:rebuild"
+RETRY = "start:retry"
+ABOUT = "about:open"
 
-def main_menu() -> dict:
+
+def start_keyboard() -> dict:
+    """Один ряд: «Проверить НДС», «О сервисе»."""
     return kb.inline_keyboard(
-        [kb.callback(t("menu.ask_name"), "menu:ask_name")],
-        [kb.callback(t("menu.about"), "menu:about")],
+        [kb.callback(t("start.btn_check"), CHECK), kb.callback(t("start.btn_about"), ABOUT)]
     )
+
+
+def built_keyboard() -> dict:
+    """«Открыть календарь» (open_app, D27) и «Собрать заново».
+
+    Без MAX_BOT_USERNAME кнопку мини-аппа не показываем (keyboards.open_app).
+    """
+    row = []
+    if get_settings().max_bot_username:
+        row.append(kb.open_app(t("start.btn_open")))
+    row.append(kb.callback(t("start.btn_rebuild"), REBUILD))
+    return kb.inline_keyboard(row)
+
+
+async def show_start(ctx: Ctx, *, start_param: str | None, track: bool = True) -> None:
+    """Приветствие или «календарь уже собран».
+
+    Шаг онбординга сбрасывается (текст после приветствия — не ответ на вопрос), а ответы
+    и данные состояния остаются до следующего нажатия «Проверить НДС».
+    """
+    if ctx.user_id is None:
+        return
+    if track:
+        await ctx.track("bot_started", {"start_param": start_param})
+    profile = await ensure_profile(ctx)
+    _, data = await ctx.get_state()
+    await ctx.set_state(None, data)
+
+    if profile.calendar_built_at is not None:
+        await ctx.reply(t("start.already_built"), attachments=[built_keyboard()])
+        return
+    try:
+        nds_limit = nds_limit_text(profile)
+    except ReferenceFileError as exc:
+        await reply_reference_error(ctx, exc, where="start", retry_payload=RETRY)
+        return
+    await ctx.reply(t("start.greeting", nds_limit=nds_limit), attachments=[start_keyboard()])
 
 
 @router.on("bot_started")
 async def on_bot_started(ctx: Ctx) -> None:
-    await ctx.track("bot_started", {"payload": ctx.payload})
-    await ctx.set_state(None, {})
-    await ctx.reply(t("start.greeting"), attachments=[main_menu()])
+    await show_start(ctx, start_param=ctx.payload)
 
 
 @router.on_text("/start")
 async def on_start_command(ctx: Ctx) -> None:
-    await on_bot_started(ctx)
+    await show_start(ctx, start_param=None)
 
 
-@router.on_callback("menu:about")
-async def on_about(ctx: Ctx) -> None:
-    await ctx.reply(t("start.about"), attachments=[main_menu()])
+@router.on_callback(RETRY)
+async def on_start_retry(ctx: Ctx) -> None:
+    """«Повторить» — не новый /start: bot_started второй раз не пишем."""
+    await show_start(ctx, start_param=None, track=False)
 
 
-@router.on_callback("menu:ask_name")
-async def on_ask_name(ctx: Ctx) -> None:
-    await ctx.set_state("ask_name")
-    await ctx.track("scenario_step", {"step": "ask_name"})
-    await ctx.reply(t("start.ask_name"))
+@router.on_callback(CHECK)
+async def on_check(ctx: Ctx) -> None:
+    await onboarding.begin(ctx)
 
 
-@router.on_state("ask_name")
-async def on_name_received(ctx: Ctx) -> None:
-    name = (ctx.text or "").strip()
-    if not name:
-        await ctx.reply(t("errors.empty_text"))
-        return
-    await ctx.set_state(None, {"name": name})
-    await ctx.track("scenario_completed", {"scenario": "ask_name"})
-    await ctx.reply(t("start.nice_to_meet", name=name), attachments=[main_menu()])
+@router.on_callback(REBUILD)
+async def on_rebuild(ctx: Ctx) -> None:
+    await onboarding.begin(ctx)

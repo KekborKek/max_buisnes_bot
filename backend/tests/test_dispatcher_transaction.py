@@ -11,14 +11,19 @@ SQLite допускает одного писателя в любом режим
 import asyncio
 import time
 
+import pytest
 from sqlalchemy import func, select
 
 from app.bot.dispatcher import process_update
+from app.bot.handlers.common import nds_limit_text
 from app.bot.router import router
 from app.core.db import SessionLocal
 from app.core.models import DialogState, Event, ProcessedUpdate
 from app.core.texts import t
 from tests.conftest import FakeMax, load_update
+
+# приветствие берёт порог НДС из справочника — подставляем фикстуры
+pytestmark = pytest.mark.usefixtures("fixture_reference")
 
 SEND_DELAY_SECONDS = 0.3
 # Порог считаем от времени одного апдейта, замеренного здесь же: абсолютные секунды на
@@ -83,7 +88,9 @@ async def test_parallel_updates_do_not_wait_for_each_other():
     )
     elapsed = time.perf_counter() - started
 
-    assert [m["text"] for m in max_client.sent] == [t("start.greeting")] * 3
+    assert [m["text"] for m in max_client.sent] == [
+        t("start.greeting", nds_limit=nds_limit_text(None))
+    ] * 3
     assert elapsed < baseline * PARALLEL_OVERHEAD, (
         f"апдейты сериализовались: {elapsed:.2f} с на двоих при {baseline:.2f} с на одного"
     )
