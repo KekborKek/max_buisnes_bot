@@ -574,7 +574,12 @@ async def _record(reminder: OutgoingReminder, *, ok: bool, now: datetime) -> Non
                     session,
                     reminder.user_id,
                     "reminder_sent",
-                    {"kind": reminder.kind, "item_id": item.item_id, "grouped": reminder.grouped},
+                    {
+                        "kind": reminder.kind,
+                        "item_id": item.item_id,
+                        "item_type": item.item_type,
+                        "grouped": reminder.grouped,
+                    },
                 )
         else:
             await session.execute(

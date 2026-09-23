@@ -172,7 +172,9 @@ async def test_d7_text_buttons_status_and_event(fake_max):
     n = await _get(nid)
     assert (n.status, n.attempts) == ("sent", 1)
     assert n.send_at.replace(tzinfo=UTC) == now  # аренда снята: фактическое время отправки
-    assert await _events("reminder_sent") == [{"kind": "d7", "item_id": uo_id, "grouped": False}]
+    assert await _events("reminder_sent") == [
+        {"kind": "d7", "item_id": uo_id, "item_type": "obligation", "grouped": False}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -234,6 +236,10 @@ async def test_task_text_and_buttons(fake_max, bot_username):
     assert _payloads(fake_max.sent[0]["attachments"]) == [
         [f"r:done:task:{task.id}"],
         [f"open:item_task_{task.id}"],
+    ]
+    # D31: у задачи и обязательства id могут совпасть — в событии есть item_type.
+    assert await _events("reminder_sent") == [
+        {"kind": "task", "item_id": task.id, "item_type": "task", "grouped": False}
     ]
 
 
@@ -679,5 +685,6 @@ async def test_snooze_is_sent_next_day_without_snooze_button(fake_max, clock):
     assert (await _events("reminder_sent"))[-1] == {
         "kind": "snooze",
         "item_id": uo_id,
+        "item_type": "obligation",
         "grouped": False,
     }
