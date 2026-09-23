@@ -1,46 +1,14 @@
-"""T0 (#35): контракты app/calendar импортируются, тела — NotImplementedError до T2–T4.
+"""T0 (#35): контракты app/calendar — неизменяемые датаклассы, словари и исключения.
 
-Когда задача реализует свои функции, она убирает их из STUBS ниже.
+Тест заглушек NotImplementedError убран: T2–T4 реализовали все функции контракта.
 """
 
 import dataclasses
-import inspect
 from datetime import date
 
 import pytest
 
-from app.calendar import build, reminders, types
-
-STUBS = [
-    build.applies,
-    build.build_horizon,
-    build.build_calendar,
-    reminders.send_at_utc,
-    reminders.plan_obligation_notifications,
-    reminders.plan_task_notification,
-    reminders.cancel_pending,
-]
-
-
-def _dummy_args(fn) -> tuple[list, dict]:
-    args, kwargs = [], {}
-    for p in inspect.signature(fn).parameters.values():
-        if p.default is not inspect.Parameter.empty:
-            continue
-        if p.kind is inspect.Parameter.KEYWORD_ONLY:
-            kwargs[p.name] = None
-        else:
-            args.append(None)
-    return args, kwargs
-
-
-@pytest.mark.parametrize("fn", STUBS, ids=lambda f: f"{f.__module__}.{f.__name__}")
-async def test_stub_raises_not_implemented(fn):
-    args, kwargs = _dummy_args(fn)
-    with pytest.raises(NotImplementedError):
-        result = fn(*args, **kwargs)
-        if inspect.isawaitable(result):
-            await result
+from app.calendar import types
 
 
 def _sample_obligation() -> types.Obligation:
