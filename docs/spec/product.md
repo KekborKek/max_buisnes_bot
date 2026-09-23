@@ -151,20 +151,20 @@ disclaimer:
 | `onboarding_completed` | `seconds_since_start` | 2 |
 | `nds_result_shown` | `income_band`, `regime`, `nds_payer` | 3 |
 | `nds_why_opened` | — | 3 |
-| `calendar_built` | `items_count`, `seconds_since_start` | 5 |
-| `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`), `item_id`, `grouped` | 6 |
+| `calendar_built` | `items_count`, `seconds_since_start`, `rebuild` | 5 |
+| `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`), `item_id`, `item_type`, `grouped` | 6 |
 | `reminder_clicked` | `kind`, `action` (`done`/`howto`/`snooze`/`open_app`) | 6 |
-| `howto_opened` | `item_id`, `source = reminder` | 7 |
-| `wrong_date_reported` | `item_id`, `source` | 7, 16 |
-| `item_done` | `item_id`, `source`, `days_before_deadline` | 8, 16 |
-| `item_undone` | `item_id`, `source` | 8, 16 |
+| `howto_opened` | `item_id`, `item_type`, `source = reminder` | 7 |
+| `wrong_date_reported` | `item_id`, `item_type`, `source` | 7, 16 |
+| `item_done` | `item_id`, `item_type`, `source`, `days_before_deadline` | 8, 16 |
+| `item_undone` | `item_id`, `item_type`, `source` | 8, 16 |
 | `task_created` | `source` (`chat`/`form`), `remind_offset` | 9, 17 |
 | `date_not_parsed` | — | 10 |
 | `fallback_shown` | `case` (`unknown`/`no_date`/`service`) | 10 |
 | `about_opened` | — | 11 |
 | `miniapp_opened` | `start_param`, `has_profile` | 14, 18 |
 | `month_opened` | — | 15 |
-| `item_card_opened` | `item_id`, `source` (`list`/`month`/`bot`) | 16 |
+| `item_card_opened` | `item_id`, `item_type`, `source` (`list`/`month`/`bot`) | 16 |
 | `error` | `where`, `kind` | везде |
 
 Метрики пилота считаются из этих событий:
