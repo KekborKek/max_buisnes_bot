@@ -1,0 +1,432 @@
+# Справочник обязательств ИП для «Календаря обязательств».
+# Профиль MVP: ИП на УСН без сотрудников (6% и 15% — отдельные записи, решение D17)
+# + блок НДС для тех, кто превысил порог из content/nds.yaml.
+#
+# Нормы — НК РФ в редакции на сентябрь 2026 года:
+#   ст. 346.21 п. 7 — авансы по УСН до 28-го числа месяца после квартала, налог ИП за год — до 28 апреля;
+#   ст. 346.23 п. 1 пп. 2 — декларация по УСН для ИП — до 25 апреля;
+#   ст. 58 п. 9 — уведомление об исчисленных суммах — до 25-го числа месяца срока уплаты;
+#     за год уведомление не подаётся: сумму налоговая берёт из декларации;
+#     по фиксированным взносам и 1% уведомление ИП не подаёт;
+#   ст. 432 п. 2 — фиксированные взносы — до 28 декабря, 1% с дохода свыше 300 тыс. ₽ — до 1 июля;
+#   ст. 174 п. 1 и п. 5 — НДС: декларация до 25-го числа месяца после квартала (только электронно),
+#     уплата равными долями до 28-го числа каждого из трёх месяцев после квартала;
+#   ст. 6.1 п. 7 — срок, выпавший на выходной или нерабочий праздничный день, переносится
+#     на ближайший рабочий день. Поэтому у всех записей shift: next_workday.
+#
+# Правило: сумм в рублях здесь нет — они меняются каждый год. Шаги отправляют смотреть сумму на сайт ФНС.
+
+version: "2026-09-24"
+obligations:
+
+  # ---------- УСН «Доходы» 6% ----------
+
+  - id: usn_advance_q1_usn6
+    title: "Авансовый платёж по УСН за I квартал"
+    category: taxes
+    date_rule: { type: yearly, month: 4, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: 6% от доходов за январь–март минус страховые взносы ИП за этот год (без работников аванс можно уменьшить на них целиком)."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/01 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_advance_h1_usn6
+    title: "Авансовый платёж по УСН за полугодие"
+    category: taxes
+    date_rule: { type: yearly, month: 7, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: 6% от доходов за январь–июнь минус страховые взносы ИП за этот год и минус аванс за I квартал."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/02 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_advance_9m_usn6
+    title: "Авансовый платёж по УСН за 9 месяцев"
+    category: taxes
+    date_rule: { type: yearly, month: 10, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: 6% от доходов за январь–сентябрь минус страховые взносы ИП за этот год и минус авансы за I квартал и полугодие."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/03 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_tax_year_usn6
+    title: "Налог по УСН за прошлый год"
+    category: taxes
+    date_rule: { type: yearly, month: 4, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте налог: 6% от доходов за прошлый год минус страховые взносы ИП за этот год и минус уплаченные авансы."
+      - "Проверьте, что сумма совпадает с декларацией: уведомление за год не подаётся, налоговая берёт сумму из декларации."
+      - "Пополните единый налоговый счёт на сумму налога — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_declaration_usn6
+    title: "Декларация по УСН за прошлый год"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.23, п. 1, пп. 2"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/051edffc72ec0bb6fb9c14a883b2ec4de75cfe8c/"
+    howto_steps:
+      - "Сверьте доходы за прошлый год в книге учёта доходов и расходов с выписками банка и кассой."
+      - "Заполните декларацию в кабинете ИП или в бухгалтерии банка: доходы, уплаченные взносы и авансы по кварталам."
+      - "Отправьте декларацию в налоговую — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Штраф 5% от неуплаченного налога за каждый месяц просрочки (не меньше 1 000 ₽), после 20 дней — могут заблокировать счёт."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_q1_usn6
+    title: "Уведомление об авансе по УСН за I квартал"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за I квартал: 6% от доходов за январь–март минус страховые взносы ИП за этот год."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/01, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_h1_usn6
+    title: "Уведомление об авансе по УСН за полугодие"
+    category: reports
+    date_rule: { type: yearly, month: 7, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за полугодие: 6% от доходов за январь–июнь минус взносы ИП за этот год и аванс за I квартал."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/02, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_9m_usn6
+    title: "Уведомление об авансе по УСН за 9 месяцев"
+    category: reports
+    date_rule: { type: yearly, month: 10, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за 9 месяцев: 6% от доходов за январь–сентябрь минус взносы ИП за этот год и прошлые авансы."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/03, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  # ---------- УСН «Доходы минус расходы» 15% ----------
+  # Ставка 15% — общая; регион может установить ниже (ст. 346.20 НК РФ). Взносы здесь — расход,
+  # а не вычет из налога. За год действует минимальный налог 1% от доходов.
+
+  - id: usn_advance_q1_usn15
+    title: "Авансовый платёж по УСН за I квартал"
+    category: taxes
+    date_rule: { type: yearly, month: 4, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: доходы минус подтверждённые расходы за январь–март, умножьте на 15% (или на ставку вашего региона)."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/01 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_advance_h1_usn15
+    title: "Авансовый платёж по УСН за полугодие"
+    category: taxes
+    date_rule: { type: yearly, month: 7, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: (доходы минус расходы за январь–июнь) × 15% или ставку региона, минус аванс за I квартал."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/02 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_advance_9m_usn15
+    title: "Авансовый платёж по УСН за 9 месяцев"
+    category: taxes
+    date_rule: { type: yearly, month: 10, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте аванс: (доходы минус расходы за январь–сентябрь) × 15% или ставку региона, минус авансы за I квартал и полугодие."
+      - "Подайте уведомление об исчисленной сумме с кодом периода 34/03 — до 25-го числа этого же месяца."
+      - "Пополните единый налоговый счёт на сумму аванса — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_tax_year_usn15
+    title: "Налог по УСН за прошлый год"
+    category: taxes
+    date_rule: { type: yearly, month: 4, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.18, п. 6; ст. 346.21, п. 7"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/"
+    howto_steps:
+      - "Посчитайте налог: (доходы минус расходы за прошлый год) × 15% или ставку региона; если меньше 1% от всех доходов — платите 1% (минимальный налог)."
+      - "Вычтите уплаченные за год авансы и сверьте итог с декларацией: уведомление за год не подаётся."
+      - "Пополните единый налоговый счёт на сумму налога — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_declaration_usn15
+    title: "Декларация по УСН за прошлый год"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 346.23, п. 1, пп. 2"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/051edffc72ec0bb6fb9c14a883b2ec4de75cfe8c/"
+    howto_steps:
+      - "Сверьте доходы и расходы за прошлый год в книге учёта: каждый расход должен быть оплачен и подтверждён документом."
+      - "Заполните декларацию в кабинете ИП или в бухгалтерии банка: доходы, расходы, авансы по кварталам, минимальный налог."
+      - "Отправьте декларацию в налоговую — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Штраф 5% от неуплаченного налога за каждый месяц просрочки (не меньше 1 000 ₽), после 20 дней — могут заблокировать счёт."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_q1_usn15
+    title: "Уведомление об авансе по УСН за I квартал"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за I квартал: (доходы минус расходы за январь–март) × 15% или ставку региона."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/01, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_h1_usn15
+    title: "Уведомление об авансе по УСН за полугодие"
+    category: reports
+    date_rule: { type: yearly, month: 7, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за полугодие: (доходы минус расходы за январь–июнь) × ставку, минус аванс за I квартал."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/02, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: usn_notice_9m_usn15
+    title: "Уведомление об авансе по УСН за 9 месяцев"
+    category: reports
+    date_rule: { type: yearly, month: 10, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_19671/16beab15150ef95aab09458473185ea218811e56/"
+    howto_steps:
+      - "Посчитайте аванс за 9 месяцев: (доходы минус расходы за январь–сентябрь) × ставку, минус прошлые авансы."
+      - "Заполните уведомление в кабинете ИП: налог по УСН, код периода 34/03, сумма аванса."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в аванс — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  # ---------- Страховые взносы ИП за себя ----------
+  # На АУСН взносов за себя нет, поэтому ausn не указан. Патент включён: взносы ИП платит и на ПСН.
+
+  - id: contrib_fixed
+    title: "Фиксированные страховые взносы ИП"
+    category: contributions
+    date_rule: { type: yearly, month: 12, day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+    needs_prep: true
+    norm: "НК РФ, ст. 430, п. 1.2; ст. 432, п. 2"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/61cf20d6fef78624729113dab2aad81847aa701a/"
+    howto_steps:
+      - "Узнайте сумму фиксированных взносов на этот год на сайте ФНС; если ИП зарегистрирован в этом году — сумма меньше, пропорционально дням."
+      - "Пополните единый налоговый счёт на эту сумму — до {due_date}. Уведомление подавать не нужно."
+      - "Через несколько дней проверьте в кабинете ИП, что сальдо единого счёта не ушло в минус."
+    howto_link: { label: "Взносы ИП на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/ip/in_premip/" }
+    penalty_text: "Пени за каждый день просрочки, дальше — налоговая взыщет долг сама."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: contrib_1pct_usn6
+    title: "Взносы 1% с дохода свыше 300 000 ₽ за прошлый год"
+    category: contributions
+    date_rule: { type: yearly, month: 7, day: 1 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6]
+    needs_prep: true
+    norm: "НК РФ, ст. 430, п. 1.2; ст. 432, п. 2"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/61cf20d6fef78624729113dab2aad81847aa701a/"
+    howto_steps:
+      - "Возьмите все доходы за прошлый год из декларации по УСН; если они больше 300 000 ₽ — посчитайте 1% от превышения."
+      - "Сверьте сумму с максимумом взносов 1% на этот год на сайте ФНС — больше него платить не нужно."
+      - "Пополните единый налоговый счёт на эту сумму — до {due_date}. Уведомление подавать не нужно."
+    howto_link: { label: "Взносы ИП на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/ip/in_premip/" }
+    penalty_text: "Пени за каждый день просрочки, дальше — налоговая взыщет долг сама."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: contrib_1pct_usn15
+    title: "Взносы 1% с дохода свыше 300 000 ₽ за прошлый год"
+    category: contributions
+    date_rule: { type: yearly, month: 7, day: 1 }
+    shift: next_workday
+    applies_if:
+      regime: [usn15]
+    needs_prep: true
+    norm: "НК РФ, ст. 430, п. 1.2 и п. 9; ст. 432, п. 2"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/61cf20d6fef78624729113dab2aad81847aa701a/"
+    howto_steps:
+      - "Возьмите из декларации по УСН за прошлый год доходы минус расходы; если разница больше 300 000 ₽ — посчитайте 1% от превышения."
+      - "Сверьте сумму с максимумом взносов 1% на этот год на сайте ФНС — больше него платить не нужно."
+      - "Пополните единый налоговый счёт на эту сумму — до {due_date}. Уведомление подавать не нужно."
+    howto_link: { label: "Взносы ИП на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/ip/in_premip/" }
+    penalty_text: "Пени за каждый день просрочки, дальше — налоговая взыщет долг сама."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  # ---------- НДС для плательщиков на УСН ----------
+
+  - id: nds_declaration
+    title: "Декларация по НДС за квартал"
+    category: reports
+    date_rule: { type: quarterly, offset_month: 1, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15]
+      nds_payer: true
+    needs_prep: true
+    norm: "НК РФ, ст. 174, п. 5"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/cf8ce1f96c094ce8316b91e3ee5831f20a57a4a8/"
+    howto_steps:
+      - "Соберите счета-фактуры, выставленные за квартал, и сформируйте книгу продаж."
+      - "Заполните декларацию по НДС в бухгалтерии банка или у оператора электронного документооборота и подпишите электронной подписью."
+      - "Отправьте декларацию только в электронном виде — до {due_date}. Бумажная не считается поданной."
+    howto_link: { label: "НДС при УСН на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/taxes/nds_usn/" }
+    penalty_text: "Штраф 5% от неуплаченного НДС за каждый месяц просрочки (не меньше 1 000 ₽), после 20 дней — могут заблокировать счёт."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
+
+  - id: nds_payment
+    title: "Платёж по НДС — треть суммы за квартал"
+    category: taxes
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15]
+      nds_payer: true
+    needs_prep: false
+    norm: "НК РФ, ст. 174, п. 1"
+    source_url: "https://www.consultant.ru/document/cons_doc_LAW_28165/cf8ce1f96c094ce8316b91e3ee5831f20a57a4a8/"
+    howto_steps:
+      - "Возьмите сумму НДС к уплате из декларации за прошлый квартал и разделите на три равные части."
+      - "Проверьте, что на едином налоговом счёте хватит денег на эту треть и на другие платежи в тот же день."
+      - "Пополните единый налоговый счёт на треть суммы — до {due_date}. Уведомление подавать не нужно."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-24"
