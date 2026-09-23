@@ -1,7 +1,4 @@
-"""Непонятое действие. Экран 10 делает T8b; до него — `errors.unknown` + кнопки экрана 1.
-
-Сюда же пока попадает «О сервисе» (`about:open`) — обработчик экрана 11 делает T9.
-"""
+"""Непонятое действие. Экран 10 делает T8b; до него — `errors.unknown` + кнопки экрана 1."""
 
 from app.bot.context import Ctx
 from app.bot.handlers.start import start_keyboard

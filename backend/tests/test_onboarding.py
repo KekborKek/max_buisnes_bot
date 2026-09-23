@@ -266,13 +266,6 @@ async def test_rebuild_starts_onboarding_and_keeps_calendar(fake_max):
     assert profile.income_band == "lt10"  # ответы остаются до перезаписи новыми
 
 
-async def test_about_button_until_t9_behaves_as_unknown_action(fake_max):
-    msg = await run(fake_max, started(), press("about:open"))
-
-    assert msg["text"] == t("errors.unknown")
-    assert payloads(msg) == [["start:check", "about:open"]]
-
-
 async def test_missing_reference_on_start_shows_error_and_retry(fake_max, monkeypatch, caplog):
     real = loader.get_reference
 
