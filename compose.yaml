@@ -21,6 +21,8 @@ services:
   miniapp:
     build:
       context: ./miniapp
+      args:
+        VITE_BOT_URL: ${VITE_BOT_URL:-}
     depends_on:
       - backend
     ports:

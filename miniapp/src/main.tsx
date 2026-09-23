@@ -1,4 +1,5 @@
 import "@maxhub/max-ui/dist/styles.css";
+import "./app.css";
 
 import { MaxUI } from "@maxhub/max-ui";
 import { StrictMode } from "react";

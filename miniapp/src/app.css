@@ -1,0 +1,227 @@
+/* Раскладка мини-приложения. Цвета — переменные темы MAX UI (светлая и тёмная). */
+
+body {
+  margin: 0;
+}
+
+.app {
+  min-width: 0;
+  overflow-x: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  /* Safe-area: вырезы и системные панели (viewport-fit=cover в index.html). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 0 calc(16px + env(safe-area-inset-bottom));
+}
+
+/* Место под закреплённую кнопку «+ Задача». */
+.screen--with-bar {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.screen-center {
+  background: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+  gap: 12px;
+  padding: 16px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.mock-badge {
+  display: block;
+  padding: 4px 16px;
+  text-align: center;
+  color: var(--text-negative);
+}
+
+/* Шапка экранов 14 и 15. */
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+/* Профиль не обрезаем: на узком экране он переносится, переключатель остаётся справа. */
+.calendar-header__profile {
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+/* Строка события. */
+.row {
+  cursor: pointer;
+}
+
+.row-before {
+  flex-shrink: 0;
+}
+
+.row-date {
+  display: inline-block;
+  width: 56px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row--done .row-title {
+  color: var(--text-secondary);
+}
+
+.row-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-status--overdue {
+  color: var(--text-negative);
+  white-space: nowrap;
+}
+
+.row-status--done {
+  display: inline-flex;
+  color: var(--icon-positive);
+}
+
+/* Метка категории: CSS-кружок (Dot из max-ui 0.5.0 не экспортируется), рядом всегда подпись. */
+.dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot--taxes {
+  background: #e5484d;
+}
+
+.dot--contributions {
+  background: #3e8bf7;
+}
+
+.dot--reports {
+  background: #f5a524;
+}
+
+.dot--custom {
+  background: #8e8e93;
+}
+
+/* Скелетон (D6): три серые плашки высотой со строку CellSimple с подзаголовком. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.skeleton-row {
+  height: 64px;
+  border-radius: 16px;
+  background: var(--background-tertiary);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-row {
+    animation: none;
+  }
+}
+
+/* Плашка ошибки: над данными, данные под ней остаются. */
+.error-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--background-card);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 16px;
+}
+
+.gate {
+  background: none;
+  gap: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  min-height: 60vh;
+}
+
+.placeholder {
+  background: none;
+  min-height: 40vh;
+  padding: 16px;
+  color: var(--text-secondary);
+}
+
+.back-fallback {
+  padding: 8px 8px 0;
+}
+
+/* Закреплённая внизу кнопка «+ Задача». */
+.bottom-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px calc(16px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
+    calc(16px + env(safe-area-inset-left));
+  background: var(--background-secondary);
+}
+
+/* Тост (D7): один на приложение, над закреплённой кнопкой. */
+.toast-slot {
+  position: fixed;
+  right: 0;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  left: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toast {
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--background-overlay);
+  color: var(--text-primary-inverse);
+}
