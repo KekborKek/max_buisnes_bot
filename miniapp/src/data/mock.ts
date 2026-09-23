@@ -1,8 +1,19 @@
 // ТЕСТОВЫЕ ДАННЫЕ. Мок API мини-приложения до готовности бэкенда (T10).
-// Включается только явно — см. readMockScenario() в source.ts. Названия и даты выдуманы
-// для проверки интерфейса и не являются налоговыми сроками.
+// Включается только явно — см. readMockScenario() в source.ts. Названия, даты, нормы и ссылки
+// выдуманы для проверки интерфейса и не являются налоговыми сроками.
 import { addDays, DEFAULT_TIMEZONE, todayIn } from "../calendar";
-import type { CalendarItem, Category, ItemStatus, ItemType, Me, Profile } from "../types";
+import type {
+  CalendarItem,
+  Category,
+  ItemCard,
+  ItemStatus,
+  Me,
+  ObligationCard,
+  Profile,
+  TaskCard,
+  TaskInput,
+} from "../types";
+import { toCalendarItem } from "../types";
 import { ApiError } from "./http";
 import type { DataSource } from "./source";
 
@@ -12,11 +23,12 @@ export const MOCK_SCENARIOS = [
   "no_profile", // открыли не через бота — экран 18
   "unauthorized", // /api/me → 401 — экран 18 без слов об ошибке
   "offline", // /api/me → сеть — экран 18 + плашка ошибки
-  "error", // календарь → сеть
-  "flaky", // календарь: первые 1,5 с — сеть, «Повторить» позже — успех
-  "server_error", // календарь → 5xx
-  "session_expired", // календарь → 401
-  "slow", // календарь не отвечает — видно скелетон
+  "error", // календарь и карточка → сеть
+  "flaky", // календарь и карточка: первые 1,5 с — сеть, «Повторить» позже — успех
+  "server_error", // календарь и карточка → 5xx
+  "session_expired", // календарь и карточка → 401
+  "slow", // календарь и карточка не отвечают — видно скелетон
+  "action_error", // данные грузятся, любое действие (отметка, сохранение, удаление) → сеть
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -33,6 +45,8 @@ export const MOCK_PROFILE: Profile = {
   calendar_built_at: "2026-09-20T10:00:00Z",
 };
 
+const mockToday = () => todayIn(MOCK_PROFILE.timezone);
+
 function mockMe(hasProfile: boolean, startParam: string | null): Me {
   return {
     user_id: 1,
@@ -41,56 +55,89 @@ function mockMe(hasProfile: boolean, startParam: string | null): Me {
     start_param: startParam,
     has_profile: hasProfile,
     profile: hasProfile ? MOCK_PROFILE : null,
+    // Черновик из чата (экран 9, «Изменить») — только при start_param=task_draft.
+    draft:
+      startParam === "task_draft"
+        ? { title: "Оплатить аренду (ТЕСТОВЫЕ ДАННЫЕ)", due_date: addDays(mockToday(), 5) }
+        : null,
   };
 }
 
 /** Статус здесь считает мок вместо бэкенда; экран его только показывает. */
-function item(
+function statusOf(due: string, doneAt: string | null, today: string): ItemStatus {
+  if (doneAt) return "done";
+  if (due < today) return "overdue";
+  return due === today ? "today" : "upcoming";
+}
+
+function obligation(
   id: number,
-  type: ItemType,
-  category: Category,
+  category: Exclude<Category, "custom">,
   title: string,
   due: string,
   today: string,
-  done = false,
-): CalendarItem {
-  const status: ItemStatus = done
-    ? "done"
-    : due < today
-      ? "overdue"
-      : due === today
-        ? "today"
-        : "upcoming";
+  original = due,
+): ObligationCard {
   return {
-    type,
+    type: "obligation",
     id,
     title,
     category,
     due_date: due,
-    original_date: due,
-    status,
-    done_at: done ? `${today}T07:00:00Z` : null,
+    original_date: original,
+    status: statusOf(due, null, today),
+    done_at: null,
+    norm: "Тестовая норма, ст. 0 (ТЕСТОВЫЕ ДАННЫЕ)",
+    source_url: "https://example.com/test-source",
+    howto_steps: [
+      "Тестовый шаг один: проверьте данные (ТЕСТОВЫЕ ДАННЫЕ).",
+      "Тестовый шаг два: подготовьте документ.",
+      "Тестовый шаг три: отправьте его до срока.",
+    ],
+    howto_link: { label: "Тестовая ссылка", url: "https://example.com/test-howto" },
+    penalty_text: "Тестовый текст о последствиях пропуска (ТЕСТОВЫЕ ДАННЫЕ).",
+    last_checked_at: "2026-09-20",
   };
 }
 
-export function mockItems(today: string): CalendarItem[] {
+function task(id: number, title: string, due: string, today: string, done = false): TaskCard {
+  const doneAt = done ? `${today}T07:00:00Z` : null;
+  return {
+    type: "task",
+    id,
+    title,
+    category: "custom",
+    due_date: due,
+    original_date: due,
+    status: statusOf(due, doneAt, today),
+    done_at: doneAt,
+    remind_offset_days: 1,
+    remind_hour: 10,
+  };
+}
+
+export function mockCards(today: string): ItemCard[] {
   const d = (n: number) => addDays(today, n);
   return [
-    item(1, "obligation", "reports", "Тестовая декларация (ТЕСТОВЫЕ ДАННЫЕ)", d(-3), today),
-    item(2, "obligation", "taxes", "Тестовый авансовый платёж", d(0), today),
-    item(3, "task", "custom", "Оплатить аренду офиса", d(1), today, true),
-    item(4, "obligation", "contributions", "Тестовый страховой взнос", d(2), today),
-    item(
+    obligation(1, "reports", "Тестовая декларация (ТЕСТОВЫЕ ДАННЫЕ)", d(-3), today),
+    obligation(2, "taxes", "Тестовый авансовый платёж", d(0), today),
+    task(3, "Оплатить аренду офиса", d(1), today, true),
+    // Перенос с выходного: исходная дата раньше итоговой.
+    obligation(4, "contributions", "Тестовый страховой взнос", d(2), today, d(0)),
+    obligation(
       5,
-      "obligation",
       "taxes",
       "Тестовое уведомление об исчисленных суммах с очень длинным названием",
       d(20),
       today,
     ),
-    item(6, "task", "custom", "Сверить выписку банка", d(45), today),
-    item(7, "obligation", "reports", "Тестовый отчёт за квартал", d(80), today),
+    task(6, "Сверить выписку банка", d(45), today),
+    obligation(7, "reports", "Тестовый отчёт за квартал", d(80), today),
   ];
+}
+
+export function mockItems(today: string): CalendarItem[] {
+  return mockCards(today).map(toCalendarItem);
 }
 
 const DELAY_MS = 400;
@@ -108,6 +155,61 @@ const wait = <T>(value: () => T): Promise<T> =>
 
 export function createMockSource(scenario: MockScenario): DataSource {
   const createdAt = Date.now();
+  // Состояние мока живёт, пока открыт мини-апп: отметки и задачи видны в списке и карточке.
+  let cards: ItemCard[] = scenario === "empty" ? [] : mockCards(mockToday());
+  let nextTaskId = 100;
+
+  /** Сбои чтения — как у календаря в T11. */
+  const readFailure = () => {
+    if (scenario === "error") throw new ApiError("network");
+    if (scenario === "server_error") throw new ApiError("server", 503);
+    if (scenario === "session_expired") throw new ApiError("unauthorized", 401);
+    if (scenario === "flaky" && Date.now() - createdAt < FLAKY_MS) throw new ApiError("network");
+  };
+  const read = <T>(value: () => T): Promise<T> =>
+    scenario === "slow"
+      ? new Promise<T>(() => {})
+      : wait(() => {
+          readFailure();
+          return value();
+        });
+  const write = <T>(value: () => T): Promise<T> =>
+    wait(() => {
+      if (scenario === "action_error") throw new ApiError("network");
+      return value();
+    });
+
+  const find = (type: ItemCard["type"], id: number): ItemCard => {
+    const card = cards.find((c) => c.type === type && c.id === id);
+    if (!card) throw new ApiError("client", 404);
+    return card;
+  };
+  const replace = (next: ItemCard): ItemCard => {
+    cards = cards.map((c) => (c.type === next.type && c.id === next.id ? next : c));
+    return next;
+  };
+  const setDone = (type: ItemCard["type"], id: number, done: boolean): ItemCard => {
+    const card = find(type, id);
+    const doneAt = done ? (card.done_at ?? new Date().toISOString()) : null;
+    return replace({
+      ...card,
+      done_at: doneAt,
+      status: statusOf(card.due_date, doneAt, mockToday()),
+    });
+  };
+  const taskFrom = (id: number, input: TaskInput, doneAt: string | null): TaskCard => ({
+    type: "task",
+    id,
+    title: input.title,
+    category: "custom",
+    due_date: input.due_date,
+    original_date: input.due_date,
+    status: statusOf(input.due_date, doneAt, mockToday()),
+    done_at: doneAt,
+    remind_offset_days: input.remind_offset_days,
+    remind_hour: input.remind_hour,
+  });
+
   return {
     isMock: true,
     me: (startParam) =>
@@ -116,17 +218,27 @@ export function createMockSource(scenario: MockScenario): DataSource {
         if (scenario === "offline") throw new ApiError("network");
         return mockMe(scenario !== "no_profile", startParam);
       }),
-    calendar: () => {
-      if (scenario === "slow") return new Promise(() => {});
-      return wait(() => {
-        if (scenario === "error") throw new ApiError("network");
-        if (scenario === "server_error") throw new ApiError("server", 503);
-        if (scenario === "session_expired") throw new ApiError("unauthorized", 401);
-        if (scenario === "flaky" && Date.now() - createdAt < FLAKY_MS)
-          throw new ApiError("network");
-        return scenario === "empty" ? [] : mockItems(todayIn(MOCK_PROFILE.timezone));
-      });
-    },
+    calendar: () => read(() => cards.map(toCalendarItem)),
+    item: (type, id) => read(() => find(type, id)),
+    markDone: (type, id) => write(() => setDone(type, id, true)),
+    undoDone: (type, id) => write(() => setDone(type, id, false)),
+    reportWrongDate: (id) =>
+      write(() => {
+        find("obligation", id);
+      }),
+    createTask: (input) =>
+      write(() => {
+        const created = taskFrom(nextTaskId++, input, null);
+        cards = [...cards, created];
+        return created;
+      }),
+    updateTask: (id, input) =>
+      write(() => replace(taskFrom(id, input, find("task", id).done_at)) as TaskCard),
+    deleteTask: (id) =>
+      write(() => {
+        find("task", id);
+        cards = cards.filter((c) => !(c.type === "task" && c.id === id));
+      }),
     track: async (name, props = {}) => {
       console.debug("[ТЕСТОВЫЕ ДАННЫЕ] track", name, props);
     },

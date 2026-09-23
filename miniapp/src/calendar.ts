@@ -75,6 +75,37 @@ const dayMonth = new Intl.DateTimeFormat("ru-RU", {
   timeZone: "UTC",
 });
 
+const dayMonthLong = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+const weekday = new Intl.DateTimeFormat("ru-RU", { weekday: "long", timeZone: "UTC" });
+
+/** «28 октября»; год — только если не текущий: «5 января 2027». */
+export function formatDate(iso: string, today: string): string {
+  const d = parseIso(iso);
+  const month = dayMonthLong.formatToParts(d).find((p) => p.type === "month")?.value ?? "";
+  const year = iso.slice(0, 4) === today.slice(0, 4) ? "" : ` ${iso.slice(0, 4)}`;
+  return `${d.getUTCDate()} ${month}${year}`;
+}
+
+/** Дата в карточке: «28 октября, среда» (product.md, «Форма»). */
+export function formatCardDate(iso: string, today: string): string {
+  return `${formatDate(iso, today)}, ${weekday.format(parseIso(iso))}`;
+}
+
+/** «20.09.2026» — дата сверки справочника (экран 16). */
+export function formatNumericDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}.${m}.${y}`;
+}
+
+/** «Сегодня» в поясе пользователя относительно момента `instant` (ISO-время UTC). */
+export function dateIn(timezone: string, instant: string): string {
+  return todayIn(timezone, new Date(instant));
+}
+
 /** «28 окт»; год — только если не текущий: «5 янв 2027». */
 export function formatShortDate(iso: string, today: string): string {
   const d = parseIso(iso);

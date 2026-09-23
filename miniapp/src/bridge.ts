@@ -65,6 +65,19 @@ export function getBotUrl(): string {
 }
 
 /**
+ * Открыть внешнюю ссылку (источник нормы на экране 16). В MAX — `openLink(url)`
+ * (docs/max-api-notes.md) [сверить: поведение на живом клиенте]; вне MAX — новая вкладка.
+ */
+export function openExternalLink(url: string): void {
+  const wa = getWebApp();
+  if (wa?.openLink) {
+    wa.openLink(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
+/**
  * Открыть диалог с ботом. В MAX — `openMaxLink(url)` [сверить: поведение на живом клиенте];
  * вне MAX или без метода — обычная ссылка.
  */
