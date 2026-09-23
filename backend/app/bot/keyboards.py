@@ -27,7 +27,7 @@ def open_app(
     web_app: str | None = None,
     contact_id: int | None = None,
 ) -> dict:
-    """Кнопка запуска мини-приложения (OpenAppButton).
+    """Кнопка запуска мини-приложения (OpenAppButton, D27).
 
     Поля по схеме https://dev.max.ru/docs-api/methods/POST/messages (OpenAppButton):
     `web_app` — публичное имя бота или ссылка на него, `contact_id` — id бота,

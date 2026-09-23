@@ -62,7 +62,7 @@ def nds_limit_for(income_year: int, nds: NdsConfig) -> int | None:
 
 
 def nds_payer(income_band: str | None, income_year: int, nds: NdsConfig) -> bool | None:
-    """Плательщик ли НДС по диапазону дохода за `income_year` (экран 3, D14, D18).
+    """Плательщик ли НДС по диапазону дохода за `income_year` (экран 3, D14, D18, D25).
 
     Диапазон — types.INCOME_BAND_BOUNDS_RUB, порог — nds_limit_for(income_year, nds):
     - верхняя граница диапазона не больше порога → False;

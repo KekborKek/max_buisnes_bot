@@ -26,7 +26,7 @@ REGIMES: frozenset[str] = frozenset({"usn6", "usn15", "patent", "ausn", "unknown
 
 # Границы ответов на вопрос 1 онбординга (экран 2) в рублях: доход БОЛЬШЕ нижней границы
 # и НЕ БОЛЬШЕ верхней, None — границы нет. Это определения кнопок онбординга, а не налоговые
-# данные; порог НДС берётся только из nds.yaml. `unknown` границ не имеет.
+# данные (D25); порог НДС берётся только из nds.yaml. `unknown` границ не имеет.
 # Единственное место с этими числами — не дублировать в боте, API и тестах.
 INCOME_BAND_BOUNDS_RUB: dict[str, tuple[int, int | None]] = {
     "lt10": (0, 10_000_000),
@@ -91,7 +91,8 @@ class AppliesIf:
     YAML: `applies_if: {}` — всем. Списки — `regime: [usn6, usn15]`,
     `income_band: [20_60, gt60]`; флаги — `has_employees: false`, `nds_payer: true`.
     Неизвестный ключ или значение вне словаря — запись невалидна (T2).
-    Как сравнивать с профилем, где ответ ещё None, решает `build.applies` (T4).
+    Как сравнивать с профилем, где ответ ещё None, решает `build.applies` (T4); для
+    `nds_payer: true` при nds_payer профиля None запись не попадает (D25).
     """
 
     regime: frozenset[str] | None = None
