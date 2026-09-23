@@ -62,3 +62,74 @@ async def fresh_db():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+# --- API мини-приложения (T10) ------------------------------------------------------------
+
+
+class MiniappApi:
+    """Клиент API мини-аппа с подписанной initData, подменёнными часами и справочником."""
+
+    def __init__(self, client, token: str, now) -> None:
+        self.client = client
+        self.token = token
+        self.now = now  # «сейчас» для API; тест может переставить
+
+    def headers(self, user_id: int) -> dict[str, str]:
+        import hashlib
+        import hmac
+        import time
+        from urllib.parse import urlencode
+
+        params = {
+            "auth_date": str(int(time.time())),
+            "user": json.dumps({"user_id": user_id, "first_name": "Тест"}),
+        }
+        dcs = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        secret = hmac.new(b"WebAppData", self.token.encode(), hashlib.sha256).digest()
+        params["hash"] = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
+        return {"X-Max-Init-Data": urlencode(params)}
+
+    async def request(self, method: str, path: str, user_id: int | None, **kwargs):
+        headers = self.headers(user_id) if user_id is not None else {}
+        return await self.client.request(method, path, headers=headers, **kwargs)
+
+
+@pytest.fixture
+def test_reference():
+    """ТЕСТОВЫЕ ДАННЫЕ: справочники из backend/tests/fixtures/, не файлы аналитика."""
+    from app.calendar import loader
+    from app.calendar.types import Reference
+
+    base = Path(__file__).parent / "fixtures"
+    return Reference(
+        catalog=loader.load_catalog(base / "obligations.yaml"),
+        workdays=loader.load_workdays(base / "workdays.yaml"),
+        nds=loader.load_nds(base / "nds.yaml"),
+    )
+
+
+@pytest.fixture
+async def miniapp_api(monkeypatch, test_reference):
+    """API мини-аппа: dev-режим выключен, «сейчас» — 23.09.2026 10:00 по Москве."""
+    from datetime import UTC, datetime
+
+    import httpx
+
+    from app.api import deps
+    from app.core.config import Settings
+    from app.main import app
+
+    token = "test-token"
+    s = Settings(_env_file=None, app_env="dev", allow_dev_initdata=False, max_bot_token=token)
+    monkeypatch.setattr(deps, "get_settings", lambda: s)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        api = MiniappApi(client, token, datetime(2026, 9, 23, 7, tzinfo=UTC))
+        app.dependency_overrides[deps.current_time] = lambda: api.now
+        app.dependency_overrides[deps.current_reference] = lambda: test_reference
+        try:
+            yield api
+        finally:
+            app.dependency_overrides.pop(deps.current_time, None)
+            app.dependency_overrides.pop(deps.current_reference, None)

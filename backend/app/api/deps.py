@@ -1,10 +1,14 @@
 """Зависимости API мини-приложения: проверка initData из заголовка X-Max-Init-Data."""
 
 import logging
+from datetime import UTC, datetime
 from functools import lru_cache
+from typing import Annotated
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
+from app.calendar.loader import get_reference
+from app.calendar.types import Reference
 from app.core.config import get_settings
 from app.core.initdata import InitDataError, validate_init_data
 
@@ -34,3 +38,31 @@ async def current_launch(x_max_init_data: str | None = Header(default=None)) -> 
         )
     except InitDataError as e:
         raise HTTPException(status_code=401, detail=f"invalid initData: {e}") from e
+
+
+def launch_user_id(launch: dict) -> int | None:
+    """id пользователя MAX из подписанной initData (поле `user_id`, запасной вариант `id`)."""
+    user = launch.get("user") or {}
+    raw = user.get("user_id") or user.get("id")
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def current_user_id(launch: Annotated[dict, Depends(current_launch)]) -> int:
+    """Владелец запроса. Без пользователя в initData данных календаря не отдаём."""
+    user_id = launch_user_id(launch)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="invalid initData: no user")
+    return user_id
+
+
+def current_time() -> datetime:
+    """«Сейчас» в UTC. Отдельная зависимость — тесты подменяют часы."""
+    return datetime.now(UTC)
+
+
+def current_reference() -> Reference:
+    """Справочник обязательств процесса. Тесты подменяют фикстурой из backend/tests/fixtures/."""
+    return get_reference()

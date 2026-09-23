@@ -1,0 +1,253 @@
+"""Общая часть эндпоинтов календаря: поиск своих событий, сборка DTO, даты.
+
+Статус — `app.calendar.status`; уведомления — `app.calendar.reminders`. Здесь только
+чтение из БД и превращение строк в DTO, без коммитов.
+"""
+
+import logging
+import re
+from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import HTTPException
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.schemas import CalendarItem, HowtoLinkOut, ItemCard, ItemTypeParam
+from app.calendar.reminders import as_utc
+from app.calendar.status import item_status, today_in
+from app.calendar.types import Obligation, Reference
+from app.core.models import DEFAULT_TIMEZONE, Profile, Task, User, UserObligation
+
+log = logging.getLogger(__name__)
+
+NOT_FOUND = "item not found"
+
+# Родительный падеж месяцев для «28 октября» (product.md, «Форма»).
+# TODO(D28): свой форматтер делает T6 в боте — унифицировать после слияния.
+_MONTHS_GENITIVE = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
+_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+
+
+def _format_day(day: date, today: date) -> str:
+    """«28 октября»; год — только если он не текущий: «26 апреля 2027»."""
+    text = f"{day.day} {_MONTHS_GENITIVE[day.month - 1]}"
+    return text if day.year == today.year else f"{text} {day.year}"
+
+
+def expand_howto_steps(ob: Obligation, due_date: date, today: date) -> list[str]:
+    """Раскрывает `{due_date}` в шагах (D28). Прочие `{...}` остаются как есть + warning.
+
+    `{notice_date}` правила не имеет, поэтому тоже остаётся и попадает в лог.
+    """
+    unknown: set[str] = set()
+
+    def repl(match: re.Match[str]) -> str:
+        if match.group(1) == "due_date":
+            return _format_day(due_date, today)
+        unknown.add(match.group(0))
+        return match.group(0)
+
+    steps = [_PLACEHOLDER.sub(repl, step) for step in ob.howto_steps]
+    if unknown:
+        log.warning(
+            "Обязательство %s: в howto_steps нераскрытые подстановки %s",
+            ob.id,
+            ", ".join(sorted(unknown)),
+        )
+    return steps
+
+
+# --- Пользователь и пояс ---------------------------------------------------------------------
+
+
+async def load_profile(session: AsyncSession, user_id: int) -> Profile | None:
+    return await session.get(Profile, user_id)
+
+
+def user_tz(profile: Profile | None) -> str:
+    """IANA-пояс профиля; нет профиля или пояс неизвестен — Europe/Moscow."""
+    tz = profile.timezone if profile is not None and profile.timezone else DEFAULT_TIMEZONE
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        return DEFAULT_TIMEZONE
+    return tz
+
+
+def user_today(profile: Profile | None, now: datetime) -> date:
+    return today_in(user_tz(profile), now)
+
+
+async def ensure_user(session: AsyncSession, user_id: int) -> None:
+    """Строка User для внешнего ключа: мини-апп мог открыться раньше, чем бот увидел человека."""
+    if await session.get(User, user_id) is None:
+        session.add(User(user_id=user_id))
+        await session.flush()
+
+
+# --- Поиск своих событий ---------------------------------------------------------------------
+
+
+def not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail=NOT_FOUND)
+
+
+async def own_obligation(
+    session: AsyncSession, user_id: int, item_id: int, reference: Reference
+) -> tuple[UserObligation, Obligation]:
+    """Своё обязательство вместе с записью справочника; чужое или пропавшее из справочника — 404."""
+    uo = await session.get(UserObligation, item_id)
+    if uo is None or uo.user_id != user_id:
+        raise not_found()
+    ob = catalog_index(reference).get(uo.obligation_id)
+    if ob is None:
+        # Запись убрали из справочника; пересборка удалит событие, а пока показать нечего.
+        raise not_found()
+    return uo, ob
+
+
+async def own_task(
+    session: AsyncSession, user_id: int, item_id: int, *, include_deleted: bool = False
+) -> Task:
+    task = await session.get(Task, item_id)
+    if task is None or task.user_id != user_id:
+        raise not_found()
+    if task.deleted_at is not None and not include_deleted:
+        raise not_found()
+    return task
+
+
+def catalog_index(reference: Reference) -> dict[str, Obligation]:
+    return {ob.id: ob for ob in reference.catalog.obligations}
+
+
+# --- DTO ------------------------------------------------------------------------------------
+
+
+def _done_at(value: datetime | None) -> datetime | None:
+    return None if value is None else as_utc(value)
+
+
+def obligation_item(uo: UserObligation, ob: Obligation, today: date) -> CalendarItem:
+    return CalendarItem(
+        type="obligation",
+        id=uo.id,
+        title=ob.title,
+        category=ob.category,
+        due_date=uo.due_date,
+        original_date=uo.original_date,
+        status=item_status(uo.due_date, uo.done_at, today),
+        done_at=_done_at(uo.done_at),
+    )
+
+
+def task_item(task: Task, today: date) -> CalendarItem:
+    return CalendarItem(
+        type="task",
+        id=task.id,
+        title=task.title,
+        category="custom",
+        due_date=task.due_date,
+        original_date=task.due_date,
+        status=item_status(task.due_date, task.done_at, today),
+        done_at=_done_at(task.done_at),
+    )
+
+
+def obligation_card(uo: UserObligation, ob: Obligation, today: date) -> ItemCard:
+    return ItemCard(
+        **obligation_item(uo, ob, today).model_dump(),
+        norm=ob.norm,
+        source_url=ob.source_url,
+        howto_steps=expand_howto_steps(ob, uo.due_date, today),
+        howto_link=HowtoLinkOut(label=ob.howto_link.label, url=ob.howto_link.url),
+        penalty_text=ob.penalty_text,
+        last_checked_at=ob.last_checked_at,
+    )
+
+
+def task_card(task: Task, today: date) -> ItemCard:
+    return ItemCard(
+        **task_item(task, today).model_dump(),
+        remind_offset_days=task.remind_offset_days,
+        remind_hour=task.remind_hour,
+    )
+
+
+async def item_card(
+    session: AsyncSession,
+    user_id: int,
+    item_type: ItemTypeParam,
+    item_id: int,
+    *,
+    reference: Reference,
+    now: datetime,
+) -> ItemCard:
+    today = user_today(await load_profile(session, user_id), now)
+    if item_type == "obligation":
+        uo, ob = await own_obligation(session, user_id, item_id, reference)
+        return obligation_card(uo, ob, today)
+    return task_card(await own_task(session, user_id, item_id), today)
+
+
+async def calendar_items(
+    session: AsyncSession,
+    user_id: int,
+    date_from: date,
+    date_to: date,
+    *,
+    reference: Reference,
+    now: datetime,
+) -> list[CalendarItem]:
+    """События с from ≤ due_date ≤ to плюс все неотмеченные с due_date < сегодня."""
+    today = user_today(await load_profile(session, user_id), now)
+    by_id = catalog_index(reference)
+
+    uos = await session.scalars(
+        select(UserObligation).where(
+            UserObligation.user_id == user_id,
+            or_(
+                UserObligation.due_date.between(date_from, date_to),
+                and_(UserObligation.done_at.is_(None), UserObligation.due_date < today),
+            ),
+        )
+    )
+    tasks = await session.scalars(
+        select(Task).where(
+            Task.user_id == user_id,
+            Task.deleted_at.is_(None),
+            or_(
+                Task.due_date.between(date_from, date_to),
+                and_(Task.done_at.is_(None), Task.due_date < today),
+            ),
+        )
+    )
+
+    items: list[CalendarItem] = []
+    for uo in uos:
+        ob = by_id.get(uo.obligation_id)
+        if ob is None:
+            log.warning(
+                "UserObligation %s: записи %s нет в справочнике, в календарь не попадает",
+                uo.id,
+                uo.obligation_id,
+            )
+            continue
+        items.append(obligation_item(uo, ob, today))
+    items.extend(task_item(t, today) for t in tasks)
+    items.sort(key=lambda i: (i.due_date, i.type, i.id))
+    return items
