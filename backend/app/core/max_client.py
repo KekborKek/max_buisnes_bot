@@ -132,6 +132,39 @@ class MaxClient:
             body["format"] = fmt
         return await self._request("POST", "/messages", params=params, json=body)
 
+    async def edit_message(
+        self,
+        message_id: str,
+        text: str,
+        *,
+        attachments: list[dict] | None = None,
+        fmt: str | None = "markdown",
+    ) -> dict:
+        """PUT /messages?message_id=… — https://dev.max.ru/docs-api/methods/PUT/messages
+
+        Тело — NewMessageBody. `attachments=None` — поле не передаётся, вложения (кнопки)
+        остаются как были; `attachments=[]` — все вложения удаляются («сообщение без кнопок»);
+        список — клавиатура заменяется целиком (так убирают одну кнопку).
+        Лимит MAX: не больше двух правок в секунду в одном диалоге.
+        """
+        body: dict[str, Any] = {"text": text}
+        if attachments is not None:
+            body["attachments"] = attachments
+        if fmt:
+            body["format"] = fmt
+        return await self._request("PUT", "/messages", params={"message_id": message_id}, json=body)
+
+    async def send_typing(self, chat_id: int) -> dict:
+        """Индикатор «печатает»: POST /chats/{chatId}/actions, action = typing_on.
+
+        https://dev.max.ru/docs-api/methods/POST/chats/-chatId-/actions — в документации
+        метод описан для групповых чатов, про диалог с ботом не сказано [сверить].
+        Вызывающий код не должен падать, если индикатор не сработал.
+        """
+        return await self._request(
+            "POST", f"/chats/{chat_id}/actions", json={"action": "typing_on"}
+        )
+
     async def answer_callback(self, callback_id: str, notification: str | None = None) -> dict:
         body = {"notification": notification} if notification else {}
         return await self._request(
