@@ -1,5 +1,5 @@
-// Типы данных мини-приложения. Источник — docs/spec/data-model.md §2–3.
-// Контракт API календаря ещё не в openapi.yaml (задача T10): при расхождении правы openapi.yaml и T11b.
+// Типы данных мини-приложения. Источник — docs/spec/data-model.md §2–3 и openapi.yaml
+// (backend/app/api/schemas.py) — при расхождении правы они, не этот файл.
 
 export type ItemType = "obligation" | "task";
 export type Category = "taxes" | "contributions" | "reports" | "custom";
@@ -23,14 +23,15 @@ export interface CalendarItem {
 export type IncomeBand = "lt10" | "10_20" | "20_60" | "gt60" | "unknown";
 export type Regime = "usn6" | "usn15" | "patent" | "ausn" | "unknown";
 
-/** Профиль из data-model.md §2. Допущение до T10: в §3 поля `profile` не перечислены. */
+/** Профиль из data-model.md §2 (`ProfileOut` в backend/app/api/schemas.py). */
 export interface Profile {
   income_band: IncomeBand;
   regime: Regime;
   has_employees: boolean;
   /** IANA, например "Europe/Moscow". */
   timezone: string;
-  nds_payer: boolean;
+  /** null — нельзя определить (D25): «не знаю» или диапазон дохода пересекает порог. */
+  nds_payer: boolean | null;
   calendar_built_at: string | null;
 }
 
@@ -41,7 +42,7 @@ export interface TaskDraft {
   due_date: string | null;
 }
 
-/** Ответ GET /api/me. `has_profile`, `profile` и `draft` добавит T10. */
+/** Ответ GET /api/me. */
 export interface Me {
   user_id: number;
   first_name: string | null;
