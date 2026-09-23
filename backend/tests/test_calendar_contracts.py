@@ -9,16 +9,9 @@ from datetime import date
 
 import pytest
 
-from app.calendar import build, dates, loader, reminders, types
+from app.calendar import build, dates, reminders, types
 
 STUBS = [
-    loader.parse_date_rule,
-    loader.parse_obligation,
-    loader.load_catalog,
-    loader.load_workdays,
-    loader.load_nds,
-    loader.load_reference,
-    loader.get_reference,
     dates.is_workday,
     dates.next_workday,
     dates.apply_shift,
