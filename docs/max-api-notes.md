@@ -1,6 +1,6 @@
 # Шпаргалка по MAX API (источник правды для агентов)
 
-Сверено с https://dev.max.ru/docs 16.09.2026. Документация меняется — перед сдачей перепроверить.
+Сверено с https://dev.max.ru/docs 16.09.2026; редактирование, «печатает», `open_app` и `bot_started.payload` — 23.09.2026 по OpenAPI-схеме, которую рендерит dev.max.ru/docs-api. Документация меняется — перед сдачей перепроверить.
 Пометка **[сверить]** — структура взята из документации частично, подтвердить на реальных апдейтах.
 
 ## Bot API
@@ -9,8 +9,10 @@
 - Лимит: 30 запросов в секунду.
 - `GET /me` — информация о боте.
 - `POST /messages?user_id=<id>` или `?chat_id=<id>` — отправка. Тело: `text`, `attachments`, `format` (`markdown` | `html`).
-- `PUT /messages` — редактирование, `DELETE /messages` — удаление.
-- `POST /answers?callback_id=<id>` — ответ на нажатие callback-кнопки. Тело: `message` (изменить сообщение), `notification`.
+- `PUT /messages?message_id=<id>` — редактирование (сверено 23.09.2026, https://dev.max.ru/docs-api/methods/PUT/messages). `message_id` — строка, это `message.body.mid`. Тело — `NewMessageBody`: `text` (до 4000), `attachments`, `link`, `notify`, `format`. **`attachments`: поле не передано или `null` — вложения не меняются; `[]` — удаляются все** (так убираем кнопки); новый массив — клавиатура заменяется целиком (так убираем одну кнопку). Ответ `{"success": bool, "message"?}`. Сообщения с `inline_keyboard` в диалоге редактируются без ограничения давности, остальные — если отправлены менее 7 суток назад. Не больше **2 правок в секунду** в одном диалоге. В коде — `MaxClient.edit_message`.
+- `DELETE /messages` — удаление.
+- `POST /answers?callback_id=<id>` — ответ на нажатие callback-кнопки. Тело (`CallbackAnswer`): `message` (`NewMessageBody` — изменить текущее сообщение), `notification`. У нас на callback отвечает диспетчер централизованно до обработчика (`bot/dispatcher.py`), второй ответ на тот же `callback_id` не документирован — поэтому сообщения правим только через `PUT /messages`.
+- `POST /chats/{chatId}/actions` — действие бота, тело `{"action": "typing_on"}` (ещё `sending_photo|video|audio|file`), https://dev.max.ru/docs-api/methods/POST/chats/-chatId-/actions. Документация описывает метод как «в групповой чат», про диалог с пользователем не сказано **[сверить]** на живом диалоге. В коде — `MaxClient.send_typing`; вызывающий код не должен падать, если индикатор не сработал.
 - `POST /uploads` — загрузка файлов (сначала загрузка, потом вложение в сообщение).
 - `GET /chats` **не поддерживается** с июня 2026: `chat_id` берём только из апдейтов.
 
@@ -30,7 +32,7 @@
 
 ## Апдейты (Update)
 Общие поля: `update_type`, `timestamp` (мс).
-- `bot_started`: `chat_id`, `user{user_id, name…}`, `payload` (из диплинка `?start=`) **[сверить]**
+- `bot_started`: `chat_id`, `user{user_id, name…}`, `payload` (из диплинка `?start=`, строка до 512 символов или `null`), `user_locale` — по схеме `BotStartedUpdate` **[сверить на живом апдейте]**
 - `message_created`: `message.sender.user_id`, `message.recipient.chat_id`, `message.body.mid`, `message.body.text` **[сверить]**
 - `message_callback`: `callback.callback_id`, `callback.payload`, `callback.user` **[сверить]**
 - Также: `bot_added`, `bot_stopped`, `bot_removed`, `message_edited`, `message_removed`, `user_added`, `user_removed`, `chat_title_changed` и др.
@@ -39,12 +41,19 @@
 
 ## Кнопки (inline_keyboard)
 - До 210 кнопок, 30 рядов, 7 в ряду; для `link`, `open_app`, `request_contact`, `request_geo_location` — до 3 в ряду.
-- Типы: `callback` (payload), `link` (url), `request_contact`, `request_geo_location`, `open_app` (мини-апп) **[сверить поля]**, `clipboard`.
+- Типы: `callback` (payload, до 1024), `link` (url, до 2048), `request_contact`, `request_geo_location`, `open_app` (мини-апп), `message`, `clipboard`. Текст кнопки — до 128 символов; видно целиком: 20 при одной кнопке в ряду, 10 — при двух.
+- **`open_app`** (схема `OpenAppButton` в https://dev.max.ru/docs-api/methods/POST/messages, сверено 23.09.2026): `{"type": "open_app", "text", "web_app"?, "contact_id"?, "payload"?}`.
+  - `web_app` — «публичное имя (username) бота или ссылка на него, чьё мини-приложение надо запустить»;
+  - `contact_id` — «идентификатор бота, чьё мини-приложение надо запустить» (int64);
+  - `payload` — «параметр запуска, который будет передан в initData мини-приложения». В мини-аппе параметр запуска — `WebApp.initDataUnsafe.start_param` (https://dev.max.ru/docs/webapps/bridge). Что `payload` кнопки приходит именно в `start_param`, а не в другое поле initData, — **[сверить]** на живом запуске.
+  - Ни одно из полей в схеме не обязательно; ограничений длины и алфавита `payload` схема не задаёт. Наши значения — `task_draft`, `item_<type>_<id>` (латиница, цифры, `_`).
+  - В коде — `bot/keyboards.open_app(text, payload, *, web_app, contact_id)`; без адреса берёт `MAX_BOT_USERNAME`. Пустой `MAX_BOT_USERNAME` — кнопку не показываем.
 - В `payload` — короткий идентификатор, не данные.
 - `request_contact` возвращает контакт с hash — номер можно проверить без SMS.
 
 ## Диплинки
-`https://max.ru/<botName>?start=<payload>` — payload до 128 символов, приходит в `bot_started`. Готовый механизм QR-входа из офлайна.
+`https://max.ru/<botName>?start=<payload>` — payload приходит в `bot_started` (в схеме `BotStartedUpdate.payload` — до 512 символов; раньше здесь было 128). Готовый механизм QR-входа из офлайна.
+`https://max.ru/<botName>?startapp=<param>` — открывает мини-приложение, `param` приходит в `start_param` (https://dev.max.ru/docs/webapps/introduction).
 
 ## Мини-приложение
 - Только HTTPS. Подключается к боту, не существует отдельно.

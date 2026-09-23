@@ -24,6 +24,8 @@ class FakeMax:
     def __init__(self) -> None:
         self.sent: list[dict] = []
         self.answered: list[str] = []
+        self.edited: list[dict] = []
+        self.typing: list[int] = []
 
     async def send_message(self, text, *, user_id=None, chat_id=None, attachments=None, fmt=None):
         self.sent.append(
@@ -33,6 +35,14 @@ class FakeMax:
 
     async def answer_callback(self, callback_id, notification=None):
         self.answered.append(callback_id)
+        return {}
+
+    async def edit_message(self, message_id, text, *, attachments=None, fmt=None):
+        self.edited.append({"message_id": message_id, "text": text, "attachments": attachments})
+        return {}
+
+    async def send_typing(self, chat_id):
+        self.typing.append(chat_id)
         return {}
 
     async def close(self):
