@@ -326,9 +326,10 @@ async def test_full_path_by_buttons(fake_max, clock):
     sent_before = len(fake_max.sent)
     msg = await run(fake_max, press("onb:4:Europe/Moscow"))
 
-    # экран 3 приходит сам, без дополнительного нажатия (пока — заглушка T5b)
+    # экран 3 приходит сам, без дополнительного нажатия. Профиль 20–60 — плательщик, а НДС-записей
+    # в фикстурах нет: экран 3 отвечает ошибкой данных с «Повторить» (варианты — test_nds_answer)
     assert len(fake_max.sent) == sent_before + 1
-    assert msg["text"] == t("onboarding.completed_stub")
+    assert payloads(msg) == [["nds:show"]]
 
     profile = await get_profile()
     assert profile.income_band == "20_60"
@@ -435,7 +436,7 @@ async def test_other_timezone_list_and_iana_saved(fake_max):
 
     msg = await run(fake_max, press("onb:4:Asia/Vladivostok"))
 
-    assert msg["text"] == t("onboarding.completed_stub")
+    assert payloads(msg) == [["nds:show"]]  # экран 3, см. test_full_path_by_buttons
     assert (await get_profile()).timezone == "Asia/Vladivostok"
 
 
@@ -512,7 +513,7 @@ async def test_missing_reference_on_completion_keeps_answer_and_retries(fake_max
     monkeypatch.setattr(loader, "get_reference", real)
     msg = await run(fake_max, press("onb:4:Europe/Moscow"))
 
-    assert msg["text"] == t("onboarding.completed_stub")
+    assert payloads(msg) == [["nds:show"]]  # экран 3, см. test_full_path_by_buttons
     assert len(await events("onboarding_completed")) == 1
 
 
