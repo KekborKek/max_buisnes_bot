@@ -11,6 +11,7 @@
 MAX ──вебхук──▶ backend/app/webhook.py ──фон──▶ bot/dispatcher.py ──▶ bot/router.py ──▶ bot/handlers/*
                                                    │ идемпотентность        │ FSM в БД (Ctx.get_state/set_state)
 Мини-апп (miniapp/, React + MAX UI + MAX Bridge) ──/api──▶ backend/app/api/routes.py (проверка initData)
+Календарь — backend/app/calendar/ (справочник → даты → сборка → напоминания); lifespan в main.py раз в минуту зовёт calendar.reminders.tick.
 Все обращения к MAX API — только core/max_client.py. Внешние данные — только core/adapters (Mock|Real).
 Аналитика — core/events.track(). Тексты бота — content/texts.yaml, мини-аппа — miniapp/src/texts.ts.
 ```
@@ -38,6 +39,7 @@ docker compose up --build
 |---|---|
 | `backend/app/bot/` | дорожка BOT |
 | `backend/app/api/` | дорожка API |
+| `backend/app/calendar/` | дорожка CAL (контракты в `calendar/types.py` — только техлид) |
 | `miniapp/` | дорожка FRONT |
 | `seed/`, `backend/tests/fixtures/` | дорожка DATA |
 | `docs/`, `README.md` | дорожка DOCS |

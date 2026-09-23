@@ -1,0 +1,9 @@
+# ТЕСТОВЫЕ ДАННЫЕ. Выдуманный конфиг НДС для тестов загрузчика (T2), не реальный
+# налоговый порог. Реальный файл — content/nds.yaml.
+law: "Тестовый закон № 000-ТЕСТ от 01.01.2026"
+law_url: "https://example.invalid/law"
+fns_guide_url: "https://example.invalid/fns-guide"
+thresholds:
+  - { income_years: [2025, 2026], limit_rub: 20000000 }
+  - { income_years: [2027], limit_rub: 15000000 }
+last_checked_at: "2026-01-01"

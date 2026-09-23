@@ -265,3 +265,51 @@ def test_me_response_schema_has_start_param():
     assert "start_param" in schema["properties"]
     assert "start_param" not in schema.get("required", [])
     assert json.dumps(schema)  # схема сериализуема — export_openapi не упадёт
+
+
+# --- issue #16: /api/me и /api/events — базовый контракт эндпоинтов ---
+
+
+def test_me_rejects_tampered_signature(settings):
+    """Значение подписанной initData изменено после подписи — 401, а не тихий проход."""
+    settings()
+    raw = init_data()
+    assert "42" in raw
+    tampered = raw.replace("42", "43", 1)  # user_id подменён уже после подписи
+    with TestClient(app) as client:
+        r = client.get("/api/me", headers={"X-Max-Init-Data": tampered})
+    assert r.status_code == 401
+
+
+def test_me_rejects_missing_header(settings):
+    """Заголовка X-Max-Init-Data нет вовсе — 401."""
+    settings()
+    with TestClient(app) as client:
+        r = client.get("/api/me")
+    assert r.status_code == 401
+
+
+async def test_events_rejects_missing_init_data(settings):
+    """Аналитика не пишется от анонима: без initData /api/events отвечает 401."""
+    settings()
+    with TestClient(app) as client:
+        r = client.post("/api/events", json={"name": "primary_action_clicked", "props": {}})
+    assert r.status_code == 401
+    assert await stored_events() == []
+
+
+async def test_events_writes_row_with_expected_fields(settings):
+    """POST /api/events действительно пишет строку с ожидаемыми user_id, name, props."""
+    settings()
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/events",
+            json={"name": "checklist_done", "props": {"point": 7}},
+            headers={"X-Max-Init-Data": init_data()},
+        )
+    assert r.status_code == 204
+    events = await stored_events()
+    assert len(events) == 1
+    assert events[0].user_id == 42
+    assert events[0].name == "checklist_done"
+    assert events[0].props == {"point": 7}

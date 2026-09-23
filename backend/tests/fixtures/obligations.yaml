@@ -1,0 +1,46 @@
+# ТЕСТОВЫЕ ДАННЫЕ. Выдуманные записи для тестов загрузчика (T2), не реальный
+# налоговый справочник. Реальный файл ведёт аналитик в content/obligations.yaml.
+version: "2026-01-01"
+obligations:
+  - id: test_yearly
+    title: "Тестовое годовое обязательство"
+    category: taxes
+    date_rule:
+      type: yearly
+      month: 12
+      day: 28
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15]
+    needs_prep: true
+    norm: "Тестовая норма №1"
+    source_url: "https://example.invalid/test-yearly"
+    howto_steps:
+      - "Тестовый шаг 1."
+      - "Тестовый шаг 2 — до {notice_date}."
+      - "Тестовый шаг 3 — до {due_date}."
+    howto_link: { label: "Открыть тест", url: "https://example.invalid/howto" }
+    penalty_text: "Тестовый текст о пене."
+    rule_version: 1
+    last_checked_at: "2026-01-01"
+
+  - id: test_quarterly
+    title: "Тестовое квартальное обязательство"
+    category: reports
+    date_rule:
+      type: quarterly
+      offset_month: 1
+      day: 25
+    shift: none
+    applies_if: {}
+    needs_prep: false
+    norm: "Тестовая норма №2"
+    source_url: "https://example.invalid/test-quarterly"
+    howto_steps:
+      - "Тестовый шаг А."
+      - "Тестовый шаг Б."
+      - "Тестовый шаг В."
+    howto_link: { label: "Открыть тест 2", url: "https://example.invalid/howto2" }
+    penalty_text: "Тестовый текст о штрафе."
+    rule_version: 1
+    last_checked_at: "2026-01-01"
