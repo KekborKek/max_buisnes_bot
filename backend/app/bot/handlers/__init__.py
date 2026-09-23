@@ -1,3 +1,10 @@
 """Импорт модулей регистрирует обработчики в роутере."""
 
-from app.bot.handlers import fallback, onboarding, service, start  # noqa: F401
+from app.bot.handlers import (  # noqa: F401
+    calendar_ready,
+    fallback,
+    nds_answer,
+    onboarding,
+    service,
+    start,
+)
