@@ -18,6 +18,7 @@ function renderList(calendar: CalendarState, onRetry = vi.fn()) {
     push: vi.fn(),
     back: vi.fn(),
     switchTab: vi.fn(),
+    home: vi.fn(),
   };
   render(
     <NavigationContext.Provider value={nav}>

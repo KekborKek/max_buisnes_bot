@@ -17,13 +17,16 @@ import {
   type Tab,
   useBackButton,
 } from "./router";
+import { CardScreen } from "./screens/CardScreen";
 import { GateScreen } from "./screens/GateScreen";
 import { CalendarHeader, type CalendarState, ListScreen } from "./screens/ListScreen";
 import { PlaceholderScreen } from "./screens/PlaceholderScreen";
+import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
 import { ToastProvider } from "./shell/Toast";
+import { type CalendarStore, CalendarStoreContext, itemKey, removeItem, upsertItem } from "./store";
 import { texts } from "./texts";
-import type { Me, Profile } from "./types";
+import type { ItemCard, ItemType, Me, Profile, TaskDraft } from "./types";
 
 type MeState =
   { kind: "loading" } | { kind: "failed"; error: ErrorKind } | { kind: "ready"; me: Me };
@@ -80,7 +83,10 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
 
   let content;
   if (profile) {
-    content = <CalendarApp source={source} profile={profile} startParam={startParam} />;
+    const draft = me.kind === "ready" ? (me.me.draft ?? null) : null;
+    content = (
+      <CalendarApp source={source} profile={profile} startParam={startParam} draft={draft} />
+    );
   } else {
     // Нет профиля или 401 — заглушка без слов об авторизации; сеть/сервис — заглушка + плашка.
     const error = me.kind === "failed" && me.error !== "unauthorized" ? me.error : null;
@@ -114,10 +120,12 @@ interface CalendarAppProps {
   source: DataSource;
   profile: Profile;
   startParam: string | null;
+  /** Черновик задачи из бота для формы 17 (`start_param=task_draft`). */
+  draft: TaskDraft | null;
 }
 
 /** Календарь пользователя с профилем: экраны 14/15/16/17. Данные общие для вкладок. */
-function CalendarApp({ source, profile, startParam }: CalendarAppProps) {
+function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
   const [calendar, setCalendar] = useState<CalendarState>({
     items: null,
     loading: true,
@@ -151,6 +159,30 @@ function CalendarApp({ source, profile, startParam }: CalendarAppProps) {
     setAttempt((n) => n + 1);
   };
 
+  // Карточки 16 за этот запуск; изменения из 16/17 сразу попадают и в список 14.
+  const [cards, setCards] = useState<Record<string, ItemCard>>({});
+  const upsert = useCallback(
+    (card: ItemCard) => {
+      setCards((c) => ({ ...c, [itemKey(card.type, card.id)]: card }));
+      setCalendar((c) =>
+        c.items ? { ...c, items: upsertItem(c.items, card, todayIn(timezone)) } : c,
+      );
+    },
+    [timezone],
+  );
+  const remove = useCallback((type: ItemType, id: number) => {
+    setCards((c) => {
+      const next = { ...c };
+      delete next[itemKey(type, id)];
+      return next;
+    });
+    setCalendar((c) => (c.items ? { ...c, items: removeItem(c.items, type, id) } : c));
+  }, []);
+  const store = useMemo<CalendarStore>(
+    () => ({ items: calendar.items, cards, upsert, remove }),
+    [calendar.items, cards, upsert, remove],
+  );
+
   const [stack, dispatch] = useReducer(navReducer, null, () =>
     initialStack(parseStartParam(startParam), loadTab()),
   );
@@ -165,6 +197,8 @@ function CalendarApp({ source, profile, startParam }: CalendarAppProps) {
         saveTab(tab);
         dispatch({ type: "tab", tab });
       },
+      // На 14 без записи в localStorage: запомненный режим выбирает пользователь.
+      home: () => dispatch({ type: "tab", tab: "list" }),
     }),
     [stack, back],
   );
@@ -194,24 +228,41 @@ function CalendarApp({ source, profile, startParam }: CalendarAppProps) {
       );
       break;
     case "card":
-      screen = <PlaceholderScreen screen="16" />;
+      screen = (
+        <CardScreen
+          key={itemKey(route.itemType, route.id)}
+          source={source}
+          route={route}
+          today={todayIn(timezone)}
+          timezone={timezone}
+        />
+      );
       break;
     case "task":
-      screen = <PlaceholderScreen screen="17" />;
+      screen = (
+        <TaskFormScreen
+          source={source}
+          today={todayIn(timezone)}
+          draft={route.draft ? draft : null}
+          taskId={route.taskId}
+        />
+      );
       break;
   }
 
   return (
     <NavigationContext.Provider value={nav}>
-      {/* Вне MAX BackButton нет — замена, чтобы с неглавного экрана был выход. */}
-      {!backButton && stack.length > 1 && (
-        <div className="back-fallback">
-          <Button size="small" variant="ghost" onClick={back}>
-            {texts.nav.back}
-          </Button>
-        </div>
-      )}
-      {screen}
+      <CalendarStoreContext.Provider value={store}>
+        {/* Вне MAX BackButton нет — замена, чтобы с неглавного экрана был выход. */}
+        {!backButton && stack.length > 1 && (
+          <div className="back-fallback">
+            <Button size="small" variant="ghost" onClick={back}>
+              {texts.nav.back}
+            </Button>
+          </div>
+        )}
+        {screen}
+      </CalendarStoreContext.Provider>
     </NavigationContext.Provider>
   );
 }

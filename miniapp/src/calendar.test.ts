@@ -1,6 +1,16 @@
 import { expect, test } from "vitest";
 
-import { addDays, formatShortDate, groupSections, todayIn, weekEnd } from "./calendar";
+import {
+  addDays,
+  dateIn,
+  formatCardDate,
+  formatDate,
+  formatNumericDate,
+  formatShortDate,
+  groupSections,
+  todayIn,
+  weekEnd,
+} from "./calendar";
 import { makeItem } from "./test/fakeSource";
 
 test("todayIn считает «сегодня» в поясе пользователя", () => {
@@ -73,4 +83,13 @@ test("formatShortDate: «28 окт», год — только если не те
   expect(formatShortDate("2026-10-28", "2026-09-23")).toBe("28 окт");
   expect(formatShortDate("2026-05-05", "2026-09-23")).toBe("5 мая");
   expect(formatShortDate("2027-01-05", "2026-09-23")).toBe("5 янв 2027");
+});
+
+test("formatCardDate: «28 октября, среда», год — только если не текущий", () => {
+  expect(formatCardDate("2026-10-28", "2026-09-23")).toBe("28 октября, среда");
+  expect(formatCardDate("2027-01-05", "2026-09-23")).toBe("5 января 2027, вторник");
+  expect(formatDate("2026-05-05", "2026-09-23")).toBe("5 мая");
+  expect(formatNumericDate("2026-09-20")).toBe("20.09.2026");
+  // Отметку поставили в 23:30 по Москве — во Владивостоке это уже следующий день.
+  expect(dateIn("Asia/Vladivostok", "2026-10-27T20:30:00Z")).toBe("2026-10-28");
 });

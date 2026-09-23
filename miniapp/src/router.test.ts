@@ -23,9 +23,16 @@ test("parseStartParam игнорирует мусор и чужие диплин
   }
 });
 
-test("пока экранов 16/17 нет, любой start_param ведёт на вкладку", () => {
-  expect(initialStack(parseStartParam("item_obligation_1"), "list")).toEqual([{ name: "list" }]);
-  expect(initialStack({ kind: "task_draft" }, "month")).toEqual([{ name: "month" }]);
+test("start_param из бота: 16 или 17 поверх списка 14, иначе — запомненная вкладка", () => {
+  expect(initialStack(parseStartParam("item_obligation_1"), "month")).toEqual([
+    { name: "list" },
+    { name: "card", itemType: "obligation", id: 1, source: "bot" },
+  ]);
+  expect(initialStack({ kind: "task_draft" }, "month")).toEqual([
+    { name: "list" },
+    { name: "task", draft: true },
+  ]);
+  expect(initialStack(null, "month")).toEqual([{ name: "month" }]);
 });
 
 test("navReducer: вперёд, назад, назад с главного не уходит, вкладка сбрасывает стек", () => {
