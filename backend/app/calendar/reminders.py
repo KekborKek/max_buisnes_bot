@@ -1,14 +1,15 @@
 """Напоминания: расписание (T4) и отправка раз в минуту (T6). Логика — docs/spec/reminders.md.
 
-`tick` вызывает фоновый цикл из lifespan (app/main.py) раз в минуту. Пока T6 не сделана,
-`tick` ничего не делает — это заглушка, а не NotImplementedError, чтобы не сыпать ошибками
-в лог каждую минуту.
+`tick` вызывает фоновый цикл из lifespan (app/main.py) раз в минуту. Отправка устроена
+«забрать → отправить → записать»: сеть — только между короткими транзакциями (см. `tick`).
+Тексты и кнопки экрана 6 собирает `render_reminder`; им же пользуется кнопка
+«Напомнить завтра» (app/bot/handlers/reminders.py), чтобы перерисовать сообщение.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
@@ -17,8 +18,28 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.calendar.types import ItemType, NotificationKind
-from app.core.models import Notification, Task, UserObligation, default_reminder_settings
+from app.bot import keyboards as kb
+from app.bot.formatting import (
+    count_words,
+    date_with_shift,
+    format_date,
+    join_titles,
+    when_words,
+)
+from app.calendar import loader
+from app.calendar.types import ItemType, NotificationKind, Reference
+from app.core import events
+from app.core.config import get_settings
+from app.core.db import SessionLocal
+from app.core.models import (
+    DEFAULT_TIMEZONE,
+    Notification,
+    Profile,
+    Task,
+    UserObligation,
+    default_reminder_settings,
+)
+from app.core.texts import t
 
 if TYPE_CHECKING:
     from app.core.max_client import MaxClient
@@ -250,10 +271,377 @@ async def sync_task_notification(
         )
 
 
-async def tick(now: datetime, max_client: MaxClient) -> None:
+# --- Отправка (T6) ------------------------------------------------------------------------------
+
+# Ошибка отправки → одна повторная попытка через час, дальше failed (reminders.md, «Отправка»).
+RETRY_DELAY = timedelta(hours=1)
+MAX_ATTEMPTS = 2
+# Сколько уведомлений забирает один тик: тик не растягивается без предела, остальное — в следующем.
+BATCH_LIMIT = 500
+# Эти виды не собираются в сводное сообщение: у текста `grouped` нет формулировки
+# «срок прошёл» (решение D30) — каждое уходит отдельно.
+_NOT_GROUPED = frozenset({"overdue"})
+
+
+@dataclass(frozen=True, slots=True)
+class ReminderItem:
+    """Одно событие в напоминании — всё, что нужно для текста и кнопок, без ORM."""
+
+    notification_id: int
+    item_type: ItemType
+    item_id: int
+    title: str
+    due_date: date
+    original_date: date | None  # только у обязательств; у задачи переноса нет
+    penalty_text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class OutgoingReminder:
+    """Готовое к отправке сообщение: одно событие или сводное по одной дате."""
+
+    user_id: int
+    kind: NotificationKind
+    items: tuple[ReminderItem, ...]
+    text: str
+    attachments: list[dict] | None
+
+    @property
+    def grouped(self) -> bool:
+        return len(self.items) > 1
+
+    @property
+    def notification_ids(self) -> list[int]:
+        return [item.notification_id for item in self.items]
+
+
+def reminder_payload(action: str, item_type: str, item_id: int) -> str:
+    """Payload кнопки экрана 6: `r:<action>:<item_type>:<item_id>` (T7 разбирает done/howto)."""
+    return f"r:{action}:{item_type}:{item_id}"
+
+
+def _open_button(start_param: str | None) -> dict | None:
+    """«Открыть календарь» (D27). Без MAX_BOT_USERNAME кнопку не показываем."""
+    if not get_settings().max_bot_username:
+        return None
+    return kb.open_app(t("reminder.btn_open"), start_param)
+
+
+def reminder_keyboard(
+    kind: str, item_type: str, item_id: int, *, with_snooze: bool = True
+) -> list[dict] | None:
+    """Кнопки одиночного напоминания по таблице экрана 6. None — кнопок нет.
+
+    `with_snooze=False` — клавиатура d7 после «Напомнить завтра»: та же, без этой кнопки.
+    """
+
+    def cb(action: str) -> dict:
+        payload = reminder_payload(action, item_type, item_id)
+        return kb.callback(t(f"reminder.btn_{action}"), payload)
+
+    open_btn = _open_button(f"item_{item_type}_{item_id}")
+    if kind == "d30":
+        rows = [[cb("howto"), open_btn]]
+    elif kind == "d7":
+        rows = [[cb("done")], [cb("howto"), cb("snooze")] if with_snooze else [cb("howto")]]
+    elif kind == "task":
+        rows = [[cb("done")], [open_btn]]
+    else:  # d1, overdue, snooze
+        rows = [[cb("done")], [cb("howto")]]
+    rows = [[b for b in row if b is not None] for row in rows]
+    rows = [row for row in rows if row]
+    return [kb.inline_keyboard(*rows)] if rows else None
+
+
+def _grouped_date(items: Sequence[ReminderItem], today: date) -> str:
+    """Дата сводного: `shift_note` — только если все события перенесены с одной и той же даты."""
+    due = items[0].due_date
+    originals = {item.original_date for item in items}
+    if len(originals) == 1:
+        return date_with_shift(due, originals.pop(), today)
+    return format_date(due, today)
+
+
+def render_reminder(
+    kind: NotificationKind, items: Sequence[ReminderItem], today: date
+) -> tuple[str, list[dict] | None]:
+    """Текст и кнопки экрана 6. `today` — сегодня в поясе пользователя (для года и {when}).
+
+    Несколько событий одной даты — вариант `grouped` с одной кнопкой «Открыть календарь»
+    без параметра запуска (правило 2 reminders.md).
+    """
+    if len(items) > 1:
+        open_btn = _open_button(None)
+        text = t(
+            "reminder.grouped",
+            when=when_words(items[0].due_date, today),
+            date=_grouped_date(items, today),
+            count_words=count_words(len(items)),
+            titles=join_titles([item.title for item in items]),
+        )
+        return text, [kb.inline_keyboard([open_btn])] if open_btn else None
+
+    item = items[0]
+    fields: dict[str, Any] = {
+        "date": date_with_shift(item.due_date, item.original_date, today),
+        "title": item.title,
+    }
+    if kind == "d7":
+        fields["penalty"] = item.penalty_text
+    if kind == "task":
+        fields["when"] = when_words(item.due_date, today)
+    text = t(f"reminder.{kind}", **fields)
+    return text, reminder_keyboard(kind, item.item_type, item.item_id)
+
+
+def user_today(profile: Profile | None, now: datetime) -> tuple[date, str]:
+    """Сегодня в поясе пользователя и сам пояс. Пояс не выбран — московский (экран 6)."""
+    tz = (profile.timezone if profile is not None else None) or DEFAULT_TIMEZONE
+    return as_utc(now).astimezone(ZoneInfo(tz)).date(), tz
+
+
+async def load_reminder_item(
+    session: AsyncSession,
+    reference: Reference,
+    *,
+    notification_id: int,
+    user_id: int,
+    item_type: str,
+    item_id: int,
+) -> ReminderItem | None:
+    """Событие для напоминания, если по нему ещё надо напоминать; иначе None.
+
+    None — события нет (удалено при пересборке, задача удалена), оно чужое, уже отмечено
+    или записи нет в справочнике. Только чтение.
+    """
+    if item_type == "obligation":
+        uo = await session.get(UserObligation, item_id)
+        if uo is None or uo.user_id != user_id or uo.done_at is not None:
+            return None
+        ob = next((o for o in reference.catalog.obligations if o.id == uo.obligation_id), None)
+        if ob is None:
+            log.warning("напоминание %s: %s нет в справочнике", notification_id, uo.obligation_id)
+            return None
+        return ReminderItem(
+            notification_id=notification_id,
+            item_type="obligation",
+            item_id=uo.id,
+            title=ob.title,
+            due_date=uo.due_date,
+            original_date=uo.original_date,
+            penalty_text=ob.penalty_text,
+        )
+    if item_type == "task":
+        task = await session.get(Task, item_id)
+        if (
+            task is None
+            or task.user_id != user_id
+            or task.done_at is not None
+            or task.deleted_at is not None
+        ):
+            return None
+        return ReminderItem(
+            notification_id=notification_id,
+            item_type="task",
+            item_id=task.id,
+            title=task.title,
+            due_date=task.due_date,
+            original_date=None,
+        )
+    log.warning("напоминание %s: неизвестный item_type %r", notification_id, item_type)
+    return None
+
+
+def _is_stale(kind: str, due_date: date, today: date) -> bool:
+    """Текст уже неверен: «Через месяц» / «Через 7 дней» / «Завтра» — только в свой день.
+
+    Бывает, если планировщик стоял (деплой, сервер лежал): не шлём «через 30 дней», когда
+    осталось 12 (reminders.md, тот же принцип, что при создании). Такое → cancelled.
+    overdue и snooze от дня не зависят; задача — пока срок не прошёл.
+    """
+    days_left = (due_date - today).days
+    if kind in ("d30", "d7", "d1"):
+        return days_left != -_KIND_OFFSET_DAYS[kind]
+    if kind == "task":
+        return days_left < 0
+    return False
+
+
+async def _claim(now: datetime, reference: Reference) -> list[OutgoingReminder]:
+    """Короткая транзакция «забрать»: pending с send_at ≤ now → готовые сообщения.
+
+    Первый оператор транзакции — UPDATE … RETURNING: транзакция сразу пишущая, и SQLite
+    выдаёт строки ровно одному тику. Забранное получает `attempts + 1` и `send_at = now + 1 ч`
+    («аренда»): параллельный или следующий тик его уже не выберет, а если процесс упадёт
+    до записи результата, уведомление само вернётся через час как повторная попытка.
+    Отмеченное и удалённое — сразу `cancelled`. Сетевых вызовов внутри нет.
+    """
+    lease_until = now + RETRY_DELAY
+    due_ids = (
+        select(Notification.id)
+        .where(Notification.status == "pending", Notification.send_at <= now)
+        .order_by(Notification.send_at, Notification.id)
+        .limit(BATCH_LIMIT)
+        .scalar_subquery()
+    )
+    claim = (
+        update(Notification)
+        .where(
+            Notification.id.in_(due_ids),
+            Notification.status == "pending",
+            Notification.send_at <= now,
+        )
+        .values(attempts=Notification.attempts + 1, send_at=lease_until)
+        .returning(
+            Notification.id,
+            Notification.user_id,
+            Notification.item_type,
+            Notification.item_id,
+            Notification.kind,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    async with SessionLocal() as session:
+        rows = (await session.execute(claim)).all()
+        if not rows:
+            await session.commit()
+            return []
+
+        groups: dict[tuple, list[ReminderItem]] = {}
+        todays: dict[int, date] = {}
+        cancelled: list[int] = []
+        for row in sorted(rows, key=lambda r: r.id):
+            item = await load_reminder_item(
+                session,
+                reference,
+                notification_id=row.id,
+                user_id=row.user_id,
+                item_type=row.item_type,
+                item_id=row.item_id,
+            )
+            if item is None:
+                cancelled.append(row.id)
+                continue
+            if row.user_id not in todays:
+                todays[row.user_id], _ = user_today(await session.get(Profile, row.user_id), now)
+            if _is_stale(row.kind, item.due_date, todays[row.user_id]):
+                log.info("напоминание %s (%s) устарело — не отправляем", row.id, row.kind)
+                cancelled.append(row.id)
+                continue
+            # Правило 2: одно сообщение на (user_id, kind, due_date); overdue — поштучно (D30).
+            tail = row.id if row.kind in _NOT_GROUPED else None
+            groups.setdefault((row.user_id, row.kind, item.due_date, tail), []).append(item)
+
+        if cancelled:
+            await session.execute(
+                update(Notification)
+                .where(Notification.id.in_(cancelled))
+                .values(status="cancelled")
+                .execution_options(synchronize_session=False)
+            )
+        await session.commit()
+
+    outgoing = []
+    for (user_id, kind, _due, _tail), items in groups.items():
+        text, attachments = render_reminder(kind, items, todays[user_id])
+        outgoing.append(
+            OutgoingReminder(
+                user_id=user_id, kind=kind, items=tuple(items), text=text, attachments=attachments
+            )
+        )
+    return outgoing
+
+
+async def _record(reminder: OutgoingReminder, *, ok: bool, now: datetime) -> None:
+    """Короткая транзакция «записать» после отправки одного сообщения.
+
+    Успех → `sent`, `send_at` = момент тика (аренду убираем, история честная), `reminder_sent`
+    на каждое событие. Ошибка → при `attempts < MAX_ATTEMPTS` строка остаётся pending
+    с арендой = повтор через час, иначе `failed`. `status == 'pending'` в условии: если
+    событие отметили, пока сообщение летело, отмена (`cancelled`) остаётся.
+    """
+    ids = reminder.notification_ids
+    async with SessionLocal() as session:
+        if ok:
+            await session.execute(
+                update(Notification)
+                .where(Notification.id.in_(ids), Notification.status == "pending")
+                .values(status="sent", send_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            for item in reminder.items:
+                await events.track(
+                    session,
+                    reminder.user_id,
+                    "reminder_sent",
+                    {"kind": reminder.kind, "item_id": item.item_id, "grouped": reminder.grouped},
+                )
+        else:
+            await session.execute(
+                update(Notification)
+                .where(
+                    Notification.id.in_(ids),
+                    Notification.status == "pending",
+                    Notification.attempts >= MAX_ATTEMPTS,
+                )
+                .values(status="failed")
+                .execution_options(synchronize_session=False)
+            )
+            props = {"where": "reminder_send", "kind": "send_failed"}
+            await events.track(session, reminder.user_id, "error", props)
+        await session.commit()
+
+
+async def deliver(reminder: OutgoingReminder, max_client: MaxClient, now: datetime) -> bool:
+    """Отправить одно готовое напоминание и записать результат. True — ушло.
+
+    Вызывать без открытой транзакции: здесь запрос к MAX, потом своя короткая транзакция.
+    Этим же пользуется демо-команда `/demo_remind` (T13).
+    """
+    try:
+        await max_client.send_message(
+            reminder.text, user_id=reminder.user_id, attachments=reminder.attachments, fmt=None
+        )
+        ok = True
+    except Exception:
+        log.exception(
+            "напоминание %s пользователю %s не отправлено",
+            reminder.notification_ids,
+            reminder.user_id,
+        )
+        ok = False
+    try:
+        await _record(reminder, ok=ok, now=now)
+    except Exception:
+        # Не записали — строка осталась pending с арендой: через час будет повтор.
+        log.exception("не записан результат отправки %s", reminder.notification_ids)
+    return ok
+
+
+async def _has_due(now: datetime) -> bool:
+    """Есть ли что отправлять. Только чтение, без транзакции записи."""
+    async with SessionLocal() as session:
+        found = await session.scalar(
+            select(Notification.id)
+            .where(Notification.status == "pending", Notification.send_at <= now)
+            .limit(1)
+        )
+    return found is not None
+
+
+async def tick(now: datetime, max_client: MaxClient, *, reference: Reference | None = None) -> None:
     """Один проход планировщика (T6): pending с send_at ≤ now → отправка.
 
-    Сессии открывает сам и коротко (app.core.db.SessionLocal): запрос к MAX — вне транзакции.
-    Исключение отсюда цикл логирует и продолжает работу.
+    «Забрать» (`_claim`, короткая транзакция) → отправка без транзакции → «записать»
+    (`_record`, короткая транзакция на каждое сообщение). Запрос к MAX (до 35 с) не держит
+    блокировку записи SQLite; два тика одно уведомление не заберут — см. `_claim`.
+
+    Справочник читается, только когда есть что отправлять: пустой тик не зависит от файлов
+    аналитика. `reference` — для тестов. Исключение отсюда цикл логирует и продолжает работу.
     """
-    return None
+    now = as_utc(now)
+    if not await _has_due(now):
+        return
+    reference = reference if reference is not None else loader.get_reference()
+    for reminder in await _claim(now, reference):
+        await deliver(reminder, max_client, now)

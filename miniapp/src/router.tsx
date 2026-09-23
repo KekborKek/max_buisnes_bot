@@ -12,7 +12,8 @@ export type Route =
   | { name: "list" }
   | { name: "month" }
   | { name: "card"; itemType: ItemType; id: number; source: CardSource }
-  | { name: "task"; draft: boolean };
+  /** Форма 17: новая (`draft` — с черновиком из бота) или правка задачи `taskId`. */
+  | { name: "task"; draft: boolean; taskId?: number };
 
 export type NavAction =
   { type: "push"; route: Route } | { type: "back" } | { type: "tab"; tab: Tab };
@@ -46,10 +47,17 @@ export function parseStartParam(raw: string | null): StartTarget {
 }
 
 /**
- * Начальный стек. Экранов 16/17 пока нет, поэтому любой start_param ведёт на вкладку.
- * T12: для `item` добавить `{ name: "card", ..., source: "bot" }`, для `task_draft` — форму.
+ * Начальный стек. Из бота (`item_*`, `task_draft`) — список 14 и поверх него карточка 16
+ * или форма 17: «Назад» ведёт на 14, а не на запомненную вкладку.
  */
-export function initialStack(_target: StartTarget, tab: Tab): Route[] {
+export function initialStack(target: StartTarget, tab: Tab): Route[] {
+  if (target?.kind === "item") {
+    return [
+      { name: "list" },
+      { name: "card", itemType: target.itemType, id: target.id, source: "bot" },
+    ];
+  }
+  if (target?.kind === "task_draft") return [{ name: "list" }, { name: "task", draft: true }];
   return [{ name: tab }];
 }
 
@@ -77,6 +85,8 @@ export interface Navigation {
   push(route: Route): void;
   back(): void;
   switchTab(tab: Tab): void;
+  /** На экран 14 со сбросом стека; запомненный режим «Список | Месяц» не меняется. */
+  home(): void;
 }
 
 export const NavigationContext = createContext<Navigation | null>(null);

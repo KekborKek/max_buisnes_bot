@@ -2,7 +2,7 @@
 import { vi } from "vitest";
 
 import type { DataSource } from "../data/source";
-import type { CalendarItem, Me, Profile } from "../types";
+import type { CalendarItem, ItemCard, Me, ObligationCard, Profile, TaskCard } from "../types";
 
 export const PROFILE: Profile = {
   income_band: "lt10",
@@ -37,6 +37,31 @@ export function makeItem(overrides: Partial<CalendarItem> = {}): CalendarItem {
   };
 }
 
+export function makeObligationCard(overrides: Partial<ObligationCard> = {}): ObligationCard {
+  return {
+    ...(makeItem() as ObligationCard),
+    type: "obligation",
+    norm: "Норма, ст. 1",
+    source_url: "https://example.com/source",
+    howto_steps: ["Шаг первый.", "Шаг второй.", "Шаг третий."],
+    howto_link: { label: "Ссылка", url: "https://example.com/howto" },
+    penalty_text: "Последствия пропуска.",
+    last_checked_at: "2026-09-20",
+    ...overrides,
+  };
+}
+
+export function makeTaskCard(overrides: Partial<TaskCard> = {}): TaskCard {
+  return {
+    ...makeItem({ type: "task", id: 3, title: "Аренда", due_date: "2026-11-05" }),
+    type: "task",
+    category: "custom",
+    remind_offset_days: 1,
+    remind_hour: 10,
+    ...overrides,
+  };
+}
+
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
@@ -53,27 +78,42 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-/** Каждый вызов me()/calendar() создаёт отложенный ответ; тест разрешает последний. */
+/** Каждый вызов метода создаёт отложенный ответ; тест разрешает последний. */
 export function fakeSource() {
-  const meCalls: Deferred<Me>[] = [];
-  const calendarCalls: Deferred<CalendarItem[]>[] = [];
+  const calls = {
+    me: [] as Deferred<Me>[],
+    calendar: [] as Deferred<CalendarItem[]>[],
+    item: [] as Deferred<ItemCard>[],
+    markDone: [] as Deferred<ItemCard>[],
+    undoDone: [] as Deferred<ItemCard>[],
+    reportWrongDate: [] as Deferred<void>[],
+    createTask: [] as Deferred<TaskCard>[],
+    updateTask: [] as Deferred<TaskCard>[],
+    deleteTask: [] as Deferred<void>[],
+  };
+  function pending<T>(list: Deferred<T>[]): Promise<T> {
+    const d = deferred<T>();
+    list.push(d);
+    return d.promise;
+  }
   const source = {
     isMock: false,
-    me: vi.fn(() => {
-      const d = deferred<Me>();
-      meCalls.push(d);
-      return d.promise;
-    }),
-    calendar: vi.fn(() => {
-      const d = deferred<CalendarItem[]>();
-      calendarCalls.push(d);
-      return d.promise;
-    }),
-    track: vi.fn(() => Promise.resolve()),
+    me: vi.fn<DataSource["me"]>(() => pending(calls.me)),
+    calendar: vi.fn<DataSource["calendar"]>(() => pending(calls.calendar)),
+    item: vi.fn<DataSource["item"]>(() => pending(calls.item)),
+    markDone: vi.fn<DataSource["markDone"]>(() => pending(calls.markDone)),
+    undoDone: vi.fn<DataSource["undoDone"]>(() => pending(calls.undoDone)),
+    reportWrongDate: vi.fn<DataSource["reportWrongDate"]>(() => pending(calls.reportWrongDate)),
+    createTask: vi.fn<DataSource["createTask"]>(() => pending(calls.createTask)),
+    updateTask: vi.fn<DataSource["updateTask"]>(() => pending(calls.updateTask)),
+    deleteTask: vi.fn<DataSource["deleteTask"]>(() => pending(calls.deleteTask)),
+    track: vi.fn<DataSource["track"]>(() => Promise.resolve()),
   } satisfies DataSource;
+  const last = <T>(list: Deferred<T>[]) => list[list.length - 1];
   return {
     source,
-    lastMe: () => meCalls[meCalls.length - 1],
-    lastCalendar: () => calendarCalls[calendarCalls.length - 1],
+    lastMe: () => last(calls.me),
+    lastCalendar: () => last(calls.calendar),
+    last: <K extends keyof typeof calls>(name: K) => last(calls[name] as Deferred<unknown>[]),
   };
 }

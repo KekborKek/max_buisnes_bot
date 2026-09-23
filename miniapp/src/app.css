@@ -225,3 +225,75 @@ body {
   background: var(--background-overlay);
   color: var(--text-primary-inverse);
 }
+
+/* Экран 16. Карточка. */
+.card-banner {
+  margin: 0 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--background-card);
+}
+
+.card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px;
+}
+
+.card-meta,
+.card-note {
+  color: var(--text-secondary);
+}
+
+.card-disclaimer {
+  color: var(--text-secondary);
+}
+
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.card-actions__row {
+  display: flex;
+  gap: 8px;
+}
+
+.card-step {
+  display: inline-block;
+  min-width: 16px;
+  color: var(--text-secondary);
+}
+
+/* Шаги, последствия и норма — целиком, без обрезки. */
+.card-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.card-footer {
+  display: block;
+  padding: 0 16px;
+  color: var(--text-secondary);
+}
+
+/* Экран 17. Форма. */
+.form-title {
+  display: block;
+  padding: 0 16px;
+}
+
+.form-field {
+  padding: 8px 12px;
+}
+
+/* Ошибка валидации — у поля, а не общим сообщением. */
+.field-error {
+  display: block;
+  margin-top: -4px;
+  padding: 0 32px;
+  color: var(--text-negative);
+}
