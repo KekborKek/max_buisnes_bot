@@ -164,6 +164,18 @@ reminder:
   titles_sep: ", "
   titles_last_sep: " и "
 
+# Экран 12 «Сводка в понедельник» (docs/screens/should-12-13-19.md; T14, #77). Приходит, только
+# если на неделе есть события. {range} — неделя пн–вс; {count_words} — reminder.count_* /
+# count_n с заглавной буквы (app/calendar/digest.py); {items} — пункты digest.item через items_sep.
+digest:
+  body: "Неделя {range}. {count_words}: {items}."
+  btn_open: "Открыть календарь"
+  btn_off: "Без сводки"
+  off_ok: "Хорошо, сводку больше не присылаю."
+  # Пункт и разделитель — из примера экрана 12: «28 октября — аванс по УСН; 30 октября — …».
+  item: "{date} — {title}"
+  items_sep: "; "
+
 # Экран 7 «Как сделать» (docs/screens/07-howto.md). Длиннее 4 строк — исключение D4.
 # Последняя строка body — disclaimer.not_advice, встроенный в текст.
 howto:
@@ -197,3 +209,5 @@ done:
 demo:
   usage: "Формат: /demo_remind <вид>. Доступные виды: {kinds}."
   no_items: "Невыполненных обязательств нет — показать нечего. Соберите календарь или отметьте что-то как невыполненное."
+  # /demo_remind digest, на текущей неделе нет событий без отметки. Текста в спеке нет (#77).
+  digest_empty: "TODO"

@@ -152,8 +152,8 @@ disclaimer:
 | `nds_result_shown` | `income_band`, `regime`, `nds_payer` | 3 |
 | `nds_why_opened` | — | 3 |
 | `calendar_built` | `items_count`, `seconds_since_start`, `rebuild` | 5 |
-| `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`), `item_id`, `item_type`, `grouped` | 6 |
-| `reminder_clicked` | `kind`, `action` (`done`/`howto`/`snooze`/`open_app`) | 6 |
+| `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`/`digest`), `item_id`, `item_type`, `grouped` | 6 |
+| `reminder_clicked` | `kind` (в том числе `digest`), `action` (`done`/`howto`/`snooze`/`open_app`/`off`) | 6 |
 | `howto_opened` | `item_id`, `item_type`, `source = reminder` | 7 |
 | `wrong_date_reported` | `item_id`, `item_type`, `source` | 7, 16 |
 | `item_done` | `item_id`, `item_type`, `source`, `days_before_deadline` | 8, 16 |
