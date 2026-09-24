@@ -281,6 +281,10 @@ BATCH_LIMIT = 500
 # Эти виды не собираются в сводное сообщение: у текста `grouped` нет формулировки
 # «срок прошёл» (решение D30) — каждое уходит отдельно.
 _NOT_GROUPED = frozenset({"overdue"})
+# Сводка в понедельник (экран 12, app/calendar/digest.py): её записи в Notification — отметка
+# «за эту неделю отправлялась», их создаёт и закрывает digest.tick. Обычная отправка их
+# не забирает, иначе упавшая на полпути сводка ушла бы вторым сообщением.
+DIGEST_KIND = "digest"
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,7 +483,11 @@ async def _claim(now: datetime, reference: Reference) -> list[OutgoingReminder]:
     lease_until = now + RETRY_DELAY
     due_ids = (
         select(Notification.id)
-        .where(Notification.status == "pending", Notification.send_at <= now)
+        .where(
+            Notification.status == "pending",
+            Notification.send_at <= now,
+            Notification.kind != DIGEST_KIND,
+        )
         .order_by(Notification.send_at, Notification.id)
         .limit(BATCH_LIMIT)
         .scalar_subquery()
@@ -490,6 +498,7 @@ async def _claim(now: datetime, reference: Reference) -> list[OutgoingReminder]:
             Notification.id.in_(due_ids),
             Notification.status == "pending",
             Notification.send_at <= now,
+            Notification.kind != DIGEST_KIND,
         )
         .values(attempts=Notification.attempts + 1, send_at=lease_until)
         .returning(
@@ -628,7 +637,11 @@ async def _has_due(now: datetime) -> bool:
     async with SessionLocal() as session:
         found = await session.scalar(
             select(Notification.id)
-            .where(Notification.status == "pending", Notification.send_at <= now)
+            .where(
+                Notification.status == "pending",
+                Notification.send_at <= now,
+                Notification.kind != DIGEST_KIND,
+            )
             .limit(1)
         )
     return found is not None
@@ -643,10 +656,15 @@ async def tick(now: datetime, max_client: MaxClient, *, reference: Reference | N
 
     Справочник читается, только когда есть что отправлять: пустой тик не зависит от файлов
     аналитика. `reference` — для тестов. Исключение отсюда цикл логирует и продолжает работу.
+
+    После обычных напоминаний — сводка в понедельник (экран 12, `digest.tick`).
     """
+    # Импорт здесь: digest.py импортирует этот модуль на уровне модуля — иначе цикл.
+    from app.calendar import digest
+
     now = as_utc(now)
-    if not await _has_due(now):
-        return
-    reference = reference if reference is not None else loader.get_reference()
-    for reminder in await _claim(now, reference):
-        await deliver(reminder, max_client, now)
+    if await _has_due(now):
+        reference = reference if reference is not None else loader.get_reference()
+        for reminder in await _claim(now, reference):
+            await deliver(reminder, max_client, now)
+    await digest.tick(now, max_client, reference=reference)

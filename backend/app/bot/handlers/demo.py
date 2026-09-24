@@ -11,6 +11,9 @@
 Для не-админа команда как будто не существует: ответ ровно `fallback.show_unknown`, неотличимый
 от любого другого непонятого текста.
 
+`/demo_remind digest` — сводка экрана 12 за текущую неделю (#77), см. `_demo_digest`. В подсказку
+`demo.usage` вид `digest` не входит: `KINDS` — виды напоминаний по одному обязательству.
+
 `task`-уведомления демо не показывает: схема 30/7/1/overdue к своим задачам не относится
 (D11, reminders.md), а демо явно «по ближайшему обязательству».
 
@@ -30,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot.context import Ctx
 from app.bot.handlers import common, fallback
 from app.bot.router import router
-from app.calendar import loader
+from app.calendar import digest, loader
 from app.calendar import reminders as rem
 from app.core.config import get_settings
 from app.core.models import Profile, UserObligation
@@ -68,6 +71,23 @@ async def _nearest_obligation_id(
     return None
 
 
+async def _demo_digest(ctx: Ctx, user_id: int) -> None:
+    """`/demo_remind digest` (экран 12, #77): сводка за текущую неделю пн–вс — тем же рендером.
+
+    Как и остальные виды демо, `Notification` и `reminder_sent` не создаёт: настоящая сводка
+    в понедельник от показа не пропадает. Событий на неделе нет — `demo.digest_empty`.
+    """
+    profile = await ctx.session.get(Profile, user_id)
+    today, _ = rem.user_today(profile, common.now())
+    monday = digest.week_monday(today)
+    items = await digest.load_week_items(ctx.session, loader.get_reference(), user_id, monday)
+    if not items:
+        await ctx.reply(t("demo.digest_empty"))
+        return
+    text, keyboard = digest.render_digest(items, monday, today)
+    await ctx.reply(text, attachments=keyboard)
+
+
 @router.on_command(COMMAND)
 async def demo_remind(ctx: Ctx) -> None:
     if ctx.user_id is None:
@@ -78,6 +98,9 @@ async def demo_remind(ctx: Ctx) -> None:
         return
 
     kind = _parse_kind(ctx.text)
+    if kind == digest.KIND:
+        await _demo_digest(ctx, ctx.user_id)
+        return
     if kind not in KINDS:
         await ctx.reply(t("demo.usage", kinds=", ".join(KINDS)))
         return
