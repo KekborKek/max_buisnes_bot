@@ -1,5 +1,29 @@
 /* Раскладка мини-приложения. Цвета — переменные темы MAX UI (светлая и тёмная). */
 
+/*
+  Фон html/body (FRONT-20): переменные MAX UI (--background-surface и т.д.) объявлены только на
+  классе .MaxUI_colorScheme_light|dark корневого div самого <MaxUI> — на body/html (его предках)
+  не действуют. Без своего фона на body/html при светлой теме на тёмном телефоне (и наоборот) в
+  safe-area и во время bounce-скролла видны полосы чужого цвета.
+  #edeef2 / #0f0f12 — это значения --background-surface MAX UI 0.5.0 (Panel mode="secondary",
+  которым покрашен .app), продублированы явно как литералы: этот файл, index.html и
+  src/shell/Theme.tsx не могут зависеть от classList самого MaxUI.
+  data-theme на <html> ставит инлайн-скрипт в index.html (до первого рендера) и ThemeProvider
+  (src/shell/Theme.tsx) при каждой смене темы.
+*/
+:root {
+  --page-bg: #edeef2;
+}
+
+:root[data-theme="dark"] {
+  --page-bg: #0f0f12;
+}
+
+html,
+body {
+  background: var(--page-bg);
+}
+
 body {
   margin: 0;
 }
@@ -83,6 +107,14 @@ body {
 .profile-note {
   padding: 0 16px;
   color: var(--text-secondary);
+}
+
+/* Тема оформления (FRONT-20): подпись + сегмент («Список | Месяц» из .tabs, D8). */
+.profile-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
 }
 
 .profile-actions {

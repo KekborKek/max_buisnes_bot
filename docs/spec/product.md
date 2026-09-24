@@ -165,6 +165,7 @@ disclaimer:
 | `miniapp_opened` | `start_param`, `has_profile` | 14, 18 |
 | `month_opened` | — | 15 |
 | `item_card_opened` | `item_id`, `item_type`, `source` (`list`/`month`/`bot`) | 16 |
+| `theme_changed` | `theme` (`system`/`light`/`dark`) | 19 |
 | `error` | `where`, `kind` | везде |
 
 Метрики пилота считаются из этих событий:
