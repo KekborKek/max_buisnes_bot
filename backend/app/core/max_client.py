@@ -191,3 +191,15 @@ class MaxClient:
 
     async def unsubscribe_webhook(self, url: str) -> dict:
         return await self._request("DELETE", "/subscriptions", params={"url": url})
+
+    async def get_subscriptions(self) -> dict:
+        """GET /subscriptions — список активных подписок вебхука.
+
+        https://dev.max.ru/docs-api/methods/GET/subscriptions (подтверждено через WebFetch
+        24.09.2026: метод существует, авторизация только заголовком, без параметров запроса,
+        отвечает `{"subscriptions": [...]}`. Точную схему объекта Subscription страница не
+        расписывает **[сверить]** на живом ответе). Тело отдаём как есть — маскировка секрета
+        (если поле `secret` в объекте есть) не здесь, а в вызывающем коде
+        (`scripts/webhook.py`): клиент не должен решать, что можно печатать.
+        """
+        return await self._request("GET", "/subscriptions")

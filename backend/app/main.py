@@ -6,14 +6,15 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
+from sqlalchemy import text as sql_text
 
 from app.api.routes import router as api_router
 from app.calendar import reminders
 from app.core.config import get_settings
-from app.core.db import init_db
+from app.core.db import SessionLocal, init_db
 from app.core.max_client import MaxClient
 from app.webhook import router as webhook_router
 
@@ -84,6 +85,29 @@ async def swagger_ui_html() -> HTMLResponse:
 
 
 @app.get("/health", tags=["service"], summary="Проверка, что сервис жив")
-async def health() -> dict:
+async def health(response: Response) -> dict:
+    """БД проверяем настоящим запросом, а не константами (issue #21): Docker HEALTHCHECK
+    ходит именно сюда, и без этой проверки контейнер с мёртвой базой считается здоровым.
+
+    `token_configured` — только факт наличия MAX_BOT_TOKEN (true/false); сам токен и любые
+    секреты в ответ не попадают (правило 3 AGENTS.md). Эндпоинт публичный.
+    """
     s = get_settings()
-    return {"status": "ok", "env": s.app_env, "data_mode": s.data_mode}
+    db_ok = True
+    try:
+        async with SessionLocal() as session:
+            await session.execute(sql_text("SELECT 1"))
+    except Exception:
+        log.exception("health: проверка БД не прошла")
+        db_ok = False
+
+    if not db_ok:
+        response.status_code = 503
+
+    return {
+        "status": "ok" if db_ok else "error",
+        "env": s.app_env,
+        "data_mode": s.data_mode,
+        "db": "ok" if db_ok else "error",
+        "token_configured": bool(s.max_bot_token),
+    }
