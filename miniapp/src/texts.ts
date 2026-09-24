@@ -69,20 +69,22 @@ export const texts = {
     "Asia/Kamchatka": "Камчатка (UTC+12)",
   } as Record<string, string>,
 
-  /** Экран 19 — docs/screens/should-12-13-19.md. Подписей строк и заголовка в спеке нет. */
+  /** Экран 19 — docs/screens/should-12-13-19.md. Подписей строк и заголовка в спеке нет:
+   * временные тексты техлида (24.09), ждут правки UX. */
   profile: {
-    title: "TODO",
-    income: "TODO",
-    regime: "TODO",
-    employees: "TODO",
-    timezone: "TODO",
-    reference: "TODO",
+    title: "Профиль",
+    income: "Доход",
+    regime: "Налоговый режим",
+    employees: "Сотрудники",
+    timezone: "Часовой пояс",
+    reference: "Справочник сроков",
     edit: "Изменить",
     rebuild: "Пересобрать",
     /** Тост после пересборки. */
-    rebuilt: "TODO",
+    rebuilt: "Календарь собран заново",
     /** 409: профиль не заполнен, пересобрать не из чего. */
-    incomplete: "TODO",
+    incomplete:
+      "Профиль заполнен не до конца. Ответьте на вопросы в чате с ботом — после этого календарь можно будет пересобрать.",
     /** disclaimer.profile — дословно (product.md, «Три дисклеймера»). */
     disclaimer: "Профиль заполняете вы. Мы не запрашиваем ИНН и не сверяем данные с ФНС.",
   },
