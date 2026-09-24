@@ -59,6 +59,12 @@
 - Только HTTPS. Подключается к боту, не существует отдельно.
 - MAX Bridge: `<script src="https://st.max.ru/js/max-web-app.js"></script>` → `window.WebApp`.
 - Данные запуска: `WebApp.initData` (строка для проверки на сервере), `WebApp.initDataUnsafe` (объект, `start_param`).
+- **Темы оформления MAX мини-аппу не передаёт** (проверено 24.09.2026): в https://dev.max.ru/docs/webapps/bridge
+  ни свойства, ни события; `max-web-app.js` из хэша запуска читает только `WebAppData`, `WebAppPlatform`,
+  `WebAppVersion`, `WebAppDeviceName`. Веб-вью отдаёт `prefers-color-scheme` по системной теме телефона,
+  а не по теме MAX. Поэтому в мини-аппе — ручной выбор темы (#83).
+- `DeviceStorage.getItem/setItem` — асинхронный запрос к нативной оболочке (по исходнику `max-web-app.js`),
+  тип ответа не документирован, в веб-версии MAX не поддерживается.
 - Методы: `requestContact()`, `openLink(url)`, `openMaxLink(url)`, `downloadFile(url, name)`, `shareContent()`, `shareMaxContent()`, `openCodeReader()` (QR), `BackButton.show/hide/onClick/offClick`, `DeviceStorage`, `SecureStorage`, `BiometricManager`, `HapticFeedback`, `ScreenCapture`, `enableClosingConfirmation()`, `getLaunchContext()`, `requestScreenMaxBrightness()`.
 - **Проверка initData на бэкенде** (реализовано в `core/initdata.py`):
   `secret_key = HMAC_SHA256(key="WebAppData", msg=BOT_TOKEN)`;
