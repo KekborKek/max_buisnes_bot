@@ -2,16 +2,84 @@ import { expect, test } from "vitest";
 
 import {
   addDays,
+  addMonths,
   dateIn,
+  dayCategories,
   formatCardDate,
   formatDate,
   formatNumericDate,
   formatShortDate,
   groupSections,
+  itemsByDay,
+  monthDiff,
+  monthGrid,
+  monthNumber,
+  monthRange,
   todayIn,
   weekEnd,
 } from "./calendar";
 import { makeItem } from "./test/fakeSource";
+
+test("addMonths и monthDiff переходят через год", () => {
+  expect(addMonths("2026-12", 1)).toBe("2027-01");
+  expect(addMonths("2026-01", -1)).toBe("2025-12");
+  expect(addMonths("2026-09", 12)).toBe("2027-09");
+  expect(addMonths("2026-09", -12)).toBe("2025-09");
+  expect(monthDiff("2026-10", "2027-01")).toBe(3);
+  expect(monthDiff("2026-10", "2025-10")).toBe(-12);
+  expect(monthNumber("2026-10")).toBe(9);
+});
+
+test("monthRange — первое и последнее число, февраль високосного года", () => {
+  expect(monthRange("2026-10")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+  expect(monthRange("2027-02")).toEqual({ from: "2027-02-01", to: "2027-02-28" });
+  expect(monthRange("2028-02")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+  expect(monthRange("2026-12")).toEqual({ from: "2026-12-01", to: "2026-12-31" });
+});
+
+test("monthGrid начинается с понедельника: пустые клетки до 1-го числа", () => {
+  const october = monthGrid("2026-10"); // 1 октября 2026 — четверг
+  expect(october.slice(0, 4)).toEqual([null, null, null, "2026-10-01"]);
+  expect(october).toHaveLength(3 + 31);
+  expect(october.at(-1)).toBe("2026-10-31");
+  expect(monthGrid("2026-06")[0]).toBe("2026-06-01"); // понедельник — без пустых клеток
+  expect(monthGrid("2026-11").indexOf("2026-11-01")).toBe(6); // воскресенье
+  expect(monthGrid("2028-02").at(-1)).toBe("2028-02-29");
+});
+
+test("itemsByDay: только свой месяц, выполненные в конце дня", () => {
+  const days = itemsByDay(
+    [
+      makeItem({ id: 1, due_date: "2026-10-28", status: "done" }),
+      makeItem({ id: 2, due_date: "2026-10-28" }),
+      makeItem({ id: 3, due_date: "2026-10-05" }),
+      // Просроченное из другого месяца: бэкенд добавляет такие к любому периоду.
+      makeItem({ id: 4, due_date: "2026-09-01", status: "overdue" }),
+    ],
+    "2026-10",
+  );
+  expect([...days.keys()].sort()).toEqual(["2026-10-05", "2026-10-28"]);
+  expect(days.get("2026-10-28")!.map((i) => i.id)).toEqual([2, 1]);
+});
+
+test("dayCategories: одна точка на категорию, не больше трёх, порядок product.md", () => {
+  expect(
+    dayCategories([
+      makeItem({ category: "reports" }),
+      makeItem({ category: "taxes" }),
+      makeItem({ category: "taxes" }),
+    ]),
+  ).toEqual(["taxes", "reports"]);
+  expect(
+    dayCategories([
+      makeItem({ category: "custom" }),
+      makeItem({ category: "reports" }),
+      makeItem({ category: "contributions" }),
+      makeItem({ category: "taxes" }),
+    ]),
+  ).toEqual(["taxes", "contributions", "reports"]);
+  expect(dayCategories([])).toEqual([]);
+});
 
 test("todayIn считает «сегодня» в поясе пользователя", () => {
   const now = new Date("2026-10-27T20:30:00Z"); // в Москве 23:30, во Владивостоке уже 28-е

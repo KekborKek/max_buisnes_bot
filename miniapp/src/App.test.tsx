@@ -168,9 +168,20 @@ test("«Список | Месяц» не перезагружает данные
   await userEvent.click(screen.getByRole("button", { name: texts.list.tabMonth }));
   expect(screen.queryByText("Аванс")).not.toBeInTheDocument();
   expect(localStorage.getItem("calendar.tab")).toBe("month");
+  expect(source.track).toHaveBeenCalledWith("month_opened");
+  // Месяц грузит свой период один раз — список 14 заново не грузится.
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+  const [from, to] = source.calendar.mock.calls[1];
+  expect(from.slice(8)).toBe("01");
+  expect(from.slice(0, 7)).toBe(to.slice(0, 7));
+  await act(async () => lastCalendar().resolve([]));
+
   await userEvent.click(screen.getByRole("button", { name: texts.list.tabList }));
   expect(screen.getByText("Аванс")).toBeInTheDocument();
-  expect(source.calendar).toHaveBeenCalledOnce();
+  await userEvent.click(screen.getByRole("button", { name: texts.list.tabMonth }));
+  await userEvent.click(screen.getByRole("button", { name: texts.list.tabList }));
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+  expect(source.track.mock.calls.filter(([name]) => name === "month_opened")).toHaveLength(2);
 });
 
 test("?start_param=item_obligation_1 открывает карточку 16, «Назад» — на список 14", async () => {

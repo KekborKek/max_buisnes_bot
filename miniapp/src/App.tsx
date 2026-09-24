@@ -19,12 +19,19 @@ import {
 } from "./router";
 import { CardScreen } from "./screens/CardScreen";
 import { GateScreen } from "./screens/GateScreen";
-import { CalendarHeader, type CalendarState, ListScreen } from "./screens/ListScreen";
-import { PlaceholderScreen } from "./screens/PlaceholderScreen";
+import { type CalendarState, ListScreen } from "./screens/ListScreen";
+import { MonthScreen } from "./screens/MonthScreen";
 import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
 import { ToastProvider } from "./shell/Toast";
-import { type CalendarStore, CalendarStoreContext, itemKey, removeItem, upsertItem } from "./store";
+import {
+  type CalendarStore,
+  CalendarStoreContext,
+  itemKey,
+  removeItem,
+  upsertItem,
+  useMonths,
+} from "./store";
 import { texts } from "./texts";
 import type { ItemCard, ItemType, Me, Profile, TaskDraft } from "./types";
 
@@ -159,7 +166,12 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
     setAttempt((n) => n + 1);
   };
 
-  // Карточки 16 за этот запуск; изменения из 16/17 сразу попадают и в список 14.
+  // Месяцы сетки 15 — кеш на сессию; выбранный день переживает переход в карточку и «Назад».
+  const months = useMonths(source);
+  const { upsert: upsertMonth, remove: removeMonth } = months;
+  const [monthDay, setMonthDay] = useState<string | null>(null);
+
+  // Карточки 16 за этот запуск; изменения из 16/17 сразу попадают в список 14 и сетку 15.
   const [cards, setCards] = useState<Record<string, ItemCard>>({});
   const upsert = useCallback(
     (card: ItemCard) => {
@@ -167,17 +179,22 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
       setCalendar((c) =>
         c.items ? { ...c, items: upsertItem(c.items, card, todayIn(timezone)) } : c,
       );
+      upsertMonth(card);
     },
-    [timezone],
+    [timezone, upsertMonth],
   );
-  const remove = useCallback((type: ItemType, id: number) => {
-    setCards((c) => {
-      const next = { ...c };
-      delete next[itemKey(type, id)];
-      return next;
-    });
-    setCalendar((c) => (c.items ? { ...c, items: removeItem(c.items, type, id) } : c));
-  }, []);
+  const remove = useCallback(
+    (type: ItemType, id: number) => {
+      setCards((c) => {
+        const next = { ...c };
+        delete next[itemKey(type, id)];
+        return next;
+      });
+      setCalendar((c) => (c.items ? { ...c, items: removeItem(c.items, type, id) } : c));
+      removeMonth(type, id);
+    },
+    [removeMonth],
+  );
   const store = useMemo<CalendarStore>(
     () => ({ items: calendar.items, cards, upsert, remove }),
     [calendar.items, cards, upsert, remove],
@@ -195,12 +212,17 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
       back,
       switchTab: (tab: Tab) => {
         saveTab(tab);
+        // Переключение на «Месяц»: по умолчанию выбран сегодняшний день (экран 15).
+        if (tab === "month" && stack[stack.length - 1].name !== "month") {
+          setMonthDay(null);
+          quiet(source.track("month_opened"));
+        }
         dispatch({ type: "tab", tab });
       },
       // На 14 без записи в localStorage: запомненный режим выбирает пользователь.
       home: () => dispatch({ type: "tab", tab: "list" }),
     }),
-    [stack, back],
+    [stack, back, source],
   );
 
   const [backButton] = useState(getBackButton);
@@ -221,10 +243,15 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
       break;
     case "month":
       screen = (
-        <div className="screen">
-          <CalendarHeader profile={profile} tab="month" />
-          <PlaceholderScreen screen="15" />
-        </div>
+        <MonthScreen
+          profile={profile}
+          today={todayIn(timezone)}
+          months={months.cache}
+          selected={monthDay}
+          onSelect={setMonthDay}
+          onLoad={months.load}
+          onRetry={months.retry}
+        />
       );
       break;
     case "card":
