@@ -13,7 +13,9 @@ export type Route =
   | { name: "month" }
   | { name: "card"; itemType: ItemType; id: number; source: CardSource }
   /** Форма 17: новая (`draft` — с черновиком из бота) или правка задачи `taskId`. */
-  | { name: "task"; draft: boolean; taskId?: number };
+  | { name: "task"; draft: boolean; taskId?: number }
+  /** Экран 19 — профиль и «Пересобрать», по нажатию на шапку 14 и 15. */
+  | { name: "profile" };
 
 export type NavAction =
   { type: "push"; route: Route } | { type: "back" } | { type: "tab"; tab: Tab };

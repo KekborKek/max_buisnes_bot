@@ -2,7 +2,15 @@
 import { vi } from "vitest";
 
 import type { DataSource } from "../data/source";
-import type { CalendarItem, ItemCard, Me, ObligationCard, Profile, TaskCard } from "../types";
+import type {
+  CalendarItem,
+  ItemCard,
+  Me,
+  ObligationCard,
+  Profile,
+  RebuildResult,
+  TaskCard,
+} from "../types";
 
 export const PROFILE: Profile = {
   income_band: "lt10",
@@ -11,6 +19,7 @@ export const PROFILE: Profile = {
   timezone: "Europe/Moscow",
   nds_payer: false,
   calendar_built_at: null,
+  reference_checked_at: "2026-09-20",
 };
 
 export function makeMe(hasProfile = true): Me {
@@ -90,6 +99,7 @@ export function fakeSource() {
     createTask: [] as Deferred<TaskCard>[],
     updateTask: [] as Deferred<TaskCard>[],
     deleteTask: [] as Deferred<void>[],
+    rebuild: [] as Deferred<RebuildResult>[],
   };
   function pending<T>(list: Deferred<T>[]): Promise<T> {
     const d = deferred<T>();
@@ -107,6 +117,7 @@ export function fakeSource() {
     createTask: vi.fn<DataSource["createTask"]>(() => pending(calls.createTask)),
     updateTask: vi.fn<DataSource["updateTask"]>(() => pending(calls.updateTask)),
     deleteTask: vi.fn<DataSource["deleteTask"]>(() => pending(calls.deleteTask)),
+    rebuild: vi.fn<DataSource["rebuild"]>(() => pending(calls.rebuild)),
     track: vi.fn<DataSource["track"]>(() => Promise.resolve()),
   } satisfies DataSource;
   const last = <T>(list: Deferred<T>[]) => list[list.length - 1];

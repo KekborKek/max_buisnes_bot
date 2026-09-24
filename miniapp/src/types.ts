@@ -33,6 +33,17 @@ export interface Profile {
   /** null — нельзя определить (D25): «не знаю» или диапазон дохода пересекает порог. */
   nds_payer: boolean | null;
   calendar_built_at: string | null;
+  /** YYYY-MM-DD — дата сверки справочника (экран 19); null — справочник недоступен. */
+  reference_checked_at?: string | null;
+}
+
+/** Ответ POST /api/calendar/rebuild — «Пересобрать» на экране 19. */
+export interface RebuildResult {
+  /** Событий до конца текущего года — как на экране 5. */
+  items_count: number;
+  /** YYYY-MM-DD — ближайший неотмеченный срок или null. */
+  nearest_due_date: string | null;
+  profile: Profile;
 }
 
 /** Черновик задачи из бота (экраны 9, 10): `DialogState` → `/api/me`. Даты может не быть. */

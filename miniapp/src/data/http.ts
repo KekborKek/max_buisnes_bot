@@ -1,7 +1,7 @@
 // HTTP-клиент API мини-приложения. Контракт — openapi.yaml в корне репозитория.
 // Все запросы — с таймаутом; ошибки разделены по видам, чтобы экран показал нужный текст.
 import { getInitData, getWebApp } from "../bridge";
-import type { CalendarItem, ItemCard, Me, TaskCard } from "../types";
+import type { CalendarItem, ItemCard, Me, RebuildResult, TaskCard } from "../types";
 import type { DataSource } from "./source";
 
 /** Вид ошибки: 401 ≠ сеть ≠ таймаут ≠ 5xx. */
@@ -84,6 +84,7 @@ export const httpSource: DataSource = {
   updateTask: (id, input) =>
     request<TaskCard>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  rebuild: () => request<RebuildResult>("/api/calendar/rebuild", { method: "POST" }),
   track: (name, props = {}) =>
     request<void>("/api/events", { method: "POST", body: JSON.stringify({ name, props }) }),
 };

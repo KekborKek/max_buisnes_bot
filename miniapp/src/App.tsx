@@ -21,6 +21,7 @@ import { CardScreen } from "./screens/CardScreen";
 import { GateScreen } from "./screens/GateScreen";
 import { type CalendarState, ListScreen } from "./screens/ListScreen";
 import { MonthScreen } from "./screens/MonthScreen";
+import { ProfileScreen } from "./screens/ProfileScreen";
 import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
 import { ToastProvider } from "./shell/Toast";
@@ -86,13 +87,30 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
     setMeAttempt((n) => n + 1);
   };
 
+  // Экран 19 принёс свежий профиль (поменяли в боте или пересобрали): шапка 14/15 и пояс.
+  const updateProfile = useCallback(
+    (next: Profile) =>
+      setMe((m) =>
+        m.kind === "ready"
+          ? { kind: "ready", me: { ...m.me, has_profile: true, profile: next } }
+          : m,
+      ),
+    [],
+  );
+
   const profile = me.kind === "ready" && me.me.has_profile ? me.me.profile : null;
 
   let content;
   if (profile) {
     const draft = me.kind === "ready" ? (me.me.draft ?? null) : null;
     content = (
-      <CalendarApp source={source} profile={profile} startParam={startParam} draft={draft} />
+      <CalendarApp
+        source={source}
+        profile={profile}
+        startParam={startParam}
+        draft={draft}
+        onProfile={updateProfile}
+      />
     );
   } else {
     // Нет профиля или 401 — заглушка без слов об авторизации; сеть/сервис — заглушка + плашка.
@@ -129,10 +147,12 @@ interface CalendarAppProps {
   startParam: string | null;
   /** Черновик задачи из бота для формы 17 (`start_param=task_draft`). */
   draft: TaskDraft | null;
+  /** Свежий профиль с экрана 19. Стабилен. */
+  onProfile: (profile: Profile) => void;
 }
 
 /** Календарь пользователя с профилем: экраны 14/15/16/17. Данные общие для вкладок. */
-function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
+function CalendarApp({ source, profile, startParam, draft, onProfile }: CalendarAppProps) {
   const [calendar, setCalendar] = useState<CalendarState>({
     items: null,
     loading: true,
@@ -168,7 +188,7 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
 
   // Месяцы сетки 15 — кеш на сессию; выбранный день переживает переход в карточку и «Назад».
   const months = useMonths(source);
-  const { upsert: upsertMonth, remove: removeMonth } = months;
+  const { upsert: upsertMonth, remove: removeMonth, reset: resetMonths } = months;
   const [monthDay, setMonthDay] = useState<string | null>(null);
 
   // Карточки 16 за этот запуск; изменения из 16/17 сразу попадают в список 14 и сетку 15.
@@ -195,6 +215,14 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
     },
     [removeMonth],
   );
+  // «Пересобрать» (экран 19): список грузится заново, кеши месяцев и карточек сбрасываются.
+  const rebuilt = useCallback(() => {
+    setCards({});
+    resetMonths();
+    setCalendar((c) => ({ ...c, loading: true }));
+    setAttempt((n) => n + 1);
+  }, [resetMonths]);
+
   const store = useMemo<CalendarStore>(
     () => ({ items: calendar.items, cards, upsert, remove }),
     [calendar.items, cards, upsert, remove],
@@ -262,6 +290,16 @@ function CalendarApp({ source, profile, startParam, draft }: CalendarAppProps) {
           route={route}
           today={todayIn(timezone)}
           timezone={timezone}
+        />
+      );
+      break;
+    case "profile":
+      screen = (
+        <ProfileScreen
+          source={source}
+          initial={profile}
+          onProfile={onProfile}
+          onRebuilt={rebuilt}
         />
       );
       break;
