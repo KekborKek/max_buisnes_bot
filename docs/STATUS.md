@@ -28,18 +28,13 @@
 - **24.09 вебхук подписан** на `https://vse-uspel.ru/webhook/max`, все типы апдейтов, с секретом
   (`MAX_WEBHOOK_SECRET` из серверного `.env`; без него и с неверным — 403). Бот работает с сервера,
   бот и мини-апп — на одной БД прода. **`make dev-bot` теперь не получает апдейты** (polling и
-  вебхук несовместимы). Для локальной отладки — снять подписку и потом подписать заново; оба вызова
-  делать внутри контейнера, чтобы секрет брался из серверного `.env`:
+  вебхук несовместимы). Для локальной отладки — снять подписку, потом подписать заново. Запускать
+  внутри контейнера, чтобы секрет брался из серверного `.env` (`backend/scripts/webhook.py` есть в образе;
+  `set` подписывает `PUBLIC_BASE_URL/webhook/max` — перед первым `set` проверить, что там `https://vse-uspel.ru`):
   ```
-  ssh root@72.4.66.242 'cd /opt/max-bot && docker compose --profile prod exec -T backend python -c "
-  import asyncio; from app.core.config import get_settings; from app.core.max_client import MaxClient
-  async def m():
-      c = MaxClient(); s = get_settings()
-      print(await c.subscribe_webhook(\"https://vse-uspel.ru/webhook/max\", s.max_webhook_secret))  # или unsubscribe_webhook(url)
-      await c.close()
-  asyncio.run(m())"'
+  ssh root@72.4.66.242 'cd /opt/max-bot && docker compose --profile prod exec -T backend python scripts/webhook.py delete'
+  ssh root@72.4.66.242 'cd /opt/max-bot && docker compose --profile prod exec -T backend python scripts/webhook.py set'
   ```
-  Скрипта `scripts/webhook.py`, на который ссылается `app/polling.py`, в репо нет.
 
 ### Слито в main (задачи плана)
 T0 ядро · T2 загрузчик справочников · T3 движок дат · T4 сборка календаря · T5a экраны 1–2 ·
