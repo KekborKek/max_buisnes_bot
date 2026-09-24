@@ -185,13 +185,6 @@ body {
   min-height: 60vh;
 }
 
-.placeholder {
-  background: none;
-  min-height: 40vh;
-  padding: 16px;
-  color: var(--text-secondary);
-}
-
 .back-fallback {
   padding: 8px 8px 0;
 }
@@ -224,6 +217,110 @@ body {
   border-radius: 12px;
   background: var(--background-overlay);
   color: var(--text-primary-inverse);
+}
+
+/* Экран 15. Месяц сеткой (D5): 7 колонок, влезает в 320 px без горизонтальной прокрутки. */
+.month {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+/* «‹ Сентябрь 2026 › Сегодня» в одну строку на 320 px: кнопки размера xsmall. */
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.month-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.month-nav__arrow {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.month-nav > :last-child {
+  margin-left: 4px;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.month-weekday {
+  padding: 4px 0;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.month-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.month-day:focus-visible {
+  outline: 2px solid var(--text-themed);
+  outline-offset: 1px;
+}
+
+/* Сегодня — обводка; выбранный — заливка и жирное число (не только цвет). */
+.month-day--today {
+  box-shadow: inset 0 0 0 1.5px var(--text-themed);
+}
+
+.month-day--selected {
+  background: var(--button-primary);
+  color: var(--text-primary-inverse-static);
+}
+
+.month-day--selected .month-day__num {
+  font-weight: 700;
+}
+
+.month-day__dots {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+}
+
+.month-day__dots .dot {
+  width: 6px;
+  height: 6px;
+}
+
+/* На заливке выбранного дня точка обведена, чтобы не сливаться с фоном. */
+.month-day--selected .dot {
+  box-shadow: 0 0 0 1px var(--text-primary-inverse-static);
+}
+
+.month-day-empty {
+  display: block;
+  padding: 0 16px;
+  color: var(--text-secondary);
 }
 
 /* Экран 16. Карточка. */

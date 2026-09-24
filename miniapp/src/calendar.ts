@@ -1,6 +1,6 @@
-// Даты и секции списка (экран 14). Статус события не пересчитываем — его прислал бэкенд;
-// здесь только раскладка по секциям и форматирование.
-import type { CalendarItem } from "./types";
+// Даты, секции списка (экран 14) и сетка месяца (экран 15). Статус события не пересчитываем —
+// его прислал бэкенд; здесь только раскладка и форматирование.
+import type { CalendarItem, Category } from "./types";
 
 export const DEFAULT_TIMEZONE = "Europe/Moscow";
 /** Окно списка: события на 90 дней вперёд (docs/screens/14-list.md). */
@@ -115,4 +115,84 @@ export function formatShortDate(iso: string, today: string): string {
   );
   const year = iso.slice(0, 4) === today.slice(0, 4) ? "" : ` ${iso.slice(0, 4)}`;
   return `${d.getUTCDate()} ${month}${year}`;
+}
+
+// ——— Экран 15. Месяц сеткой ———
+
+/** Листать можно на 12 месяцев назад и вперёд от текущего (docs/screens/15-month.md). */
+export const MONTH_RANGE = 12;
+/** Под числом — до трёх точек, одна на категорию. */
+export const MAX_DAY_DOTS = 3;
+/** Порядок точек под числом — как категории в product.md. */
+const CATEGORY_ORDER: Category[] = ["taxes", "contributions", "reports", "custom"];
+
+const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+
+/** Месяц даты: «2026-10-28» → «2026-10». */
+export function monthOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+function monthIndex(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return y * 12 + (m - 1);
+}
+
+/** Соседний месяц: addMonths("2026-12", 1) → «2027-01». */
+export function addMonths(month: string, n: number): string {
+  const total = monthIndex(month) + n;
+  return `${pad(Math.floor(total / 12), 4)}-${pad((total % 12) + 1)}`;
+}
+
+/** Сколько месяцев от `from` до `to`: monthDiff("2026-10", "2027-01") → 3. */
+export function monthDiff(from: string, to: string): number {
+  return monthIndex(to) - monthIndex(from);
+}
+
+/** Номер месяца 0–11 — индекс в словарях texts.month. */
+export function monthNumber(month: string): number {
+  return Number(month.slice(5, 7)) - 1;
+}
+
+/** Первое и последнее число месяца — период для GET /api/calendar. */
+export function monthRange(month: string): { from: string; to: string } {
+  return { from: `${month}-01`, to: addDays(`${addMonths(month, 1)}-01`, -1) };
+}
+
+/**
+ * Клетки сетки по неделям с понедельника: `null` — пустая клетка до 1-го числа,
+ * дальше даты месяца YYYY-MM-DD. Хвост последней недели не добиваем — это делает CSS-сетка.
+ */
+export function monthGrid(month: string): (string | null)[] {
+  const { from, to } = monthRange(month);
+  const lead = (parseIso(from).getUTCDay() + 6) % 7; // 0 — понедельник
+  const days = Number(to.slice(8, 10));
+  return [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: days }, (_, i) => `${month}-${pad(i + 1)}`),
+  ];
+}
+
+/**
+ * События месяца по дням (`due_date`). Чужие месяцы отбрасываются: /api/calendar добавляет
+ * к периоду все неотмеченные просроченные. Внутри дня выполненные — в конце, как на экране 14.
+ */
+export function itemsByDay(items: CalendarItem[], month: string): Map<string, CalendarItem[]> {
+  const days = new Map<string, CalendarItem[]>();
+  for (const item of items) {
+    if (monthOf(item.due_date) !== month) continue;
+    const list = days.get(item.due_date);
+    if (list) list.push(item);
+    else days.set(item.due_date, [item]);
+  }
+  for (const list of days.values()) {
+    list.sort((a, b) => Number(a.status === "done") - Number(b.status === "done"));
+  }
+  return days;
+}
+
+/** Категории дня для точек: по одной на категорию, в порядке product.md, не больше трёх. */
+export function dayCategories(items: CalendarItem[]): Category[] {
+  const present = new Set(items.map((i) => i.category));
+  return CATEGORY_ORDER.filter((c) => present.has(c)).slice(0, MAX_DAY_DOTS);
 }

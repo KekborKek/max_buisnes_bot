@@ -3,7 +3,7 @@ import { Button, CellHeader, CellList, CellSimple, Typography } from "@maxhub/ma
 
 import { formatShortDate, groupSections, type SectionKey } from "../calendar";
 import type { ErrorKind } from "../data/http";
-import { type Tab, useNavigation } from "../router";
+import { type CardSource, type Tab, useNavigation } from "../router";
 import { ErrorBanner } from "../shell/ErrorBanner";
 import { Skeleton } from "../shell/Skeleton";
 import { texts } from "../texts";
@@ -65,9 +65,18 @@ function CheckIcon() {
   );
 }
 
-function ItemRow({ item, today }: { item: CalendarItem; today: string }) {
+/** Строка события экранов 14 и 15: открывает карточку 16 с `source` для item_card_opened. */
+export function ItemRow({
+  item,
+  today,
+  source,
+}: {
+  item: CalendarItem;
+  today: string;
+  source: CardSource;
+}) {
   const { push } = useNavigation();
-  const open = () => push({ name: "card", itemType: item.type, id: item.id, source: "list" });
+  const open = () => push({ name: "card", itemType: item.type, id: item.id, source });
   let after = null;
   if (item.status === "done") {
     after = (
@@ -150,7 +159,7 @@ export function ListScreen({ profile, today, calendar, onRetry }: Props) {
             header={<CellHeader>{SECTION_TITLE[section.key]}</CellHeader>}
           >
             {section.items.map((item) => (
-              <ItemRow key={`${item.type}_${item.id}`} item={item} today={today} />
+              <ItemRow key={`${item.type}_${item.id}`} item={item} today={today} source="list" />
             ))}
           </CellList>
         ))}
