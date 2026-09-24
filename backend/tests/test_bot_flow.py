@@ -77,7 +77,7 @@ async def test_callback_is_answered_even_if_handler_fails(fake_max, monkeypatch)
     await process_update(load_update("callback_start_check"), fake_max)
 
     assert fake_max.answered == ["cb-123"]
-    assert [m["text"] for m in fake_max.sent] == [t("errors.internal")]
+    assert [m["text"] for m in fake_max.sent] == [t("fallback.service")]
 
 
 async def test_bot_stopped_tracks_event_and_stays_silent(fake_max):

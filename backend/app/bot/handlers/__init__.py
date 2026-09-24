@@ -11,4 +11,5 @@ from app.bot.handlers import (  # noqa: F401
     reminders,
     service,
     start,
+    task_chat,
 )
