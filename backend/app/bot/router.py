@@ -5,6 +5,8 @@
     @router.on_callback("menu:")                    — по префиксу payload кнопки
     @router.on_state("ask_inn")                     — текст, когда пользователь в состоянии FSM
     @router.on_text("/help")                        — точный текст/команда
+    @router.on_command("/demo_remind")              — команда первым словом, с необязательным
+                                                        аргументом («/demo_remind d7»); T13b, #72
     @router.fallback                                — если ничего не подошло
 """
 
@@ -23,6 +25,7 @@ class Router:
         self._by_callback: list[tuple[str, Handler]] = []
         self._by_state: dict[str, Handler] = {}
         self._by_text: dict[str, Handler] = {}
+        self._by_command: dict[str, Handler] = {}
         self._fallback: Handler | None = None
 
     def on(self, update_type: str) -> Callable[[Handler], Handler]:
@@ -53,6 +56,20 @@ class Router:
 
         return deco
 
+    def on_command(self, command: str) -> Callable[[Handler], Handler]:
+        """Команда — первое слово текста, регистр не важен; аргумент(ы) читает сам обработчик.
+
+        В отличие от `on_text`, не требует точного совпадения всей строки: ловит и
+        `/demo_remind`, и `/demo_remind d7`. Не первым словом («купить /demo_remind») —
+        не команда, уходит дальше по цепочке (FSM, потом fallback).
+        """
+
+        def deco(fn: Handler) -> Handler:
+            self._by_command[command.strip().lower()] = fn
+            return fn
+
+        return deco
+
     def fallback(self, fn: Handler) -> Handler:
         self._fallback = fn
         return fn
@@ -65,6 +82,10 @@ class Router:
         if ctx.update_type == "message_created":
             if ctx.text and ctx.text.strip().lower() in self._by_text:
                 return self._by_text[ctx.text.strip().lower()]
+            if ctx.text:
+                head = ctx.text.strip().split(maxsplit=1)[0].lower() if ctx.text.strip() else ""
+                if head in self._by_command:
+                    return self._by_command[head]
             state, _ = await ctx.get_state()
             if state and state in self._by_state:
                 return self._by_state[state]

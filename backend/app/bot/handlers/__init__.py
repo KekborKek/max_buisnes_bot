@@ -3,6 +3,7 @@
 from app.bot.handlers import (  # noqa: F401
     about,
     calendar_ready,
+    demo,
     done,
     fallback,
     howto,
