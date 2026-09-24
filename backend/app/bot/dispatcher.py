@@ -140,7 +140,14 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
             await fallback.after_handler(ctx)
             await session.commit()
         except Exception:
-            log.exception("update processing failed for %s", ctx.update_type)
+            # Ключ апдейта и user_id — иначе на демо непонятно, у кого и что упало (issue #21):
+            # по одному ctx.update_type это не восстановить.
+            log.exception(
+                "update processing failed: type=%s key=%s user_id=%s",
+                ctx.update_type,
+                update_key(update),
+                ctx.user_id,
+            )
             ctx.drop_outbox()  # записей в БД нет — рассказывать о них пользователю нечего
             try:
                 await session.rollback()

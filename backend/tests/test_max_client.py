@@ -286,3 +286,28 @@ def test_open_app_without_username_does_not_fail(monkeypatch):
     monkeypatch.setattr(kb, "get_settings", lambda: Settings(_env_file=None, max_bot_username=""))
 
     assert kb.open_app("Открыть календарь") == {"type": "open_app", "text": "Открыть календарь"}
+
+
+# --- LEAD-9 (#21): чтение подписок вебхука ------------------------------------------------
+# https://dev.max.ru/docs-api/methods/GET/subscriptions — без query-параметров, тело ответа
+# отдаём как есть (маскировка секрета — в scripts/webhook.py, не в клиенте).
+
+
+async def test_get_subscriptions_request_matches_docs():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"subscriptions": [{"url": "https://x.test/webhook"}]})
+
+    client = _client(handler)
+    try:
+        result = await client.get_subscriptions()
+    finally:
+        await client.close()
+
+    assert result == {"subscriptions": [{"url": "https://x.test/webhook"}]}
+    (req,) = seen
+    assert req.method == "GET"
+    assert req.url.path == "/subscriptions"
+    assert dict(req.url.params) == {}
