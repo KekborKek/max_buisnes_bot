@@ -80,6 +80,19 @@ async def test_callback_is_answered_even_if_handler_fails(fake_max, monkeypatch)
     assert [m["text"] for m in fake_max.sent] == [t("fallback.service")]
 
 
+async def test_handler_runs_even_if_answer_callback_fails(fake_max, monkeypatch):
+    """#75: MAX отклонил ответ на нажатие (400) — обработчик всё равно отрабатывает."""
+
+    async def rejected(callback_id, notification=None):
+        raise RuntimeError("POST /answers -> 400")
+
+    monkeypatch.setattr(fake_max, "answer_callback", rejected)
+
+    await process_update(load_update("callback_start_check"), fake_max)
+
+    assert fake_max.sent[-1]["text"].startswith("Вопрос 1 из 4.")
+
+
 async def test_bot_stopped_tracks_event_and_stays_silent(fake_max):
     """bot_stopped — метрика оттока: событие пишем, пользователю не пишем."""
     await process_update(load_update("bot_stopped"), fake_max)
