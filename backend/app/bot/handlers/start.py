@@ -3,6 +3,10 @@
 Payload кнопок: start:check — «Проверить НДС», start:rebuild — «Собрать заново»,
 start:retry — «Повторить» после ошибки справочника, about:open — «О сервисе»
 (обработчик экрана 11 делает T9; до него кнопка уходит в fallback).
+
+Диплинк `?start=profile_edit` — «Изменить» на экране 19 мини-аппа (WebApp.openMaxLink): у кого
+календарь собран, сразу вопросы экрана 2, как по «Собрать заново». Придёт ли bot_started
+в уже начатый диалог — [сверить] на живом клиенте (dev.max.ru об этом молчит).
 """
 
 from app.bot import keyboards as kb
@@ -18,6 +22,8 @@ CHECK = "start:check"
 REBUILD = "start:rebuild"
 RETRY = "start:retry"
 ABOUT = "about:open"
+# Параметр диплинка из мини-аппа (miniapp/src/screens/ProfileScreen.tsx, EDIT_START_PAYLOAD).
+PROFILE_EDIT = "profile_edit"
 
 
 def start_keyboard() -> dict:
@@ -66,6 +72,13 @@ async def show_start(ctx: Ctx, *, start_param: str | None, track: bool = True) -
 
 @router.on("bot_started")
 async def on_bot_started(ctx: Ctx) -> None:
+    if ctx.payload == PROFILE_EDIT and ctx.user_id is not None:
+        profile = await ensure_profile(ctx)
+        if profile.calendar_built_at is not None:
+            # «Изменить» из экрана 19: ответы и календарь остаются до перезаписи (onboarding.begin).
+            await ctx.track("bot_started", {"start_param": ctx.payload})
+            await onboarding.begin(ctx)
+            return
     await show_start(ctx, start_param=ctx.payload)
 
 

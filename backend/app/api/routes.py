@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import items, tasks
-from app.api.deps import current_launch, launch_user_id
-from app.api.schemas import MeResponse, ProfileOut, TaskDraft
-from app.calendar.reminders import as_utc
+from app.api import items, profile, tasks
+from app.api.deps import current_launch, launch_user_id, optional_reference
+from app.api.schemas import MeResponse, TaskDraft
+from app.api.service import profile_out
+from app.calendar.types import Reference
 from app.core.db import get_session
 from app.core.events import track
 from app.core.models import DialogState, Profile
@@ -24,8 +25,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["miniapp"])
 router.include_router(items.router)
 router.include_router(tasks.router)
+router.include_router(profile.router)
 Launch = Annotated[dict, Depends(current_launch)]
 Session = Annotated[AsyncSession, Depends(get_session)]
+OptionalRef = Annotated[Reference | None, Depends(optional_reference)]
 
 # Событие открытия мини-аппа: в него дописывается start_param из подписанной initData,
 # чтобы считать конверсию входа по QR-диплинку (issue #12).
@@ -40,27 +43,6 @@ def launch_start_param(launch: dict) -> str | None:
     """
     value = launch.get("start_param")
     return str(value) if value else None
-
-
-def profile_out(profile: Profile | None) -> ProfileOut | None:
-    """Профиль считается заполненным, когда есть все ответы онбординга (D24)."""
-    if (
-        profile is None
-        or profile.income_band is None
-        or profile.regime is None
-        or profile.has_employees is None
-    ):
-        return None
-    return ProfileOut(
-        income_band=profile.income_band,
-        regime=profile.regime,
-        has_employees=profile.has_employees,
-        timezone=profile.timezone,
-        nds_payer=profile.nds_payer,
-        calendar_built_at=(
-            as_utc(profile.calendar_built_at) if profile.calendar_built_at else None
-        ),
-    )
 
 
 def task_draft(state: DialogState | None) -> TaskDraft | None:
@@ -91,6 +73,7 @@ class TrackRequest(BaseModel):
 async def me(
     launch: Launch,
     session: Session,
+    reference: OptionalRef,
     start_param: Annotated[
         str | None,
         Query(
@@ -109,7 +92,7 @@ async def me(
     user_id = launch_user_id(launch)
     profile = draft = None
     if user_id is not None:
-        profile = profile_out(await session.get(Profile, user_id))
+        profile = profile_out(await session.get(Profile, user_id), reference)
         draft = task_draft(await session.get(DialogState, user_id))
     return MeResponse(
         user_id=user_id or 0,

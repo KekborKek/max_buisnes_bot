@@ -88,6 +88,8 @@ export interface Months {
   retry(month: string): void;
   upsert(card: ItemCard): void;
   remove(type: ItemType, id: number): void;
+  /** Календарь пересобран (экран 19): кеш сбрасывается, месяцы грузятся заново. Стабильна. */
+  reset(): void;
 }
 
 const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
@@ -100,20 +102,25 @@ export function useMonths(source: DataSource): Months {
   const [cache, setCache] = useState<MonthCache>({});
   const loaded = useRef(new Set<string>());
   const inFlight = useRef(new Set<string>());
+  // Поколение кеша: ответ, запрошенный до reset(), в новый кеш не попадает.
+  const generation = useRef(0);
 
   const request = useCallback(
     (month: string) => {
       if (inFlight.current.has(month)) return;
       inFlight.current.add(month);
+      const gen = generation.current;
       const { from, to } = monthRange(month);
       source.calendar(from, to).then(
         (items) => {
+          if (gen !== generation.current) return;
           inFlight.current.delete(month);
           loaded.current.add(month);
           const own = items.filter((i) => monthOf(i.due_date) === month);
           setCache((c) => ({ ...c, [month]: { items: own, loading: false, error: null } }));
         },
         (e: unknown) => {
+          if (gen !== generation.current) return;
           inFlight.current.delete(month);
           const kind = errorKind(e);
           // Уже загруженные события месяца остаются на экране под плашкой.
@@ -152,7 +159,14 @@ export function useMonths(source: DataSource): Months {
     [],
   );
 
-  return { cache, load, retry, upsert, remove };
+  const reset = useCallback(() => {
+    generation.current += 1;
+    loaded.current.clear();
+    inFlight.current.clear();
+    setCache({});
+  }, []);
+
+  return { cache, load, retry, upsert, remove, reset };
 }
 
 export interface CalendarStore {

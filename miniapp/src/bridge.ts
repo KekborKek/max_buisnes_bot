@@ -65,6 +65,21 @@ export function getBotUrl(): string {
 }
 
 /**
+ * Диплинк в чат с ботом с параметром запуска: `https://max.ru/<botName>?start=<payload>` —
+ * бот получает bot_started с payload (dev.max.ru/docs/chatbots/bots-coding/prepare, до 128
+ * символов). Придёт ли bot_started, если диалог уже начат, — [сверить] на живом клиенте.
+ */
+export function botStartUrl(botUrl: string, payload: string): string {
+  try {
+    const url = new URL(botUrl);
+    url.searchParams.set("start", payload);
+    return url.toString();
+  } catch {
+    return botUrl;
+  }
+}
+
+/**
  * Открыть внешнюю ссылку (источник нормы на экране 16). В MAX — `openLink(url)`
  * (docs/max-api-notes.md) [сверить: поведение на живом клиенте]; вне MAX — новая вкладка.
  */

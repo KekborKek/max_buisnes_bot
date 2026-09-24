@@ -312,3 +312,55 @@ test("пометка «ТЕСТОВЫЕ ДАННЫЕ» видна только �
   render(<App source={{ ...fakeSource().source, isMock: true }} />);
   expect(screen.getByText(texts.mockBadge)).toBeInTheDocument();
 });
+
+// --- Экран 19: переход с шапки 14 и 15, пересборка ------------------------------------------
+
+const HEADER = /^ИП · /;
+
+test("шапка экрана 14 ведёт на экран 19, «Назад» — на список без перезагрузки", async () => {
+  const { source, lastMe, lastCalendar } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  expect(source.me).toHaveBeenCalledTimes(2);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByText("Аванс")).toBeInTheDocument();
+  expect(source.calendar).toHaveBeenCalledOnce();
+});
+
+test("шапка экрана 15 тоже ведёт на экран 19", async () => {
+  localStorage.setItem("calendar.tab", "month");
+  const { source, lastMe } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+});
+
+test("после «Пересобрать» список грузится заново, шапка — по свежему профилю", async () => {
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.rebuild }));
+  const profile = { ...makeMe(true).profile!, regime: "usn15" as const };
+  await act(async () =>
+    last("rebuild").resolve({ items_count: 1, nearest_due_date: null, profile }),
+  );
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Декларация" })]));
+  expect(screen.getByText("Декларация")).toBeInTheDocument();
+  expect(screen.queryByText("Аванс")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: HEADER })).toHaveTextContent(texts.regime.usn15);
+});

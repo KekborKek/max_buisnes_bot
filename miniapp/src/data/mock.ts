@@ -10,6 +10,7 @@ import type {
   Me,
   ObligationCard,
   Profile,
+  RebuildResult,
   TaskCard,
   TaskInput,
 } from "../types";
@@ -43,6 +44,7 @@ export const MOCK_PROFILE: Profile = {
   timezone: DEFAULT_TIMEZONE,
   nds_payer: false,
   calendar_built_at: "2026-09-20T10:00:00Z",
+  reference_checked_at: "2026-09-20",
 };
 
 const mockToday = () => todayIn(MOCK_PROFILE.timezone);
@@ -238,6 +240,22 @@ export function createMockSource(scenario: MockScenario): DataSource {
       write(() => {
         find("task", id);
         cards = cards.filter((c) => !(c.type === "task" && c.id === id));
+      }),
+    // Мок сборку не повторяет: события те же, меняется только время сборки.
+    rebuild: () =>
+      write((): RebuildResult => {
+        const today = mockToday();
+        const upcoming = cards
+          .filter((c) => c.type === "obligation" && !c.done_at && c.due_date >= today)
+          .map((c) => c.due_date)
+          .sort();
+        return {
+          items_count: cards.filter(
+            (c) => c.type === "obligation" && c.due_date.slice(0, 4) === today.slice(0, 4),
+          ).length,
+          nearest_due_date: upcoming[0] ?? null,
+          profile: { ...MOCK_PROFILE, calendar_built_at: new Date().toISOString() },
+        };
       }),
     track: async (name, props = {}) => {
       console.debug("[ТЕСТОВЫЕ ДАННЫЕ] track", name, props);

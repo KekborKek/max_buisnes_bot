@@ -325,6 +325,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/calendar/rebuild:
+    post:
+      tags:
+      - miniapp
+      summary: Пересобрать календарь по профилю (экран 19, идемпотентно)
+      description: Отметки, свои задачи, часовой пояс и настройки уведомлений не сбрасываются.
+        Повторный вызов дублей не создаёт. Пишет событие calendar_built с rebuild.
+      operationId: rebuild_calendar_api_calendar_rebuild_post
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildResponse'
+        '409':
+          description: 'Профиль не заполнен: календарь не из чего собрать (profile_incomplete)'
+        '503':
+          description: 'Справочник недоступен: файл не загрузился или в нём нет нужного
+            года (reference_unavailable)'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/me:
     get:
       tags:
@@ -656,6 +691,14 @@ components:
             format: date-time
           - type: 'null'
           title: Calendar Built At
+        reference_checked_at:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Reference Checked At
+          description: Дата сверки справочника (version каталога); null — справочник
+            недоступен
       type: object
       required:
       - income_band
@@ -667,6 +710,28 @@ components:
       title: ProfileOut
       description: Ответы онбординга без служебных полей. nds_payer = null — определить
         нельзя (D25).
+    RebuildResponse:
+      properties:
+        items_count:
+          type: integer
+          title: Items Count
+          description: Событий до конца текущего года — как на экране 5
+        nearest_due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Nearest Due Date
+          description: Ближайший неотмеченный срок с сегодняшнего дня
+        profile:
+          $ref: '#/components/schemas/ProfileOut'
+      type: object
+      required:
+      - items_count
+      - nearest_due_date
+      - profile
+      title: RebuildResponse
+      description: Итог пересборки календаря (экран 19).
     TaskDraft:
       properties:
         title:

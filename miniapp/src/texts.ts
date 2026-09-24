@@ -39,6 +39,56 @@ export const texts = {
     unknown: "TODO",
   },
 
+  /** Подписи ответов онбординга — дословно кнопки экрана 2 в боте (onboarding.q1_*, btn_unknown). */
+  income: {
+    lt10: "До 10 млн ₽",
+    "10_20": "10–20 млн ₽",
+    "20_60": "20–60 млн ₽",
+    gt60: "Больше 60 млн ₽",
+    unknown: "Не знаю",
+  },
+
+  /** Как кнопки onboarding.q3_no / q3_yes. */
+  employees: {
+    no: "Работаю сам",
+    yes: "Есть сотрудники",
+  },
+
+  /** Как кнопки onboarding.q4_msk и onboarding.tz.<iana> (D3). Ключ — IANA-идентификатор. */
+  timezone: {
+    "Europe/Moscow": "Москва, UTC+3",
+    "Europe/Kaliningrad": "Калининград (UTC+2)",
+    "Europe/Samara": "Самара (UTC+4)",
+    "Asia/Yekaterinburg": "Екатеринбург (UTC+5)",
+    "Asia/Omsk": "Омск (UTC+6)",
+    "Asia/Krasnoyarsk": "Красноярск (UTC+7)",
+    "Asia/Irkutsk": "Иркутск (UTC+8)",
+    "Asia/Yakutsk": "Якутск (UTC+9)",
+    "Asia/Vladivostok": "Владивосток (UTC+10)",
+    "Asia/Magadan": "Магадан (UTC+11)",
+    "Asia/Kamchatka": "Камчатка (UTC+12)",
+  } as Record<string, string>,
+
+  /** Экран 19 — docs/screens/should-12-13-19.md. Подписей строк и заголовка в спеке нет:
+   * временные тексты техлида (24.09), ждут правки UX. */
+  profile: {
+    title: "Профиль",
+    income: "Доход",
+    regime: "Налоговый режим",
+    employees: "Сотрудники",
+    timezone: "Часовой пояс",
+    reference: "Справочник сроков",
+    edit: "Изменить",
+    rebuild: "Пересобрать",
+    /** Тост после пересборки. */
+    rebuilt: "Календарь собран заново",
+    /** 409: профиль не заполнен, пересобрать не из чего. */
+    incomplete:
+      "Профиль заполнен не до конца. Ответьте на вопросы в чате с ботом — после этого календарь можно будет пересобрать.",
+    /** disclaimer.profile — дословно (product.md, «Три дисклеймера»). */
+    disclaimer: "Профиль заполняете вы. Мы не запрашиваем ИНН и не сверяем данные с ФНС.",
+  },
+
   list: {
     profile: (regime: string, employees: string) => `ИП · ${regime} · ${employees}`,
     withoutEmployees: "без сотрудников",

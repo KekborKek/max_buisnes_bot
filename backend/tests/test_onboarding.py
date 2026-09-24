@@ -266,6 +266,47 @@ async def test_rebuild_starts_onboarding_and_keeps_calendar(fake_max):
     assert profile.income_band == "lt10"  # ответы остаются до перезаписи новыми
 
 
+# --- «Изменить» на экране 19: диплинк ?start=profile_edit (T14-19, #78) --------------------
+
+
+async def test_profile_edit_deeplink_after_build_asks_question_1(fake_max):
+    await run(fake_max, started())
+    built_at = await _mark_built()
+
+    msg = await run(fake_max, started(start.PROFILE_EDIT))
+
+    assert msg["text"].startswith("Вопрос 1 из 4.")
+    state = await get_state()
+    assert state.state == onboarding.STATES[1]
+    profile = await get_profile()
+    # календарь и ответы на месте до перезаписи новыми — как по «Собрать заново»
+    assert common.as_utc(profile.calendar_built_at) == built_at
+    assert (profile.income_band, profile.regime) == ("lt10", "usn6")
+    assert (await events("bot_started"))[-1] == {"start_param": "profile_edit"}
+
+
+async def test_profile_edit_deeplink_twice_does_not_duplicate(fake_max):
+    """MAX может прислать bot_started повторно — второй раз просто тот же вопрос 1."""
+    await run(fake_max, started())
+    await _mark_built()
+    update = started(start.PROFILE_EDIT)
+
+    await run(fake_max, update)
+    await run(fake_max, update)  # тот же апдейт повторно — идемпотентность диспетчера
+
+    assert len(await events("bot_started")) == 2
+    async with SessionLocal() as s:
+        assert await s.scalar(select(func.count()).select_from(Profile)) == 1
+
+
+async def test_profile_edit_deeplink_without_calendar_is_plain_start(fake_max):
+    """Календарь не собран (так из мини-аппа не попасть, но диплинк могут открыть руками)."""
+    msg = await run(fake_max, started(start.PROFILE_EDIT))
+
+    assert msg["text"] == greeting_for(f"20 млн{NBSP}₽")
+    assert await events("bot_started") == [{"start_param": "profile_edit"}]
+
+
 async def test_missing_reference_on_start_shows_error_and_retry(fake_max, monkeypatch, caplog):
     real = loader.get_reference
 

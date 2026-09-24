@@ -24,7 +24,7 @@ const SECTION_TITLE: Record<SectionKey, string> = {
 
 /** Шапка экранов 14 и 15: профиль одной строкой и переключатель «Список | Месяц» (D8). */
 export function CalendarHeader({ profile, tab }: { profile: Profile; tab: Tab }) {
-  const { switchTab } = useNavigation();
+  const { switchTab, push } = useNavigation();
   const employees = profile.has_employees ? texts.list.withEmployees : texts.list.withoutEmployees;
   const tabButton = (value: Tab, label: string) => (
     <Button
@@ -38,10 +38,16 @@ export function CalendarHeader({ profile, tab }: { profile: Profile; tab: Tab })
   );
   return (
     <header className="calendar-header">
-      {/* Шапка ведёт на экран 19; пока его нет — не нажимается. */}
-      <Typography.Body className="calendar-header__profile">
-        {texts.list.profile(texts.regime[profile.regime] ?? texts.regime.unknown, employees)}
-      </Typography.Body>
+      {/* Профиль в шапке ведёт на экран 19 (docs/screens/14-list.md, «Действия»). */}
+      <button
+        type="button"
+        className="calendar-header__profile"
+        onClick={() => push({ name: "profile" })}
+      >
+        <Typography.Body>
+          {texts.list.profile(texts.regime[profile.regime] ?? texts.regime.unknown, employees)}
+        </Typography.Body>
+      </button>
       <div className="tabs" role="group">
         {tabButton("list", texts.list.tabList)}
         {tabButton("month", texts.list.tabMonth)}

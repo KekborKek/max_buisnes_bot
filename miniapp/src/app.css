@@ -55,7 +55,41 @@ body {
 /* Профиль не обрезаем: на узком экране он переносится, переключатель остаётся справа. */
 .calendar-header__profile {
   min-width: 0;
+  /* Нативная кнопка без своего вида: нажимается целиком, выглядит как строка текста. */
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
   color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.calendar-header__profile > * {
+  color: inherit;
+}
+
+.calendar-header__profile:focus-visible {
+  outline: 2px solid var(--text-secondary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Экран 19. */
+.profile-head {
+  padding: 0 16px;
+}
+
+.profile-note {
+  padding: 0 16px;
+  color: var(--text-secondary);
+}
+
+.profile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
 }
 
 .tabs {

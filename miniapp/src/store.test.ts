@@ -1,8 +1,16 @@
 // Список 14 после изменения в карточке/форме: по ответу бэкенда, без повторной загрузки.
+import { act, renderHook } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { type MonthCache, removeFromMonths, removeItem, upsertItem, upsertMonths } from "./store";
-import { makeItem, makeObligationCard, makeTaskCard } from "./test/fakeSource";
+import {
+  type MonthCache,
+  removeFromMonths,
+  removeItem,
+  upsertItem,
+  upsertMonths,
+  useMonths,
+} from "./store";
+import { fakeSource, makeItem, makeObligationCard, makeTaskCard } from "./test/fakeSource";
 
 const loadedMonth = (items: ReturnType<typeof makeItem>[]) => ({
   items,
@@ -78,4 +86,25 @@ test("просроченное событие остаётся в списке �
   );
   expect(next).toHaveLength(1);
   expect(next[0].status).toBe("done");
+});
+
+test("месяцы после пересборки (экран 19): кеш пуст, месяц грузится заново, старый ответ отброшен", async () => {
+  const { source, lastCalendar } = fakeSource();
+  const { result } = renderHook(() => useMonths(source));
+  act(() => result.current.load("2026-10"));
+  await act(async () => lastCalendar().resolve([makeItem({ id: 1, due_date: "2026-10-28" })]));
+  expect(result.current.cache["2026-10"].items).toHaveLength(1);
+
+  // Запрос ноября ушёл до пересборки — его ответ в новый кеш не попадает.
+  act(() => result.current.load("2026-11"));
+  const stale = lastCalendar();
+  act(() => result.current.reset());
+  expect(result.current.cache).toEqual({});
+  await act(async () => stale.resolve([makeItem({ id: 2, due_date: "2026-11-05" })]));
+  expect(result.current.cache).toEqual({});
+
+  act(() => result.current.load("2026-10"));
+  expect(source.calendar).toHaveBeenCalledTimes(3);
+  await act(async () => lastCalendar().resolve([]));
+  expect(result.current.cache["2026-10"].items).toEqual([]);
 });

@@ -1,6 +1,14 @@
 // Источник данных мини-приложения — ЕДИНСТВЕННОЕ место, где выбирается мок или настоящий API.
 // T11b: переключить экраны на API = поправить getDataSource() (и, если надо, httpSource).
-import type { CalendarItem, ItemCard, ItemType, Me, TaskCard, TaskInput } from "../types";
+import type {
+  CalendarItem,
+  ItemCard,
+  ItemType,
+  Me,
+  RebuildResult,
+  TaskCard,
+  TaskInput,
+} from "../types";
 import { httpSource } from "./http";
 import { createMockSource, isMockScenario, type MockScenario } from "./mock";
 
@@ -28,6 +36,12 @@ export interface DataSource {
   updateTask(id: number, input: TaskInput): Promise<TaskCard>;
   /** DELETE /api/tasks/{id}, 204. */
   deleteTask(id: number): Promise<void>;
+  /**
+   * POST /api/calendar/rebuild — «Пересобрать» (экран 19), идемпотентно. Отметки, свои задачи,
+   * пояс и настройки уведомлений не сбрасываются. Событие calendar_built пишет бэкенд.
+   * Профиль не заполнен — ApiError("client", 409).
+   */
+  rebuild(): Promise<RebuildResult>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
 }
 
