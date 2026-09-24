@@ -237,6 +237,7 @@ async def test_me_with_profile(miniapp_api):
         "timezone": "Asia/Vladivostok",
         "nds_payer": None,
         "calendar_built_at": "2026-09-20T07:00:00Z",
+        "reference_checked_at": "2026-01-01",  # version тестового справочника
     }
 
 

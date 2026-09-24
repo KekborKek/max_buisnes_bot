@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import CalendarItem, HowtoLinkOut, ItemCard, ItemTypeParam
+from app.api.schemas import CalendarItem, HowtoLinkOut, ItemCard, ItemTypeParam, ProfileOut
 from app.calendar.howto_text import expand_howto_steps
 from app.calendar.reminders import as_utc
 from app.calendar.status import item_status, today_in
@@ -49,6 +49,47 @@ async def ensure_user(session: AsyncSession, user_id: int) -> None:
     if await session.get(User, user_id) is None:
         session.add(User(user_id=user_id))
         await session.flush()
+
+
+# --- Профиль (экраны 14, 18, 19) --------------------------------------------------------------
+
+
+def reference_checked_at(reference: Reference | None) -> date | None:
+    """Дата сверки справочника — `version` каталога, как на экране 11. Не дата — None."""
+    if reference is None:
+        return None
+    try:
+        return date.fromisoformat(reference.catalog.version)
+    except ValueError:
+        log.warning("version справочника не в формате YYYY-MM-DD: %r", reference.catalog.version)
+        return None
+
+
+def profile_complete(profile: Profile | None) -> bool:
+    """Профиль заполнен, когда есть все ответы онбординга (D24)."""
+    return (
+        profile is not None
+        and profile.income_band is not None
+        and profile.regime is not None
+        and profile.has_employees is not None
+    )
+
+
+def profile_out(profile: Profile | None, reference: Reference | None) -> ProfileOut | None:
+    """Незаполненный профиль (D24) — None: для мини-аппа профиля нет."""
+    if profile is None or not profile_complete(profile):
+        return None
+    return ProfileOut(
+        income_band=profile.income_band,
+        regime=profile.regime,
+        has_employees=profile.has_employees,
+        timezone=profile.timezone,
+        nds_payer=profile.nds_payer,
+        calendar_built_at=(
+            as_utc(profile.calendar_built_at) if profile.calendar_built_at else None
+        ),
+        reference_checked_at=reference_checked_at(reference),
+    )
 
 
 # --- Поиск своих событий ---------------------------------------------------------------------

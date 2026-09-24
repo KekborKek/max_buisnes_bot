@@ -132,6 +132,20 @@ class ProfileOut(BaseModel):
     timezone: str
     nds_payer: bool | None
     calendar_built_at: datetime | None
+    reference_checked_at: date | None = Field(
+        default=None,
+        description="Дата сверки справочника (version каталога); null — справочник недоступен",
+    )
+
+
+class RebuildResponse(BaseModel):
+    """Итог пересборки календаря (экран 19)."""
+
+    items_count: int = Field(description="Событий до конца текущего года — как на экране 5")
+    nearest_due_date: date | None = Field(
+        description="Ближайший неотмеченный срок с сегодняшнего дня"
+    )
+    profile: ProfileOut
 
 
 class TaskDraft(BaseModel):

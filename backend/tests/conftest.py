@@ -149,8 +149,10 @@ async def miniapp_api(monkeypatch, test_reference):
         api = MiniappApi(client, token, datetime(2026, 9, 23, 7, tzinfo=UTC))
         app.dependency_overrides[deps.current_time] = lambda: api.now
         app.dependency_overrides[deps.current_reference] = lambda: test_reference
+        app.dependency_overrides[deps.optional_reference] = lambda: test_reference
         try:
             yield api
         finally:
             app.dependency_overrides.pop(deps.current_time, None)
             app.dependency_overrides.pop(deps.current_reference, None)
+            app.dependency_overrides.pop(deps.optional_reference, None)

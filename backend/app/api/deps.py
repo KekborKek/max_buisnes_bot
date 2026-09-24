@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException
 
 from app.calendar.loader import get_reference
-from app.calendar.types import Reference
+from app.calendar.types import Reference, ReferenceFileError
 from app.core.config import get_settings
 from app.core.initdata import InitDataError, validate_init_data
 
@@ -66,3 +66,15 @@ def current_time() -> datetime:
 def current_reference() -> Reference:
     """Справочник обязательств процесса. Тесты подменяют фикстурой из backend/tests/fixtures/."""
     return get_reference()
+
+
+def optional_reference() -> Reference | None:
+    """Справочник для необязательных полей (дата сверки в /api/me): битый — None, не 500.
+
+    /api/me — вход в мини-апп; из-за справочника он падать не должен (экран 18).
+    """
+    try:
+        return get_reference()
+    except ReferenceFileError as e:
+        log.warning("справочник недоступен (/api/me): %s", e)
+        return None
