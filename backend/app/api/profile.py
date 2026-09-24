@@ -7,16 +7,16 @@
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import service
-from app.api.deps import current_reference, current_time, current_user_id
+from app.api.deps import current_time, current_user_id, optional_reference
 from app.api.schemas import RebuildResponse
-from app.calendar.build import BuildResult, build_calendar
+from app.calendar.build import build_calendar
 from app.calendar.reminders import as_utc
 from app.calendar.types import MissingYearError, Reference
 from app.core.db import get_session
@@ -30,22 +30,33 @@ router = APIRouter()
 UserId = Annotated[int, Depends(current_user_id)]
 Session = Annotated[AsyncSession, Depends(get_session)]
 Now = Annotated[datetime, Depends(current_time)]
-Ref = Annotated[Reference, Depends(current_reference)]
+# Справочник — без 500 из зависимости: битый файл (None) обрабатываем сами, как бот (экран 5).
+OptionalRef = Annotated[Reference | None, Depends(optional_reference)]
 
 PROFILE_INCOMPLETE = "profile_incomplete"
 REFERENCE_UNAVAILABLE = "reference_unavailable"
 
 
-async def _build(
-    session: AsyncSession, user_id: int, *, now: datetime, reference: Reference
-) -> tuple[Profile, BuildResult, bool]:
-    """Сборка в транзакции сессии. Профиль не заполнен — 409 до первой записи."""
+async def _complete_profile(session: AsyncSession, user_id: int) -> Profile:
+    """Профиль с ответами онбординга (D24). Не заполнен — 409 до первой записи в БД."""
     profile = await service.load_profile(session, user_id)
     if profile is None or not service.profile_complete(profile):
         raise HTTPException(status_code=409, detail=PROFILE_INCOMPLETE)
-    rebuild = profile.calendar_built_at is not None
-    result = await build_calendar(session, user_id, now=now, reference=reference)
-    return profile, result, rebuild
+    return profile
+
+
+async def _reference_error(
+    session: AsyncSession, user_id: int, kind: str, exc: Exception | None = None
+) -> NoReturn:
+    """Справочник не дал собрать календарь — как бот (экран 5): событие error и 503.
+
+    Незакоммиченное (полусборки не бывает: ошибки справочника — до первой записи) откатываем,
+    событие пишем отдельным коммитом.
+    """
+    await session.rollback()
+    await track(session, user_id, "error", {"where": "rebuild", "kind": kind})
+    await session.commit()
+    raise HTTPException(status_code=503, detail=REFERENCE_UNAVAILABLE) from exc
 
 
 @router.post(
@@ -60,31 +71,41 @@ async def _build(
         409: {
             "description": "Профиль не заполнен: календарь не из чего собрать (profile_incomplete)"
         },
-        503: {"description": "В справочнике нет нужного года (reference_unavailable)"},
+        503: {
+            "description": (
+                "Справочник недоступен: файл не загрузился или в нём нет нужного года "
+                "(reference_unavailable)"
+            )
+        },
     },
 )
 async def rebuild_calendar(
     user_id: UserId,
     session: Session,
     now: Now,
-    reference: Ref,
+    reference: OptionalRef,
 ) -> RebuildResponse:
+    profile = await _complete_profile(session, user_id)
+    # Флаг — до сборки и один раз на запрос: повтор после гонки не превращает первую
+    # сборку в пересборку, даже если соседний запрос уже проставил calendar_built_at.
+    rebuild = profile.calendar_built_at is not None
+    if reference is None:
+        # Файл справочника не загрузился: ReferenceFileError, причина — в логе optional_reference.
+        await _reference_error(session, user_id, "reference_file")
     try:
         try:
-            profile, result, rebuild = await _build(session, user_id, now=now, reference=reference)
+            result = await build_calendar(session, user_id, now=now, reference=reference)
         except IntegrityError:
             # Два нажатия одновременно: второе упёрлось в уникальный ключ (user_id,
             # obligation_id, due_date). Строки первого уже в базе — повтор их просто найдёт.
             await session.rollback()
             log.info("пересборка %s: гонка на уникальном ключе, повторяю", user_id)
-            profile, result, rebuild = await _build(session, user_id, now=now, reference=reference)
+            result = await build_calendar(session, user_id, now=now, reference=reference)
+            # После отката объекты сессии истекли — профиль читаем заново.
+            profile = await _complete_profile(session, user_id)
     except MissingYearError as exc:
-        # Бросается до первой записи в БД — полусборки нет.
-        await session.rollback()
         log.error("пересборка %s: %s", user_id, exc)
-        await track(session, user_id, "error", {"where": "rebuild", "kind": "missing_year"})
-        await session.commit()
-        raise HTTPException(status_code=503, detail=REFERENCE_UNAVAILABLE) from exc
+        await _reference_error(session, user_id, "missing_year", exc)
 
     seconds = int((now - as_utc(profile.started_at)).total_seconds())
     await track(
@@ -93,9 +114,8 @@ async def rebuild_calendar(
         "calendar_built",
         {"items_count": result.this_year, "seconds_since_start": seconds, "rebuild": rebuild},
     )
-    # DTO — до коммита: после него атрибуты профиля истекают, а ленивой загрузки в async нет.
     out = service.profile_out(profile, reference)
-    assert out is not None  # профиль заполнен — проверено в _build
+    assert out is not None  # профиль заполнен — проверено в _complete_profile
     await session.commit()
     return RebuildResponse(
         items_count=result.this_year,

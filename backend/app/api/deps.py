@@ -69,12 +69,13 @@ def current_reference() -> Reference:
 
 
 def optional_reference() -> Reference | None:
-    """Справочник для необязательных полей (дата сверки в /api/me): битый — None, не 500.
+    """Справочник или None, если файл не загрузился (ReferenceFileError) — вместо голого 500.
 
-    /api/me — вход в мини-апп; из-за справочника он падать не должен (экран 18).
+    /api/me — вход в мини-апп, из-за справочника он падать не должен (экран 18): дата сверки
+    просто null. «Пересобрать» (экран 19) на None отвечает 503 и пишет событие error.
     """
     try:
         return get_reference()
     except ReferenceFileError as e:
-        log.warning("справочник недоступен (/api/me): %s", e)
+        log.warning("справочник недоступен: %s", e)
         return None

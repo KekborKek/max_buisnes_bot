@@ -12,8 +12,11 @@ import dataclasses
 from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.api import deps, service
+from app.api import profile as profile_api
+from app.calendar.build import build_calendar
 from app.calendar.reminders import as_utc, cancel_pending
 from app.calendar.types import ReferenceFileError
 from app.core.db import SessionLocal
@@ -263,6 +266,55 @@ async def test_rebuild_without_workdays_year_is_503(miniapp_api):
     assert await obligations() == []
     assert await event_props("error") == [{"where": "rebuild", "kind": "missing_year"}]
     assert await event_props("calendar_built") == []
+
+
+async def test_rebuild_with_broken_reference_file_is_503(miniapp_api, monkeypatch):
+    """Файл справочника не загрузился (ReferenceFileError) — 503 и событие, как у бота, не 500.
+
+    Настоящая optional_reference с «битым» get_reference, без подмены из фикстуры.
+    """
+    await add_profile()
+
+    def broken():
+        raise ReferenceFileError("нет файла obligations.yaml")
+
+    monkeypatch.setattr(deps, "get_reference", broken)
+    app.dependency_overrides.pop(deps.optional_reference, None)
+    r = await miniapp_api.request("POST", PATH, OWNER)
+    assert r.status_code == 503
+    assert r.json()["detail"] == "reference_unavailable"
+    assert await obligations() == []
+    assert await event_props("error") == [{"where": "rebuild", "kind": "reference_file"}]
+    assert await event_props("calendar_built") == []
+
+
+async def test_race_on_unique_key_retries_once(miniapp_api, monkeypatch):
+    """Соседний запрос успел собрать календарь, наш упёрся в уникальный ключ: откат, повтор —
+    200 без дублей, одно calendar_built с rebuild из первой попытки (для нас — первая сборка)."""
+    await add_profile()
+    calls = []
+
+    async def racing_build(session, user_id, *, now, reference):
+        calls.append(now)
+        if len(calls) == 1:
+            # «Соседний запрос»: своя сессия, своя сборка, коммит раньше нас.
+            async with SessionLocal() as other:
+                await build_calendar(other, user_id, now=now, reference=reference)
+                await other.commit()
+            raise IntegrityError("INSERT INTO user_obligations", {}, Exception("UNIQUE"))
+        return await build_calendar(session, user_id, now=now, reference=reference)
+
+    monkeypatch.setattr(profile_api, "build_calendar", racing_build)
+    r = await miniapp_api.request("POST", PATH, OWNER)
+
+    assert r.status_code == 200
+    assert len(calls) == 2
+    assert r.json()["items_count"] == 2
+    keys = [(uo.obligation_id, uo.due_date) for uo in await obligations()]
+    assert len(keys) == len(set(keys)) == 7  # как у обычной сборки до 31.12.2027, без дублей
+    assert await event_props("calendar_built") == [
+        {"items_count": 2, "seconds_since_start": 120, "rebuild": False}
+    ]
 
 
 # --- Дата сверки справочника в /api/me ------------------------------------------------------
