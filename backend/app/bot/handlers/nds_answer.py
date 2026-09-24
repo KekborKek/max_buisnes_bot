@@ -18,12 +18,12 @@ from datetime import date
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
+from app.bot.formatting import format_date
 from app.bot.handlers import common
 from app.bot.handlers.calendar_ready import (
     BUILD,
     ask_missing,
     error_kind,
-    format_day,
     lower_first,
     missing_step,
     reply_error,
@@ -152,12 +152,12 @@ def answer_text(
         ob, due = nearest_nds_due(profile, reference, today)
         shift_note = ""
         if due.original_date != due.due_date:
-            shift_note = t("nds.shift_note", original_date=format_day(due.original_date, today))
+            shift_note = t("nds.shift_note", original_date=format_date(due.original_date, today))
         text = t(
             "nds.payer",
             limit=limit,
             next_title=lower_first(ob.title),
-            next_date=format_day(due.due_date, today),
+            next_date=format_date(due.due_date, today),
             shift_note=shift_note,
         )
     else:

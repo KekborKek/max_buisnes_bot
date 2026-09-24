@@ -641,14 +641,26 @@ async def test_snooze_without_mid_still_created(fake_max, clock):
     assert len(await _snoozes(uo_id)) == 1
 
 
-async def test_snooze_on_marked_item_does_nothing(fake_max, clock):
+async def test_snooze_on_marked_item_replies_already(fake_max, clock):
+    """DEBT-1 (#67): по уже отмеченному событию — «уже отмечено» (экран 8), а не тишина."""
     uo_id, _ = await _one_d7(done=True)
 
     await process_update(_snooze_update(uo_id), fake_max)
 
     assert await _snoozes(uo_id) == []
+    assert [m["text"] for m in fake_max.sent] == ["Это событие уже отмечено 1 января."]
+    assert fake_max.edited == []
+    assert await _events("reminder_clicked") == [{"kind": "d7", "action": "snooze"}]
+
+
+async def test_snooze_on_missing_item_does_nothing(fake_max, clock):
+    """Удалено, чужое или пропало из справочника — по-прежнему тишина, snooze не создаём."""
+    await process_update(_snooze_update(999_999), fake_max)
+
+    assert await _snoozes(999_999) == []
     assert fake_max.sent == []
     assert fake_max.edited == []
+    assert await _events("reminder_clicked") == [{"kind": "d7", "action": "snooze"}]
 
 
 async def test_snooze_edit_happens_outside_write_transaction(clock):
