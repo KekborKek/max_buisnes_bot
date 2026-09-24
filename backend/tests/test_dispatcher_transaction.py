@@ -112,9 +112,11 @@ async def test_failed_handler_keeps_key_and_drops_queued_replies(fake_max, monke
     update = load_update("bot_started")
     await process_update(update, fake_max)
 
-    assert [m["text"] for m in fake_max.sent] == [t("errors.internal")]
+    assert [m["text"] for m in fake_max.sent] == [t("fallback.service")]
     async with SessionLocal() as session:
-        assert await session.scalar(select(func.count()).select_from(Event)) == 0
+        # событие обработчика откатилось, осталось только fallback_shown экрана 10
+        names = (await session.execute(select(Event.name))).scalars().all()
+        assert names == ["fallback_shown"]
         assert await session.scalar(select(func.count()).select_from(ProcessedUpdate)) == 1
 
     # повторная доставка того же апдейта не обрабатывается заново (at-most-once)

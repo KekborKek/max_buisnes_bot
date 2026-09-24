@@ -10,12 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.bot.handlers  # noqa: F401  регистрирует обработчики
 from app.bot.context import Ctx
+from app.bot.handlers import fallback
 from app.bot.router import router
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.max_client import MaxClient
 from app.core.models import ProcessedUpdate
-from app.core.texts import t
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ async def _mark_processed(session: AsyncSession, update: dict) -> bool:
     доставка того же апдейта будет отброшена (at-most-once). Так выбрано осознанно — при
     детерминированной ошибке обработчика снятие ключа превратило бы повторы MAX в бесконечный
     цикл падений и сообщений об ошибке пользователю. Цена решения: апдейт, упавший на случайной
-    ошибке, второго шанса не получит, пользователь увидит t("errors.internal") и повторит
-    действие сам.
+    ошибке, второго шанса не получит, пользователь увидит `fallback.service` и повторит
+    действие кнопкой «Повторить» (экран 10).
     """
     key = update_key(update)
     if not key:
@@ -114,6 +114,10 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
     удержит блокировку записи, если перед ним уже была запись в БД: `ctx.track`/`ctx.set_state`
     попадают на диск при первом же SELECT (autoflush). Правило: внешние данные забираем
     в начале обработчика, до первой записи.
+
+    Экран 10: после успешного обработчика `fallback.after_handler` сбрасывает счётчики сбоев
+    в той же транзакции; после падения и rollback `fallback.on_failure` отдельной короткой
+    транзакцией (без сети) запоминает действие для «Повторить» и ставит в очередь ответ.
     """
     if get_settings().capture_updates:
         _capture(update)
@@ -133,6 +137,7 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
             handler = await router.resolve(ctx)
             if handler:
                 await handler(ctx)
+            await fallback.after_handler(ctx)
             await session.commit()
         except Exception:
             log.exception("update processing failed for %s", ctx.update_type)
@@ -141,7 +146,7 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
                 await session.rollback()
             except Exception:
                 log.exception("rollback failed for %s", ctx.update_type)
-            await ctx.reply(t("errors.internal"))
+            await fallback.on_failure(ctx)
 
         # Транзакция закрыта: и после commit, и после rollback
         failed = await ctx.send_outbox()
