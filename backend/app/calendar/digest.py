@@ -6,7 +6,10 @@
   нет ключа — включена);
 - в понедельник, начиная с часа `reminder_settings(...)["hour"]` по `Profile.timezone`.
   Если планировщик стоял, сводка догоняет в тот же понедельник; во вторник — уже нет;
-- если на неделе (пн–вс) есть хотя бы одно событие без отметки. Пустая неделя — молчим.
+- если календарь собран не позже планового момента этой недели (онбординг в понедельник
+  днём — сводки в этот понедельник нет, человек только что видел экран 5);
+- если на неделе (пн–вс) есть хотя бы одно событие без отметки. Пустая неделя — молчим,
+  и решение по неделе принимается один раз: строка `cancelled` (см. `_claim`).
 
 Не больше одной сводки на пользователя в неделю. Перед отправкой одной операцией
 `INSERT … SELECT … WHERE NOT EXISTS` создаётся `Notification(kind="digest", item_type="week",
@@ -174,35 +177,50 @@ class _Candidate:
 
 
 def _due_candidate(
-    user_id: int, tz: str | None, raw: Mapping[str, Any] | None, now: datetime
+    user_id: int,
+    tz: str | None,
+    raw: Mapping[str, Any] | None,
+    built_at: datetime | None,
+    now: datetime,
 ) -> _Candidate | None:
-    """Пользователю пора получить сводку: у него понедельник и час сводки наступил."""
-    if not digest_enabled(raw):
+    """Пользователю пора получить сводку: у него понедельник и час сводки наступил.
+
+    Календарь собран позже планового момента этой недели (онбординг в понедельник днём) —
+    сводки за эту неделю нет: только что человек видел экран 5. Битые пояс или час у одного
+    пользователя — предупреждение в лог и пропуск только его.
+    """
+    if built_at is None or not digest_enabled(raw):
         return None
     tz = tz or DEFAULT_TIMEZONE
     try:
         local = now.astimezone(ZoneInfo(tz))
-    except (ZoneInfoNotFoundError, ValueError):
-        log.warning("сводка %s: неизвестный часовой пояс %r", user_id, tz)
+        if local.weekday() != 0:
+            return None
+        hour = int(reminder_settings(raw)["hour"])
+        monday = local.date()
+        send_at = send_at_utc(monday, hour, tz)
+    except (ZoneInfoNotFoundError, TypeError, ValueError):
+        log.warning("сводка %s: неверный пояс %r или час в настройках %r", user_id, tz, raw)
         return None
-    hour = int(reminder_settings(raw)["hour"])
-    if local.weekday() != 0 or local.hour < hour:
+    if now < send_at or as_utc(built_at) > send_at:
         return None
-    monday = local.date()
-    return _Candidate(user_id, monday, send_at_utc(monday, hour, tz))
+    return _Candidate(user_id, monday, send_at)
 
 
 async def _candidates(now: datetime) -> list[_Candidate]:
-    """Кому пора и кто сводку за эту неделю ещё не получал. Только чтение."""
+    """Кому пора и по чьей неделе решения ещё не было (нет строки digest). Только чтение."""
     async with SessionLocal() as session:
         rows = await session.execute(
-            select(Profile.user_id, Profile.timezone, Profile.reminders).where(
-                Profile.calendar_built_at.is_not(None)
-            )
+            select(
+                Profile.user_id, Profile.timezone, Profile.reminders, Profile.calendar_built_at
+            ).where(Profile.calendar_built_at.is_not(None))
         )
         due = [
             c
-            for c in (_due_candidate(r.user_id, r.timezone, r.reminders, now) for r in rows)
+            for c in (
+                _due_candidate(r.user_id, r.timezone, r.reminders, r.calendar_built_at, now)
+                for r in rows
+            )
             if c is not None
         ]
         if not due:
@@ -238,15 +256,17 @@ async def _prepare(candidate: _Candidate, reference: Reference) -> OutgoingDiges
     )
 
 
-async def _claim(digest: OutgoingDigest, now: datetime) -> int | None:
-    """Короткая транзакция «забрать»: запись сводки за неделю, если её ещё нет. → id или None.
+async def _claim(candidate: _Candidate, now: datetime, *, status: str) -> int | None:
+    """Короткая транзакция «забрать»: строка сводки за неделю, если её ещё нет. → id или None.
 
     Одна операция INSERT … SELECT … WHERE NOT EXISTS: проверка и вставка атомарны в SQLite,
-    два тика одну неделю не заберут.
+    два тика одну неделю не заберут. `status="pending"` — сводку сейчас отправим;
+    `"cancelled"` — неделя пустая, решение принято один раз: позже появившаяся задача
+    сводку в этот понедельник не вызовет, и события не перечитываются каждую минуту.
     """
-    key = week_key(digest.monday)
+    key = week_key(candidate.monday)
     already = exists().where(
-        Notification.user_id == digest.user_id,
+        Notification.user_id == candidate.user_id,
         Notification.kind == KIND,
         Notification.item_id == key,
     )
@@ -261,13 +281,13 @@ async def _claim(digest: OutgoingDigest, now: datetime) -> int | None:
         Notification.created_at,
     )
     values = select(
-        literal(digest.user_id, Notification.user_id.type),
+        literal(candidate.user_id, Notification.user_id.type),
         literal(ITEM_TYPE, Notification.item_type.type),
         literal(key, Notification.item_id.type),
         literal(KIND, Notification.kind.type),
-        literal(digest.send_at, Notification.send_at.type),
-        literal("pending", Notification.status.type),
-        literal(1, Notification.attempts.type),
+        literal(candidate.send_at, Notification.send_at.type),
+        literal(status, Notification.status.type),
+        literal(1 if status == "pending" else 0, Notification.attempts.type),
         literal(now, Notification.created_at.type),
     ).where(~already)
     stmt = (
@@ -311,8 +331,10 @@ async def _record(digest: OutgoingDigest, notification_id: int, *, ok: bool, now
         await session.commit()
 
 
-async def _deliver(digest: OutgoingDigest, max_client: MaxClient, now: datetime) -> None:
-    notification_id = await _claim(digest, now)
+async def _deliver(
+    candidate: _Candidate, digest: OutgoingDigest, max_client: MaxClient, now: datetime
+) -> None:
+    notification_id = await _claim(candidate, now, status="pending")
     if notification_id is None:
         return  # за эту неделю уже забрано
     try:
@@ -344,7 +366,10 @@ async def tick(now: datetime, max_client: MaxClient, *, reference: Reference | N
     for candidate in candidates:
         try:
             digest = await _prepare(candidate, reference)
-            if digest is not None:
-                await _deliver(digest, max_client, now)
+            if digest is None:
+                # Пустая неделя: отметка «решено, не отправляем», событий аналитики нет.
+                await _claim(candidate, now, status="cancelled")
+            else:
+                await _deliver(candidate, digest, max_client, now)
         except Exception:
             log.exception("сводка пользователю %s: ошибка", candidate.user_id)

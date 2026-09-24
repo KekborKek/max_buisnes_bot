@@ -63,6 +63,8 @@ def no_bot_name(monkeypatch):
 
 
 async def _user(user_id=USER, tz=MSK, *, built=True, reminders=None) -> None:
+    """`built`: True — календарь собран давно, False — не собран, datetime — собран тогда."""
+    built_at = built if isinstance(built, datetime) else (LONG_AGO if built else None)
     async with SessionLocal() as s:
         s.add(User(user_id=user_id))
         await s.flush()
@@ -72,7 +74,7 @@ async def _user(user_id=USER, tz=MSK, *, built=True, reminders=None) -> None:
             income_band="lt10",
             regime="usn6",
             has_employees=False,
-            calendar_built_at=LONG_AGO if built else None,
+            calendar_built_at=built_at,
         )
         if reminders is not None:
             profile.reminders = reminders
@@ -236,17 +238,83 @@ async def test_only_undone_items_of_this_week(fake_max, no_bot_name):
     ]
 
 
-async def test_empty_week_sends_nothing(fake_max, no_bot_name):
+async def test_empty_week_sends_nothing_and_is_decided_once(fake_max, no_bot_name, monkeypatch):
+    """Пустая неделя: одна строка `cancelled`, события больше не перечитываются, а задача,
+    заведённая в тот же понедельник позже, сводку не вызывает (сценарий Б ревью #79)."""
     await _user()
     await _uo(date(2026, 10, 28), done=True)
     await _uo(date(2026, 11, 2), ob="test_quarterly")
+    reads = []
+    real_load = digest.load_week_items
+
+    async def counting_load(*args, **kwargs):
+        reads.append(args[2])
+        return await real_load(*args, **kwargs)
+
+    monkeypatch.setattr(digest, "load_week_items", counting_load)
 
     await tick(MSK_10, fake_max)
     await tick(MSK_10 + MINUTE, fake_max)
+    await _task("оплатить аренду", date(2026, 10, 30))  # 15:00 МСК — задача на эту неделю
+    await tick(utc(2026, 10, 26, 12, 1), fake_max)
 
     assert fake_max.sent == []
-    assert await _digests() == []
+    [row] = await _digests()
+    assert (row.status, row.item_id) == ("cancelled", 20261026)
+    assert reads == [USER]  # события прочитаны один раз
     assert await _events("reminder_sent") == []
+    assert await _events("error") == []
+
+
+async def test_no_digest_on_the_monday_of_onboarding(fake_max, no_bot_name):
+    """Сценарий А ревью #79: календарь собран в понедельник в 14:00 МСК, после 10:00 —
+    в этот понедельник сводки нет, человек только что видел экран 5; в следующий — есть."""
+    await _user(built=utc(2026, 10, 26, 11))
+    await _week_with_two_items()
+    await _uo(date(2026, 11, 3), ob="test_quarterly")
+
+    await tick(utc(2026, 10, 26, 11, 1), fake_max)
+    await tick(utc(2026, 10, 26, 15), fake_max)
+    assert fake_max.sent == []
+    assert await _digests() == []
+
+    await tick(MSK_10 + 7 * DAY, fake_max)
+    assert len(fake_max.sent) == 1
+
+
+async def test_calendar_built_before_hour_on_monday_gets_digest(fake_max, no_bot_name):
+    await _user(built=utc(2026, 10, 26, 6))  # 09:00 МСК понедельника
+    await _week_with_two_items()
+
+    await tick(MSK_10, fake_max)
+
+    assert [m["text"] for m in fake_max.sent] == [TWO_ITEMS]
+
+
+@pytest.mark.parametrize("hour", ["abc", 25, [10]])
+async def test_broken_hour_skips_only_that_user(fake_max, no_bot_name, caplog, hour):
+    await _user(reminders={"d30": True, "d7": True, "hour": hour})
+    await _week_with_two_items()
+    other = 43
+    await _user(user_id=other)
+    await _week_with_two_items(user_id=other)
+
+    await tick(MSK_10, fake_max)
+
+    assert [m["user_id"] for m in fake_max.sent] == [other]
+    assert "сводка 42" in caplog.text
+
+
+async def test_vladivostok_hour_9_is_sunday_evening_utc(fake_max, no_bot_name):
+    """09:00 понедельника во Владивостоке — 23:00 воскресенья по UTC: сводка уходит."""
+    await _user(tz=VLAT, reminders={"d30": True, "d7": True, "hour": 9})
+    await _week_with_two_items()
+
+    await tick(utc(2026, 10, 25, 22, 59), fake_max)
+    assert fake_max.sent == []
+
+    await tick(utc(2026, 10, 25, 23), fake_max)
+    assert [m["text"] for m in fake_max.sent] == [TWO_ITEMS]
 
 
 def test_count_words_capitalized_for_many():
