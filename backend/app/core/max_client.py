@@ -166,7 +166,13 @@ class MaxClient:
         )
 
     async def answer_callback(self, callback_id: str, notification: str | None = None) -> dict:
-        body = {"notification": notification} if notification else {}
+        """POST /answers?callback_id=… — https://dev.max.ru/docs-api/methods/POST/answers
+
+        Тело — CallbackAnswer: MAX требует `message` или `notification`, на `{}` и на `null`
+        отвечает 400. Без текста шлём `notification: ""` — так гасят индикатор на кнопке,
+        не показывая уведомление (проверено 24.09.2026, см. docs/max-api-notes.md).
+        """
+        body = {"notification": notification or ""}
         return await self._request(
             "POST", "/answers", params={"callback_id": callback_id}, json=body
         )

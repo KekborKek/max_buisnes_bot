@@ -225,6 +225,37 @@ async def test_send_typing_request_matches_docs():
     assert json.loads(req.content) == {"action": "typing_on"}
 
 
+# --- LEAD-12 (#75): ответ на нажатие кнопки ---------------------------------------------
+# CallbackAnswer — https://dev.max.ru/docs-api/methods/POST/answers. На `{}` MAX отвечает
+# 400 "`message` or `notification` required", поэтому поле есть всегда.
+
+
+async def test_answer_callback_without_text_sends_empty_notification():
+    seen: list[httpx.Request] = []
+    client = _recording_client(seen)
+    try:
+        await client.answer_callback("cb-1")
+    finally:
+        await client.close()
+
+    (req,) = seen
+    assert req.method == "POST"
+    assert req.url.path == "/answers"
+    assert dict(req.url.params) == {"callback_id": "cb-1"}
+    assert json.loads(req.content) == {"notification": ""}
+
+
+async def test_answer_callback_with_text_sends_notification():
+    seen: list[httpx.Request] = []
+    client = _recording_client(seen)
+    try:
+        await client.answer_callback("cb-1", "Готово")
+    finally:
+        await client.close()
+
+    assert json.loads(seen[0].content) == {"notification": "Готово"}
+
+
 def test_open_app_button_uses_bot_username(monkeypatch):
     monkeypatch.setattr(
         kb, "get_settings", lambda: Settings(_env_file=None, max_bot_username="pareto_bot")
