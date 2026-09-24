@@ -5,8 +5,7 @@ Payload кнопок: calendar:build — «Собрать календарь» (
 сообщения) присылает экран 5 снова, без дублей событий и уведомлений.
 
 Здесь же общее для экранов 3 и 5: «сегодня» пользователя, дата «28 октября», ответ об ошибке
-справочника. Даты — своей функцией `format_day`, пока в main нет `bot/formatting.py` (T6);
-после его слияния — перенести туда.
+справочника. Даты — общим форматтером `bot/formatting.format_date` (DEBT-1, #67).
 """
 
 import asyncio
@@ -16,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
+from app.bot.formatting import format_date
 from app.bot.handlers import common
 from app.bot.handlers.common import ensure_profile
 from app.bot.router import router
@@ -33,21 +33,6 @@ BUILD = "calendar:build"
 # Индикатор «печатает» — украшение: ждать ответа MAX дольше этого нельзя, сборка важнее.
 _TYPING_TIMEOUT_S = 2
 
-_MONTHS_GENITIVE = (
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
-)
-
 
 # --- общее для экранов 3 и 5 -------------------------------------------------------------
 
@@ -55,12 +40,6 @@ _MONTHS_GENITIVE = (
 def today_for(profile: Profile) -> date:
     """«Сегодня» в часовом поясе пользователя."""
     return common.now().astimezone(ZoneInfo(profile.timezone)).date()
-
-
-def format_day(day: date, today: date) -> str:
-    """«28 октября»; год — только если он не текущий: «25 января 2027»."""
-    text = f"{day.day} {_MONTHS_GENITIVE[day.month - 1]}"
-    return text if day.year == today.year else f"{text} {day.year}"
 
 
 def lower_first(title: str) -> str:
@@ -146,7 +125,7 @@ def ready_text(profile: Profile, result: BuildResult, reference: Reference, toda
             "calendar_ready.body",
             count=result.this_year,
             count_word=count_word(result.this_year),
-            next_date=format_day(result.nearest_due_date, today),
+            next_date=format_date(result.nearest_due_date, today),
             next_title=lower_first(title),
         )
     if profile.has_employees:

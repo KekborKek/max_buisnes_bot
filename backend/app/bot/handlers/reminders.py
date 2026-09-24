@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.bot.context import Ctx
 from app.bot.handlers import common
 from app.bot.router import router
-from app.calendar import loader
+from app.calendar import loader, marks
 from app.calendar import reminders as rem
 from app.core.models import Notification, Profile
 from app.core.texts import t
@@ -52,17 +52,31 @@ async def snooze(ctx: Ctx) -> None:
     profile = await ctx.session.get(Profile, ctx.user_id)
     today, tz = rem.user_today(profile, now)
     hour = int(rem.reminder_settings(profile.reminders if profile else None)["hour"])
+    reference = loader.get_reference()
+
+    # Уже отмечено — отдельно от «удалено/чужое»: rem.load_reminder_item для отметки тоже
+    # вернул бы None, а ответ разный (экран 6: «уже отмечено» → экран 8, done.already_text).
+    own_item = await marks.load_own_item(
+        ctx.session, reference, user_id=ctx.user_id, item_type=item_type, item_id=item_id
+    )
+    if own_item is not None and own_item.done_at is not None:
+        # Импорт здесь: done.py импортирует reminders.parse_payload — на уровне модуля цикл.
+        from app.bot.handlers.done import already_text
+
+        await ctx.track("reminder_clicked", {"kind": _SOURCE_KIND, "action": "snooze"})
+        await ctx.reply(already_text(own_item, tz, today))
+        return
+
     item = await rem.load_reminder_item(
         ctx.session,
-        loader.get_reference(),
+        reference,
         notification_id=0,
         user_id=ctx.user_id,
         item_type=item_type,
         item_id=item_id,
     )
 
-    # Событие отмечено, удалено или чужое — напоминать не о чем, snooze не создаём.
-    # Ответ «уже отмечено» — экран 8 (T7); пока просто не обещаем напомнить.
+    # Событие удалено или чужое — напоминать не о чем, snooze не создаём.
     if item is None:
         log.info("snooze: событие %s:%s неактуально", item_type, item_id)
         await ctx.track("reminder_clicked", {"kind": _SOURCE_KIND, "action": "snooze"})

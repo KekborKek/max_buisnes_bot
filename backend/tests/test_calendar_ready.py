@@ -289,12 +289,6 @@ def test_count_word(n, word):
     assert calendar_ready.count_word(n) == word
 
 
-def test_format_day_shows_year_only_if_not_current():
-    today = date(2026, 9, 29)
-    assert calendar_ready.format_day(date(2026, 10, 28), today) == "28 октября"
-    assert calendar_ready.format_day(date(2027, 1, 25), today) == "25 января 2027"
-
-
 def test_screen_5_button_fits_20_chars():
     (board,) = calendar_ready.ready_attachments()
     for row in board["payload"]["buttons"]:
