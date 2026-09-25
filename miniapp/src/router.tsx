@@ -15,7 +15,11 @@ export type Route =
   /** Форма 17: новая (`draft` — с черновиком из бота) или правка задачи `taskId`. */
   | { name: "task"; draft: boolean; taskId?: number }
   /** Экран 19 — профиль и «Пересобрать», по нажатию на шапку 14 и 15. */
-  | { name: "profile" };
+  | { name: "profile" }
+  /** Экран 13 — настройки напоминаний: со строки экрана 19 или из бота (`start_param=settings`). */
+  | { name: "settings"; source: SettingsSource };
+
+export type SettingsSource = "profile" | "bot";
 
 export type NavAction =
   { type: "push"; route: Route } | { type: "back" } | { type: "tab"; tab: Tab };
@@ -31,15 +35,19 @@ export function navReducer(stack: Route[], action: NavAction): Route[] {
   }
 }
 
-/** Куда ведёт start_param из бота (docs/screens/16-card.md, 17-task-form.md). */
+/** Куда ведёт start_param из бота (docs/screens/16-card.md, 17-task-form.md, экран 13 — #85). */
 export type StartTarget =
-  { kind: "item"; itemType: ItemType; id: number } | { kind: "task_draft" } | null;
+  | { kind: "item"; itemType: ItemType; id: number }
+  | { kind: "task_draft" }
+  | { kind: "settings" }
+  | null;
 
 const ITEM_PARAM = /^item_(obligation|task)_(\d+)$/;
 
 export function parseStartParam(raw: string | null): StartTarget {
   if (!raw) return null;
   if (raw === "task_draft") return { kind: "task_draft" };
+  if (raw === "settings") return { kind: "settings" };
   const m = ITEM_PARAM.exec(raw);
   if (!m) return null;
   const id = Number(m[2]);
@@ -49,8 +57,8 @@ export function parseStartParam(raw: string | null): StartTarget {
 }
 
 /**
- * Начальный стек. Из бота (`item_*`, `task_draft`) — список 14 и поверх него карточка 16
- * или форма 17: «Назад» ведёт на 14, а не на запомненную вкладку.
+ * Начальный стек. Из бота (`item_*`, `task_draft`, `settings`) — список 14 и поверх него
+ * карточка 16, форма 17 или настройки 13: «Назад» ведёт на 14, а не на запомненную вкладку.
  */
 export function initialStack(target: StartTarget, tab: Tab): Route[] {
   if (target?.kind === "item") {
@@ -60,6 +68,7 @@ export function initialStack(target: StartTarget, tab: Tab): Route[] {
     ];
   }
   if (target?.kind === "task_draft") return [{ name: "list" }, { name: "task", draft: true }];
+  if (target?.kind === "settings") return [{ name: "list" }, { name: "settings", source: "bot" }];
   return [{ name: tab }];
 }
 

@@ -364,3 +364,127 @@ test("после «Пересобрать» список грузится зан
   expect(screen.queryByText("Аванс")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: HEADER })).toHaveTextContent(texts.regime.usn15);
 });
+
+// --- Экран 13: из бота (start_param=settings) и со строки экрана 19 --------------------------
+
+test("?start_param=settings открывает экран 13 поверх списка; «Назад» — на список 14", async () => {
+  localStorage.setItem("calendar.tab", "month");
+  window.history.replaceState(null, "", "/?start_param=settings");
+  const { source, lastMe, lastCalendar } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.settings.save })).toBeDisabled();
+  expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "bot" });
+
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+  expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
+  expect(screen.getByText("Аванс")).toBeInTheDocument();
+});
+
+test("из бота: сохранение возвращает на список 14 с тостом «Сохранено»", async () => {
+  window.history.replaceState(null, "", "/?start_param=settings");
+  const { source, lastMe, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.hourOption(9) }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  const profile = makeMe(true).profile!;
+  await act(async () =>
+    last("saveSettings").resolve({ ...profile, reminders: { ...profile.reminders!, hour: 9 } }),
+  );
+  expect(screen.queryByText(texts.settings.title)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
+  expect(screen.getByText(texts.settings.saved)).toBeInTheDocument();
+});
+
+test("экран 19 → «Напоминания» → смена пояса → назад на 19 с новым поясом, календарь заново", async () => {
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
+  expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "profile" });
+
+  await userEvent.click(screen.getByRole("radio", { name: "Владивосток (UTC+10)" }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  const saved = { ...makeMe(true).profile!, timezone: "Asia/Vladivostok" };
+  await act(async () => last("saveSettings").resolve(saved));
+
+  // Снова экран 19 с тостом; он, как всегда при открытии, запрашивает профиль заново.
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  expect(screen.getByText(texts.settings.saved)).toBeInTheDocument();
+  expect(source.me).toHaveBeenCalledTimes(3);
+  await act(async () => lastMe().resolve({ ...makeMe(true), profile: saved }));
+  expect(screen.getByText("Владивосток (UTC+10)")).toBeInTheDocument();
+  // Пояс сменился — список 14 грузится заново («сегодня» в новом поясе).
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+});
+
+test("смена пояса сбрасывает кеш месяцев: сетка 15 грузит месяц заново", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
+  localStorage.setItem("calendar.tab", "month");
+  const { source, lastMe, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  const monthCalls = () =>
+    source.calendar.mock.calls.filter(([from, to]) => from === "2026-09-01" && to === "2026-09-30")
+      .length;
+  expect(monthCalls()).toBe(1);
+
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  await act(async () =>
+    last("saveSettings").resolve({ ...makeMe(true).profile!, timezone: "Asia/Omsk" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(monthCalls()).toBe(2);
+  vi.useRealTimers();
+});
+
+test("без смены пояса кеш месяцев остаётся", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
+  localStorage.setItem("calendar.tab", "month");
+  const { source, lastMe, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.hourOption(18) }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  const profile = makeMe(true).profile!;
+  await act(async () =>
+    last("saveSettings").resolve({ ...profile, reminders: { ...profile.reminders!, hour: 18 } }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  // Список 14 и месяц — по одному запросу с запуска, новых нет.
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+  vi.useRealTimers();
+});
+
+test("экран 19: если профиль не обновился, после сохранения виден новый пояс из оболочки", async () => {
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([]));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  await act(async () =>
+    last("saveSettings").resolve({ ...makeMe(true).profile!, timezone: "Asia/Omsk" }),
+  );
+  // Повторный /api/me не удался — экран 19 показывает профиль оболочки, уже с новым поясом.
+  await act(async () => lastMe().reject(new ApiError("network")));
+  expect(screen.getByText("Омск (UTC+6)")).toBeInTheDocument();
+});

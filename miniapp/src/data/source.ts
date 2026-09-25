@@ -5,7 +5,9 @@ import type {
   ItemCard,
   ItemType,
   Me,
+  Profile,
   RebuildResult,
+  ReminderSettingsInput,
   TaskCard,
   TaskInput,
 } from "../types";
@@ -42,6 +44,12 @@ export interface DataSource {
    * Профиль не заполнен — ApiError("client", 409).
    */
   rebuild(): Promise<RebuildResult>;
+  /**
+   * PUT /api/profile/settings — экран 13, ответ — обновлённый профиль. Событие
+   * reminder_settings_changed пишет бэкенд. 409 — профиль не заполнен; 422 — значение не из списка;
+   * 503 — справочник недоступен, настройки не сохранены.
+   */
+  saveSettings(input: ReminderSettingsInput): Promise<Profile>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
 }
 

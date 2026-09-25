@@ -22,6 +22,7 @@ import { GateScreen } from "./screens/GateScreen";
 import { type CalendarState, ListScreen } from "./screens/ListScreen";
 import { MonthScreen } from "./screens/MonthScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
 import { ToastProvider } from "./shell/Toast";
@@ -87,7 +88,8 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
     setMeAttempt((n) => n + 1);
   };
 
-  // Экран 19 принёс свежий профиль (поменяли в боте или пересобрали): шапка 14/15 и пояс.
+  // Экран 19 или 13 принёс свежий профиль (поменяли в боте, пересобрали, сохранили настройки):
+  // шапка 14/15 и пояс.
   const updateProfile = useCallback(
     (next: Profile) =>
       setMe((m) =>
@@ -147,11 +149,11 @@ interface CalendarAppProps {
   startParam: string | null;
   /** Черновик задачи из бота для формы 17 (`start_param=task_draft`). */
   draft: TaskDraft | null;
-  /** Свежий профиль с экрана 19. Стабилен. */
+  /** Свежий профиль с экрана 19 или 13. Стабилен. */
   onProfile: (profile: Profile) => void;
 }
 
-/** Календарь пользователя с профилем: экраны 14/15/16/17. Данные общие для вкладок. */
+/** Календарь пользователя с профилем: экраны 14/15/16/17/19/13. Данные общие для вкладок. */
 function CalendarApp({ source, profile, startParam, draft, onProfile }: CalendarAppProps) {
   const [calendar, setCalendar] = useState<CalendarState>({
     items: null,
@@ -222,6 +224,18 @@ function CalendarApp({ source, profile, startParam, draft, onProfile }: Calendar
     setCalendar((c) => ({ ...c, loading: true }));
     setAttempt((n) => n + 1);
   }, [resetMonths]);
+  // Настройки сохранены (экран 13). Сменился пояс — статусы в кеше месяцев и карточек посчитаны
+  // бэкендом в старом поясе: сбрасываем. Список 14 перезагрузится сам (эффект зависит от пояса).
+  const settingsSaved = useCallback(
+    (next: Profile) => {
+      if (next.timezone !== timezone) {
+        setCards({});
+        resetMonths();
+      }
+      onProfile(next);
+    },
+    [timezone, resetMonths, onProfile],
+  );
 
   const store = useMemo<CalendarStore>(
     () => ({ items: calendar.items, cards, upsert, remove }),
@@ -300,7 +314,13 @@ function CalendarApp({ source, profile, startParam, draft, onProfile }: Calendar
           initial={profile}
           onProfile={onProfile}
           onRebuilt={rebuilt}
+          onReminders={() => nav.push({ name: "settings", source: "profile" })}
         />
+      );
+      break;
+    case "settings":
+      screen = (
+        <SettingsScreen source={source} route={route} profile={profile} onSaved={settingsSaved} />
       );
       break;
     case "task":

@@ -117,6 +117,21 @@ body {
   padding: 0 16px;
 }
 
+/* Строка-вход на экран 13 (#86). */
+.settings-entry {
+  cursor: pointer;
+}
+
+/* Экран 13: «За 1 день» включено всегда. Цвет — как у включённого, приглушён, чтобы не читался
+   ни как «выкл» (серый disabled MAX UI в тёмной теме), ни как обычный переключатель. */
+.switch-locked {
+  opacity: 0.5;
+}
+
+.switch-locked input[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .profile-actions {
   display: flex;
   flex-direction: column;

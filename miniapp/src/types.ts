@@ -35,6 +35,30 @@ export interface Profile {
   calendar_built_at: string | null;
   /** YYYY-MM-DD — дата сверки справочника (экран 19); null — справочник недоступен. */
   reference_checked_at?: string | null;
+  /** Настройки напоминаний (экран 13, #85). Нет поля (бэкенд до #85) — умолчания REMINDER_DEFAULTS. */
+  reminders?: ReminderSettings;
+}
+
+/** Час напоминаний об обязательствах (экран 13). */
+export type ReminderHour = 9 | 10 | 18;
+export const REMINDER_HOURS: readonly ReminderHour[] = [9, 10, 18];
+
+/** `Profile.reminders` (контракт #85). За 1 день напоминание есть всегда — в контракт не входит. */
+export interface ReminderSettings {
+  d30: boolean;
+  d7: boolean;
+  hour: ReminderHour;
+  /** Сводка по понедельникам (экран 12). */
+  digest: boolean;
+}
+
+/** Умолчания бэкенда (`reminder_settings()` + `digest_enabled()`). */
+export const REMINDER_DEFAULTS: ReminderSettings = { d30: true, d7: true, hour: 10, digest: true };
+
+/** Тело PUT /api/profile/settings — все поля обязательны. */
+export interface ReminderSettingsInput extends ReminderSettings {
+  /** IANA из списка экрана 2 (texts.timezone). */
+  timezone: string;
 }
 
 /** Ответ POST /api/calendar/rebuild — «Пересобрать» на экране 19. */

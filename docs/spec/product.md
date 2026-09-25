@@ -166,6 +166,7 @@ disclaimer:
 | `month_opened` | — | 15 |
 | `item_card_opened` | `item_id`, `item_type`, `source` (`list`/`month`/`bot`) | 16 |
 | `theme_changed` | `theme` (`system`/`light`/`dark`) | 19 |
+| `settings_opened` | `source` (`profile`/`bot`) | 13 |
 | `error` | `where`, `kind` | везде |
 
 Метрики пилота считаются из этих событий:

@@ -15,6 +15,7 @@ test("parseStartParam разбирает значения из спеки", () =
   });
   expect(parseStartParam("item_task_42")).toEqual({ kind: "item", itemType: "task", id: 42 });
   expect(parseStartParam("task_draft")).toEqual({ kind: "task_draft" });
+  expect(parseStartParam("settings")).toEqual({ kind: "settings" });
 });
 
 test("parseStartParam игнорирует мусор и чужие диплинки", () => {
@@ -23,7 +24,7 @@ test("parseStartParam игнорирует мусор и чужие диплин
   }
 });
 
-test("start_param из бота: 16 или 17 поверх списка 14, иначе — запомненная вкладка", () => {
+test("start_param из бота: 16, 17 или 13 поверх списка 14, иначе — запомненная вкладка", () => {
   expect(initialStack(parseStartParam("item_obligation_1"), "month")).toEqual([
     { name: "list" },
     { name: "card", itemType: "obligation", id: 1, source: "bot" },
@@ -31,6 +32,10 @@ test("start_param из бота: 16 или 17 поверх списка 14, ин
   expect(initialStack({ kind: "task_draft" }, "month")).toEqual([
     { name: "list" },
     { name: "task", draft: true },
+  ]);
+  expect(initialStack({ kind: "settings" }, "month")).toEqual([
+    { name: "list" },
+    { name: "settings", source: "bot" },
   ]);
   expect(initialStack(null, "month")).toEqual([{ name: "month" }]);
 });
