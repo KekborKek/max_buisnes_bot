@@ -10,7 +10,8 @@
     fb_service  — сбоев подряд (со второго — `service_2`);
     last_action — {update_type, text, payload} упавшего действия, его повторяет «Повторить»;
     task_title  — название задачи без даты, ждёт «Завтра» / «Через неделю» (экран 9);
-    task_draft  — {title, due_date}: черновик для формы 17 («Выбрать дату», D27).
+    task_draft  — {title, due_date[, id]}: черновик для формы 17 («Выбрать дату», D27);
+                  `id` есть только у черновика с кнопками экрана 9 (task_chat, #87).
 Счётчики сбрасывает любое успешное действие (`after_handler`, зовёт диспетчер до коммита).
 
 Payload кнопок: fb:retry — «Повторить»; fb:tomorrow и fb:week обрабатывает task_chat.
@@ -49,9 +50,16 @@ _USER_ACTIONS = frozenset({"message_created", "message_callback", "bot_started"}
 _KEEP = "fb_keep_counter"
 
 
-def draft(title: str, due_date: date) -> dict:
-    """`task_draft` ровно в том виде, что читает `/api/me` (api/routes.task_draft)."""
-    return {"title": title, "due_date": due_date.isoformat()}
+def draft(title: str, due_date: date, draft_id: str | None = None) -> dict:
+    """`task_draft` в том виде, что читает `/api/me` (api/routes.task_draft): title, due_date.
+
+    `id` — новое поле (#87): его несут кнопки экрана 9, чтобы старая кнопка не сохранила
+    чужой черновик. `/api/me` его не читает; переименовывать title и due_date нельзя.
+    """
+    value = {"title": title, "due_date": due_date.isoformat()}
+    if draft_id is not None:
+        value["id"] = draft_id
+    return value
 
 
 def open_calendar_button(text_key: str, start_param: str | None = None) -> dict | None:

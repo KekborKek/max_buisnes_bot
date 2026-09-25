@@ -23,11 +23,15 @@ from tests.test_task_chat import (
     USER_ID,
     buttons,
     confirm_text,
+    draft_fields,
     events,
     labels,
+    no_remind_text,
     onboarded,
+    payload_of,
     press,
     state_data,
+    tap,
     tasks,
     write,
 )
@@ -170,21 +174,23 @@ async def test_pick_date_hidden_without_bot_username(fake_max, no_bot_name):
 
 
 @pytest.mark.parametrize(
-    ("payload", "day", "due"),
+    ("payload", "day", "due", "remind"),
     [
-        (fallback.TOMORROW, "24 сентября", date(2026, 9, 24)),
-        (fallback.WEEK, "30 сентября", date(2026, 9, 30)),
+        # сейчас 12:00: напоминание «за день в 10:00» для завтра уже прошло (#87)
+        (fallback.TOMORROW, "24 сентября", date(2026, 9, 24), False),
+        (fallback.WEEK, "30 сентября", date(2026, 9, 30), True),
     ],
 )
-async def test_tomorrow_and_week_go_to_confirm(fake_max, no_bot_name, payload, day, due):
+async def test_tomorrow_and_week_go_to_confirm(fake_max, no_bot_name, payload, day, due, remind):
     await onboarded()
     await process_update(write("оплатить аренду"), fake_max)
     await process_update(press(payload), fake_max)
 
-    assert fake_max.sent[-1]["text"] == confirm_text("Оплатить аренду", day)
+    expected = (confirm_text if remind else no_remind_text)("Оплатить аренду", day)
+    assert fake_max.sent[-1]["text"] == expected
     assert "task_title" not in await state_data()
 
-    await process_update(press(task_chat.SAVE), fake_max)
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
     [task] = await tasks()
     assert (task.title, task.due_date) == ("Оплатить аренду", due)
 
@@ -212,7 +218,8 @@ async def test_stale_tomorrow_button_is_unknown(fake_max, no_bot_name):
 async def test_failed_save_shows_service_and_retry_saves_once(fake_max, no_bot_name, broken_save):
     await onboarded()
     await process_update(write("оплатить аренду 5 ноября"), fake_max)
-    await process_update(press(task_chat.SAVE), fake_max)
+    save = payload_of(fake_max.sent[-1], "task.btn_save")
+    await process_update(press(save), fake_max)
 
     msg = fake_max.sent[-1]
     assert msg["text"] == t("fallback.service")
@@ -220,11 +227,11 @@ async def test_failed_save_shows_service_and_retry_saves_once(fake_max, no_bot_n
     assert buttons(msg) == [[retry]]
     assert await tasks() == []
     data = await state_data()
-    assert data["task_draft"] == {"title": "Оплатить аренду", "due_date": "2026-11-05"}
+    assert draft_fields(data) == {"title": "Оплатить аренду", "due_date": "2026-11-05"}
     assert data["last_action"] == {
         "update_type": "message_callback",
         "text": None,
-        "payload": task_chat.SAVE,
+        "payload": save,
     }
 
     broken_save["fail"] = False
@@ -246,7 +253,8 @@ async def test_failed_save_shows_service_and_retry_saves_once(fake_max, no_bot_n
 async def test_second_failure_in_a_row_shows_service_2(fake_max, no_bot_name, broken_save):
     await onboarded()
     await process_update(write("оплатить аренду 5 ноября"), fake_max)
-    await process_update(press(task_chat.SAVE), fake_max)
+    save = payload_of(fake_max.sent[-1], "task.btn_save")
+    await process_update(press(save), fake_max)
     await process_update(press(fallback.RETRY), fake_max)
 
     assert [m["text"] for m in fake_max.sent[-2:]] == [
@@ -255,16 +263,17 @@ async def test_second_failure_in_a_row_shows_service_2(fake_max, no_bot_name, br
     ]
     assert labels(fake_max.sent[-1]) == [[t("fallback.btn_retry")]]
     # повтор упал — упавшее действие осталось прежним, а не «Повторить»
-    assert (await state_data())["last_action"]["payload"] == task_chat.SAVE
+    assert (await state_data())["last_action"]["payload"] == save
     assert fallback_cases(await events()) == ["service", "service"]
 
 
 async def test_success_resets_service_counter(fake_max, no_bot_name, broken_save):
     await onboarded()
     await process_update(write("оплатить аренду 5 ноября"), fake_max)
-    await process_update(press(task_chat.SAVE), fake_max)
+    save = payload_of(fake_max.sent[-1], "task.btn_save")
+    await process_update(press(save), fake_max)
     await process_update(write("привет"), fake_max)  # успешное действие
-    await process_update(press(task_chat.SAVE), fake_max)
+    await process_update(press(save), fake_max)
 
     assert fake_max.sent[-1]["text"] == t("fallback.service")
 
