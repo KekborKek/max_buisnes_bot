@@ -74,9 +74,23 @@ interface Props {
   draft: TaskDraft | null;
   /** Правка задачи: её карточка уже загружена экраном 16. */
   taskId?: number;
+  /** Дата по умолчанию для новой задачи — выбранный день экрана 15 (route.date, #93). */
+  initialDate?: string;
+  /**
+   * Открыта кнопкой «+ Задача» на экране 15: сохранение новой задачи возвращает туда же,
+   * а не на список 14, с выбранным днём — датой созданной задачи (#93, «Решение человека»).
+   */
+  onCreatedFromMonth?: (dueDate: string) => void;
 }
 
-export function TaskFormScreen({ source, today, draft, taskId }: Props) {
+export function TaskFormScreen({
+  source,
+  today,
+  draft,
+  taskId,
+  initialDate,
+  onCreatedFromMonth,
+}: Props) {
   const nav = useNavigation();
   const toast = useToast();
   const { cards, upsert } = useCalendarStore();
@@ -93,7 +107,7 @@ export function TaskFormScreen({ source, today, draft, taskId }: Props) {
     }
     return {
       title: (draft?.title ?? "").slice(0, TITLE_MAX),
-      date: draft?.due_date ?? addDays(today, 1),
+      date: draft?.due_date ?? initialDate ?? addDays(today, 1),
       offset: 1,
       hour: 10,
     };
@@ -146,7 +160,11 @@ export function TaskFormScreen({ source, today, draft, taskId }: Props) {
           nav.back();
           toast(texts.form.updated);
         } else {
-          nav.home();
+          if (onCreatedFromMonth) {
+            onCreatedFromMonth(card.due_date);
+          } else {
+            nav.home();
+          }
           toast(texts.form.created);
         }
       },

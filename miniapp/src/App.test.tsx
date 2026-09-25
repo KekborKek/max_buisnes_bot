@@ -274,6 +274,70 @@ test("новая задача из формы появляется в списк
   vi.useRealTimers();
 });
 
+test("создание из «Списка» по-прежнему ведёт на экран 14, не на «Месяц» (#93)", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([]));
+
+  await userEvent.click(screen.getAllByRole("button", { name: texts.list.addTask })[0]);
+  await userEvent.type(screen.getByLabelText(texts.form.name), "Отправить письмо");
+  await userEvent.click(screen.getByRole("button", { name: texts.form.save }));
+  await act(async () =>
+    last("createTask").resolve(
+      makeTaskCard({ id: 30, title: "Отправить письмо", due_date: "2026-09-24" }),
+    ),
+  );
+
+  // Экран 14: активна вкладка «Список», сетки месяца на экране нет.
+  expect(screen.getByRole("button", { name: texts.list.tabList })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(document.querySelector(".month-grid")).not.toBeInTheDocument();
+  expect(screen.getByText("Отправить письмо")).toBeInTheDocument();
+  vi.useRealTimers();
+});
+
+test("задача из «Месяца» возвращает на «Месяц» с её днём — точка и строка видны без повторной загрузки (#93)", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([]));
+
+  await userEvent.click(screen.getByRole("button", { name: texts.list.tabMonth }));
+  await act(async () => lastCalendar().resolve([])); // сентябрь пуст — «+ Задача» в пустом блоке
+
+  await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
+  expect(screen.getByLabelText(texts.form.date)).toHaveValue("2026-09-23");
+  await userEvent.type(screen.getByLabelText(texts.form.name), "Сверить кассу");
+  await userEvent.click(screen.getByRole("button", { name: texts.form.save }));
+  await act(async () =>
+    last("createTask").resolve(
+      makeTaskCard({
+        id: 21,
+        title: "Сверить кассу",
+        due_date: "2026-09-23",
+        category: "custom",
+      }),
+    ),
+  );
+
+  // Вернулись на «Месяц» (не на 14), месяц не перезапрашивался — задача уже в кеше через upsert.
+  expect(screen.getByRole("button", { name: texts.list.tabMonth })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("Сверить кассу")).toBeInTheDocument();
+  const selectedDay = document.querySelector(".month-day--selected");
+  expect(selectedDay).not.toBeNull();
+  expect(selectedDay?.querySelector(".dot--custom")).toBeInTheDocument();
+  vi.useRealTimers();
+});
+
 test("удалённая задача пропадает из списка, внизу — «Задача удалена»", async () => {
   const { source, lastMe, lastCalendar, last } = fakeSource();
   render(<App source={source} />);

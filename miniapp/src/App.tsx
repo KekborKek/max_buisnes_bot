@@ -331,6 +331,17 @@ function CalendarApp({ source, profile, startParam, draft, onProfile }: Calendar
           today={todayIn(timezone)}
           draft={route.draft ? draft : null}
           taskId={route.taskId}
+          initialDate={route.date}
+          onCreatedFromMonth={
+            route.from === "month"
+              ? (dueDate: string) => {
+                  // Возврат на «Месяц» с выбранным днём новой задачи, без записи в localStorage
+                  // и без month_opened — пользователь уже был на этой вкладке (#93).
+                  setMonthDay(dueDate);
+                  dispatch({ type: "tab", tab: "month" });
+                }
+              : undefined
+          }
         />
       );
       break;

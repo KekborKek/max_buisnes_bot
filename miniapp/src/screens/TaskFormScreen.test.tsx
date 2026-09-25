@@ -15,7 +15,13 @@ import { TaskFormScreen, validate } from "./TaskFormScreen";
 const TODAY = "2026-09-23";
 
 function renderForm(
-  opts: { draft?: TaskDraft | null; taskId?: number; cards?: Record<string, ItemCard> } = {},
+  opts: {
+    draft?: TaskDraft | null;
+    taskId?: number;
+    cards?: Record<string, ItemCard>;
+    initialDate?: string;
+    onCreatedFromMonth?: (dueDate: string) => void;
+  } = {},
 ) {
   const fake = fakeSource();
   const nav: Navigation = {
@@ -41,6 +47,8 @@ function renderForm(
             today={TODAY}
             draft={opts.draft ?? null}
             taskId={opts.taskId}
+            initialDate={opts.initialDate}
+            onCreatedFromMonth={opts.onCreatedFromMonth}
           />
         </CalendarStoreContext.Provider>
       </NavigationContext.Provider>
@@ -158,6 +166,28 @@ test("ошибка сохранения: форма не закрывается,
   expect(source.createTask).toHaveBeenCalledTimes(2);
   await act(async () => last("createTask").resolve(makeTaskCard()));
   expect(nav.home).toHaveBeenCalledOnce();
+});
+
+test("initialDate (выбранный день экрана 15) подставляется, если нет черновика", () => {
+  renderForm({ initialDate: "2026-10-05" });
+  expect(dateField()).toHaveValue("2026-10-05");
+});
+
+test("черновик из чата приоритетнее выбранного дня месяца", () => {
+  renderForm({ initialDate: "2026-10-05", draft: { title: "Из чата", due_date: "2026-11-05" } });
+  expect(dateField()).toHaveValue("2026-11-05");
+});
+
+test("сохранение из «Месяца» (onCreatedFromMonth): назад на 15 с датой задачи, не на 14", async () => {
+  const onCreatedFromMonth = vi.fn();
+  const { last, nav } = renderForm({ initialDate: "2026-10-05", onCreatedFromMonth });
+  await userEvent.type(nameField(), "Сверить кассу");
+  await userEvent.click(saveButton());
+  const created = makeTaskCard({ id: 12, title: "Сверить кассу", due_date: "2026-10-05" });
+  await act(async () => last("createTask").resolve(created));
+  expect(onCreatedFromMonth).toHaveBeenCalledWith("2026-10-05");
+  expect(nav.home).not.toHaveBeenCalled();
+  expect(screen.getByText(texts.form.created)).toBeInTheDocument();
 });
 
 test("черновик из чата подставляется в поля", () => {

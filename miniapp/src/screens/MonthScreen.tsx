@@ -5,6 +5,7 @@ import { Button, CellList, IconButton, Typography } from "@maxhub/max-ui";
 import { useEffect } from "react";
 
 import {
+  addDays,
   addMonths,
   dayCategories,
   formatDate,
@@ -73,9 +74,12 @@ export function MonthScreen({
   const next = addMonths(month, 1);
   const dayItems = byDay.get(day) ?? [];
   const monthEmpty = items !== null && byDay.size === 0;
+  // «+ Задача» (#93): дата выбранного дня, если он не раньше сегодняшнего, иначе — завтра (D9).
+  const addTaskDate = day >= today ? day : addDays(today, 1);
+  const addTask = () => push({ name: "task", draft: false, date: addTaskDate, from: "month" });
 
   return (
-    <div className="screen">
+    <div className="screen screen--with-bar">
       <CalendarHeader profile={profile} tab="month" />
       {error && <ErrorBanner kind={error} onRetry={() => onRetry(month)} retrying={loading} />}
       <section className="month" aria-busy={loading || undefined}>
@@ -159,7 +163,7 @@ export function MonthScreen({
           <Typography.Headline>
             {texts.month.monthEmpty(texts.month.monthsIn[monthNumber(month)])}
           </Typography.Headline>
-          <Button size="large" stretched onClick={() => push({ name: "task", draft: false })}>
+          <Button size="large" stretched onClick={addTask}>
             {texts.month.addTask}
           </Button>
         </section>
@@ -173,6 +177,14 @@ export function MonthScreen({
             <ItemRow key={`${item.type}_${item.id}`} item={item} today={today} source="month" />
           ))}
         </CellList>
+      )}
+      {/* Кнопка всегда видна, кроме «месяц пуст» — там она уже в блоке empty (не дублируем, #93). */}
+      {!monthEmpty && (
+        <div className="bottom-bar">
+          <Button size="large" stretched onClick={addTask}>
+            {texts.month.addTask}
+          </Button>
+        </div>
       )}
     </div>
   );

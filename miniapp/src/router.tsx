@@ -12,8 +12,12 @@ export type Route =
   | { name: "list" }
   | { name: "month" }
   | { name: "card"; itemType: ItemType; id: number; source: CardSource }
-  /** Форма 17: новая (`draft` — с черновиком из бота) или правка задачи `taskId`. */
-  | { name: "task"; draft: boolean; taskId?: number }
+  /**
+   * Форма 17: новая (`draft` — с черновиком из бота) или правка задачи `taskId`.
+   * `date` — дата по умолчанию (экран 15, выбранный день). `from: "month"` — открыта кнопкой
+   * «+ Задача» на 15: после сохранения новой задачи возврат идёт на 15, а не на 14 (#93).
+   */
+  | { name: "task"; draft: boolean; taskId?: number; date?: string; from?: "month" }
   /** Экран 19 — профиль и «Пересобрать», по нажатию на шапку 14 и 15. */
   | { name: "profile" }
   /** Экран 13 — настройки напоминаний: со строки экрана 19 или из бота (`start_param=settings`). */
