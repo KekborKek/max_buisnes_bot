@@ -179,8 +179,9 @@ async def sync_obligation_notifications(
     - pending выключенного вида (d30/d7 выключены в настройках, d30 без needs_prep) с send_at
       в будущем → cancelled; с send_at в прошлом — не трогаем, его отправит планировщик;
     - pending включённого вида, которого нет в плане, потому что новое время уже прошло
-      (сменили пояс или час в день d1), — остаётся со старым send_at: не теряем
-      последнее напоминание (решение по #85). snooze не трогаем.
+      (сменили пояс или час в день d1), — остаётся одна копия со старым send_at: не теряем
+      последнее напоминание (решение по #85); если вид уже sent/failed — будущие копии
+      → cancelled. snooze не трогаем.
     `settings` — Profile.reminders. Пишет в сессию, не коммитит; у `uo` должен быть id.
     """
     if uo.id is None:
@@ -237,8 +238,9 @@ async def sync_obligation_notifications(
             )
 
     for kind, rows in pending.items():
-        if kind in enabled:
+        if kind in enabled and kind not in finished:
             # Включён, но новое время уже прошло: pending остаётся как было (одна копия).
+            # Уже sent/failed — будущие копии отменяются ниже, иначе ушли бы вторым сообщением.
             rows = rows[1:]
         for n in rows:
             if as_utc(n.send_at) > now:
@@ -300,7 +302,8 @@ async def resync_user_notifications(
     """Пересчёт pending пользователя после смены пояса или настроек (экран 13, reminders.md).
 
     - неотмеченные обязательства → `sync_obligation_notifications` с новыми `tz` и `settings`;
-      записи, которой нет в справочнике, пропускаем — её уберёт пересборка;
+      записи, которой нет в справочнике, пропускаем — её pending отменит отправка
+      (`_claim` → `load_reminder_item` вернёт None);
     - `task`-уведомления: pending с send_at в будущем и `attempts == 0` получают send_at
       по новому поясу (у задачи свои remind_offset_days и remind_hour). Новое время уже
       прошло — остаётся старое: это единственное напоминание по задаче (D11). В прошлом,

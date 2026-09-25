@@ -298,6 +298,86 @@ async def test_duplicate_pending_is_healed():
         ]
 
 
+# --- #85: будущее pending отменяется только у выключенного вида ----------------------------------
+# DUE = 28.10.2026: d1 — 27.10 10:00 МСК = 07:00 UTC; во Владивостоке 10:00 = 00:00 UTC.
+D1_DAY_MORNING = utc(2026, 10, 27, 5)  # 08:00 МСК: d1 по Москве впереди, по Владивостоку прошёл
+
+
+def _add(session, uo, kind, send_at, *, status="pending", attempts=0) -> None:
+    session.add(
+        Notification(
+            user_id=USER_ID,
+            item_type="obligation",
+            item_id=uo.id,
+            kind=kind,
+            send_at=send_at,
+            status=status,
+            attempts=attempts,
+        )
+    )
+
+
+async def test_enabled_kind_new_time_passed_keeps_exactly_one_copy():
+    """(а) Сменили пояс в день d1: две будущие pending-копии d1 → остаётся ровно одна."""
+    async with SessionLocal() as session:
+        uo = await _user_obligation(session)
+        _add(session, uo, "d1", utc(2026, 10, 27, 7))
+        _add(session, uo, "d1", utc(2026, 10, 27, 7))
+        await session.flush()
+
+        await _sync(session, uo, now=D1_DAY_MORNING, tz="Asia/Vladivostok")
+
+        d1 = [n for n in await _notifications(session, "obligation", uo.id) if n.kind == "d1"]
+        assert [n.status for n in d1] == ["pending", "cancelled"]
+        assert d1[0].send_at.replace(tzinfo=UTC) == utc(2026, 10, 27, 7)  # старое время
+
+
+async def test_d30_without_needs_prep_is_cancelled():
+    """(б) needs_prep=false: pending d30 — выключенный вид, отменяется."""
+    async with SessionLocal() as session:
+        uo = await _user_obligation(session)
+        await _sync(session, uo, needs_prep=True)
+        await _sync(session, uo, needs_prep=False)
+        rows = await _notifications(session, "obligation", uo.id)
+        assert [n.status for n in rows if n.kind == "d30"] == ["cancelled"]
+        assert _pending(rows) == ["d1", "d7", "overdue"]
+
+
+async def test_leased_enabled_kind_survives_rebuild():
+    """(в) «Аренда» планировщика (attempts=1, send_at = now + 1 ч) при пересборке не отменяется."""
+    now = utc(2026, 10, 21, 7, 0, 30)  # d7 только что забран тиком
+    async with SessionLocal() as session:
+        uo = await _user_obligation(session)
+        await _sync(session, uo)
+        for n in await _notifications(session, "obligation", uo.id):
+            if n.kind == "d30":
+                n.status = "sent"
+            if n.kind == "d7":
+                n.attempts = 1
+                n.send_at = utc(2026, 10, 21, 8, 0, 30)
+        await session.flush()
+
+        await _sync(session, uo, now=now)  # пересборка: пояс и час те же
+
+        d7 = next(n for n in await _notifications(session, "obligation", uo.id) if n.kind == "d7")
+        assert (d7.status, d7.attempts) == ("pending", 1)
+        assert d7.send_at.replace(tzinfo=UTC) == utc(2026, 10, 21, 8, 0, 30)
+
+
+async def test_future_copy_of_sent_kind_is_cancelled():
+    """(г) d1 уже sent, есть будущая pending-копия, новое время прошло → копия отменена."""
+    async with SessionLocal() as session:
+        uo = await _user_obligation(session)
+        _add(session, uo, "d1", utc(2026, 10, 26, 7), status="sent")
+        _add(session, uo, "d1", utc(2026, 10, 27, 7))
+        await session.flush()
+
+        await _sync(session, uo, now=D1_DAY_MORNING, tz="Asia/Vladivostok")
+
+        d1 = [n for n in await _notifications(session, "obligation", uo.id) if n.kind == "d1"]
+        assert [n.status for n in d1] == ["sent", "cancelled"]
+
+
 # --- задачи ------------------------------------------------------------------------------------
 
 

@@ -396,8 +396,9 @@ paths:
         '409':
           description: 'Профиль не заполнен: онбординг не пройден (profile_incomplete)'
         '503':
-          description: 'Справочник недоступен: пересчитать уведомления нельзя, настройки
-            не сохранены (reference_unavailable)'
+          description: 'Справочник недоступен, а изменение требует пересчёта уведомлений
+            (d30, d7, час или пояс): настройки не сохранены (reference_unavailable).
+            Изменение только digest справочника не требует — ответ 200'
         '422':
           description: Validation Error
           content:
