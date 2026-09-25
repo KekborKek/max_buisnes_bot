@@ -1,8 +1,12 @@
-"""«Пересобрать» на экране 19 (docs/screens/should-12-13-19.md).
+"""Профиль в мини-аппе (docs/screens/should-12-13-19.md): экраны 19 и 13.
 
-Сборка — `app.calendar.build.build_calendar`, та же, что у кнопки «Собрать календарь» в боте
-(экран 5). Она не трогает отметки, свои задачи, часовой пояс и настройки уведомлений и
-идемпотентна. Здесь — транзакция, коды ответа и событие `calendar_built` с `rebuild`.
+«Пересобрать» (экран 19). Сборка — `app.calendar.build.build_calendar`, та же, что у кнопки
+«Собрать календарь» в боте (экран 5). Она не трогает отметки, свои задачи, часовой пояс
+и настройки уведомлений и идемпотентна. Здесь — транзакция, коды ответа и событие
+`calendar_built` с `rebuild`.
+
+«Настройки напоминаний» (экран 13): запись в `Profile.reminders` слиянием (незнакомые ключи
+сохраняются) и пересчёт pending — `reminders.resync_user_notifications`, одной транзакцией.
 """
 
 import logging
@@ -15,9 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import service
 from app.api.deps import current_time, current_user_id, optional_reference
-from app.api.schemas import RebuildResponse
+from app.api.schemas import ProfileOut, ProfileSettingsInput, RebuildResponse
 from app.calendar.build import build_calendar
-from app.calendar.reminders import as_utc
+from app.calendar.reminders import as_utc, resync_user_notifications
 from app.calendar.types import MissingYearError, Reference
 from app.core.db import get_session
 from app.core.events import track
@@ -36,6 +40,11 @@ OptionalRef = Annotated[Reference | None, Depends(optional_reference)]
 PROFILE_INCOMPLETE = "profile_incomplete"
 REFERENCE_UNAVAILABLE = "reference_unavailable"
 
+# Поля экрана 13, которые хранятся в Profile.reminders (пояс — в Profile.timezone).
+REMINDER_FIELDS = ("d30", "d7", "hour", "digest")
+# От этих полей зависят send_at уведомлений; digest — нет, сводка считается сама.
+RESYNC_FIELDS = frozenset({"d30", "d7", "hour", "timezone"})
+
 
 async def _complete_profile(session: AsyncSession, user_id: int) -> Profile:
     """Профиль с ответами онбординга (D24). Не заполнен — 409 до первой записи в БД."""
@@ -46,15 +55,20 @@ async def _complete_profile(session: AsyncSession, user_id: int) -> Profile:
 
 
 async def _reference_error(
-    session: AsyncSession, user_id: int, kind: str, exc: Exception | None = None
+    session: AsyncSession,
+    user_id: int,
+    kind: str,
+    exc: Exception | None = None,
+    *,
+    where: str = "rebuild",
 ) -> NoReturn:
-    """Справочник не дал собрать календарь — как бот (экран 5): событие error и 503.
+    """Справочник недоступен — как бот (экран 5): событие error и 503.
 
     Незакоммиченное (полусборки не бывает: ошибки справочника — до первой записи) откатываем,
     событие пишем отдельным коммитом.
     """
     await session.rollback()
-    await track(session, user_id, "error", {"where": "rebuild", "kind": kind})
+    await track(session, user_id, "error", {"where": where, "kind": kind})
     await session.commit()
     raise HTTPException(status_code=503, detail=REFERENCE_UNAVAILABLE) from exc
 
@@ -122,3 +136,64 @@ async def rebuild_calendar(
         nearest_due_date=result.nearest_due_date,
         profile=out,
     )
+
+
+@router.put(
+    "/profile/settings",
+    response_model=ProfileOut,
+    summary="Сохранить настройки напоминаний (экран 13) и пересчитать уведомления",
+    description=(
+        "Все поля обязательны; d1 не передаётся — он всегда включён. Незнакомые ключи "
+        "Profile.reminders сохраняются. После смены d30, d7, часа или пояса все pending-"
+        "уведомления пересчитываются одной транзакцией. Повтор того же тела ничего не меняет. "
+        "Событие reminder_settings_changed {changed} — только если что-то изменилось."
+    ),
+    responses={
+        409: {"description": "Профиль не заполнен: онбординг не пройден (profile_incomplete)"},
+        503: {
+            "description": (
+                "Справочник недоступен: пересчитать уведомления нельзя, настройки не сохранены "
+                "(reference_unavailable)"
+            )
+        },
+    },
+)
+async def save_settings(
+    body: ProfileSettingsInput,
+    user_id: UserId,
+    session: Session,
+    now: Now,
+    reference: OptionalRef,
+) -> ProfileOut:
+    profile = await _complete_profile(session, user_id)
+    current = service.reminder_settings_out(profile.reminders).model_dump()
+    wanted = body.model_dump(include=set(REMINDER_FIELDS))
+    changed = [f for f in REMINDER_FIELDS if current[f] != wanted[f]]
+    if profile.timezone != body.timezone:
+        changed.append("timezone")
+
+    if changed:
+        resync = not RESYNC_FIELDS.isdisjoint(changed)
+        if resync and reference is None:
+            # Без справочника не узнать needs_prep — пересчёт невозможен, ничего не пишем.
+            await _reference_error(session, user_id, "reference_file", where="settings")
+        # Слиянием: reminder_settings() отбрасывает незнакомые ключи — через неё не пишем.
+        raw = profile.reminders if isinstance(profile.reminders, dict) else {}
+        profile.reminders = {**raw, **wanted}
+        profile.timezone = body.timezone
+        if resync:
+            assert reference is not None
+            await resync_user_notifications(
+                session,
+                user_id,
+                tz=body.timezone,
+                settings=profile.reminders,
+                reference=reference,
+                now=now,
+            )
+        await track(session, user_id, "reminder_settings_changed", {"changed": changed})
+
+    out = service.profile_out(profile, reference)
+    assert out is not None  # профиль заполнен — проверено в _complete_profile
+    await session.commit()
+    return out

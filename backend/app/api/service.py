@@ -5,16 +5,26 @@
 """
 
 import logging
+from collections.abc import Mapping
 from datetime import date, datetime
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import CalendarItem, HowtoLinkOut, ItemCard, ItemTypeParam, ProfileOut
+from app.api.schemas import (
+    CalendarItem,
+    HowtoLinkOut,
+    ItemCard,
+    ItemTypeParam,
+    ProfileOut,
+    ReminderSettingsOut,
+)
+from app.calendar.digest import digest_enabled
 from app.calendar.howto_text import expand_howto_steps
-from app.calendar.reminders import as_utc
+from app.calendar.reminders import as_utc, reminder_settings
 from app.calendar.status import item_status, today_in
 from app.calendar.types import Obligation, Reference
 from app.core.models import DEFAULT_TIMEZONE, Profile, Task, User, UserObligation
@@ -75,6 +85,17 @@ def profile_complete(profile: Profile | None) -> bool:
     )
 
 
+def reminder_settings_out(raw: Mapping[str, Any] | None) -> ReminderSettingsOut:
+    """Profile.reminders поверх умолчаний; `digest` — отдельно: `reminder_settings` его режет."""
+    opts = reminder_settings(raw)
+    return ReminderSettingsOut(
+        d30=bool(opts["d30"]),
+        d7=bool(opts["d7"]),
+        hour=int(opts["hour"]),
+        digest=digest_enabled(raw),
+    )
+
+
 def profile_out(profile: Profile | None, reference: Reference | None) -> ProfileOut | None:
     """Незаполненный профиль (D24) — None: для мини-аппа профиля нет."""
     if profile is None or not profile_complete(profile):
@@ -89,6 +110,7 @@ def profile_out(profile: Profile | None, reference: Reference | None) -> Profile
             as_utc(profile.calendar_built_at) if profile.calendar_built_at else None
         ),
         reference_checked_at=reference_checked_at(reference),
+        reminders=reminder_settings_out(profile.reminders),
     )
 
 

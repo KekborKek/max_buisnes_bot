@@ -154,6 +154,7 @@ disclaimer:
 | `calendar_built` | `items_count`, `seconds_since_start`, `rebuild` | 5 |
 | `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`/`digest`), `item_id`, `item_type`, `grouped` | 6 |
 | `reminder_clicked` | `kind` (в том числе `digest`), `action` (`done`/`howto`/`snooze`/`open_app`/`off`) | 6 |
+| `reminder_settings_changed` | `changed` — изменённые поля (`d30`/`d7`/`hour`/`digest`/`timezone`); только если что-то изменилось | 13 |
 | `howto_opened` | `item_id`, `item_type`, `source = reminder` | 7 |
 | `wrong_date_reported` | `item_id`, `item_type`, `source` | 7, 16 |
 | `item_done` | `item_id`, `item_type`, `source`, `days_before_deadline` | 8, 16 |
