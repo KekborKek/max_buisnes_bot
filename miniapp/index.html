@@ -6,6 +6,30 @@
     <title>MAX Business</title>
     <!-- MAX Bridge: создаёт window.WebApp (docs: dev.max.ru/docs/webapps/bridge) -->
     <script src="https://st.max.ru/js/max-web-app.js"></script>
+    <!--
+      Тема оформления (FRONT-20): красим html до первого рендера, чтобы не мигнуть чужой темой
+      (React ещё не запустился — MaxUI и ThemeProvider из src/shell/Theme.tsx применятся позже).
+      Логика — та же, что в Theme.tsx (ключ localStorage, приоритет явного выбора над системной
+      темой), продублирована намеренно: этот код обязан отработать раньше любого бандла.
+      localStorage читаем в отдельном try, чтобы его ошибка не отменяла проверку matchMedia —
+      иначе fallback разошёлся бы с Theme.tsx (там недоступный localStorage не мешает system).
+    -->
+    <script>
+      var stored = null;
+      try {
+        stored = localStorage.getItem("profile.theme");
+      } catch (e) {
+        /* недоступен — считаем, что явного выбора нет, дальше решает системная тема */
+      }
+      var scheme =
+        stored === "light" || stored === "dark"
+          ? stored
+          : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+      document.documentElement.dataset.theme = scheme;
+      document.documentElement.style.colorScheme = scheme;
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ApiError } from "../data/http";
+import { ThemeProvider } from "../shell/Theme";
 import { ToastProvider } from "../shell/Toast";
 import { fakeSource, makeMe, PROFILE } from "../test/fakeSource";
 import { texts } from "../texts";
@@ -12,10 +13,20 @@ import { ProfileScreen } from "./ProfileScreen";
 
 beforeEach(() => {
   vi.stubEnv("VITE_BOT_URL", "https://max.ru/test_bot");
+  // ProfileScreen рендерит ThemeProvider (сегмент темы, FRONT-20) — jsdom matchMedia не знает,
+  // системная тема тестам экрана 19 не важна, важно, что она есть и не роняет рендер.
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  localStorage.clear();
+  delete document.documentElement.dataset.theme;
   delete window.WebApp;
 });
 
@@ -33,14 +44,16 @@ function renderProfile() {
   const onProfile = vi.fn();
   const onRebuilt = vi.fn();
   render(
-    <ToastProvider>
-      <ProfileScreen
-        source={fake.source}
-        initial={PROFILE}
-        onProfile={onProfile}
-        onRebuilt={onRebuilt}
-      />
-    </ToastProvider>,
+    <ThemeProvider>
+      <ToastProvider>
+        <ProfileScreen
+          source={fake.source}
+          initial={PROFILE}
+          onProfile={onProfile}
+          onRebuilt={onRebuilt}
+        />
+      </ToastProvider>
+    </ThemeProvider>,
   );
   return { ...fake, onProfile, onRebuilt };
 }
@@ -162,4 +175,28 @@ test("без VITE_BOT_URL «Изменить» нет, «Пересобрать�
   await renderReady();
   expect(screen.queryByRole("button", { name: texts.profile.edit })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();
+});
+
+test("тема: сегмент с тремя вариантами, выбор красит активную кнопку, html и шлёт theme_changed", async () => {
+  const { source } = await renderReady();
+  const systemBtn = screen.getByRole("button", { name: texts.profile.themeSystem });
+  const lightBtn = screen.getByRole("button", { name: texts.profile.themeLight });
+  const darkBtn = screen.getByRole("button", { name: texts.profile.themeDark });
+
+  // Без сохранённого выбора активна «Как в системе» (matchMedia замокан на светлую).
+  expect(systemBtn).toHaveAttribute("aria-pressed", "true");
+  expect(lightBtn).toHaveAttribute("aria-pressed", "false");
+  expect(darkBtn).toHaveAttribute("aria-pressed", "false");
+
+  await userEvent.click(darkBtn);
+  expect(darkBtn).toHaveAttribute("aria-pressed", "true");
+  expect(systemBtn).toHaveAttribute("aria-pressed", "false");
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(source.track).toHaveBeenCalledWith("theme_changed", { theme: "dark" });
+});
+
+test("тема: повторный клик по уже активному варианту событие не повторяет", async () => {
+  const { source } = await renderReady();
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.themeSystem }));
+  expect(source.track).not.toHaveBeenCalled();
 });
