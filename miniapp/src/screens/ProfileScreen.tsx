@@ -10,6 +10,7 @@ import { ApiError, errorKind, type ErrorKind } from "../data/http";
 import type { DataSource } from "../data/source";
 import { ErrorBanner } from "../shell/ErrorBanner";
 import { Skeleton } from "../shell/Skeleton";
+import { useTheme, type ThemePref } from "../shell/Theme";
 import { useToast } from "../shell/Toast";
 import { texts } from "../texts";
 import type { Profile, RebuildResult } from "../types";
@@ -65,6 +66,41 @@ function ProfileRows({ profile }: { profile: Profile }) {
         />
       )}
     </CellList>
+  );
+}
+
+/** Выбор темы (FRONT-20, #83): «Как в системе» / «Светлая» / «Тёмная» — сегмент по D8/D23
+ * (Button size="small", активная — primary, aria-pressed), как «Список | Месяц» в CalendarHeader.
+ * Хранится на устройстве (shell/Theme.tsx), от профиля и сети не зависит. */
+function ThemeControl({ source }: { source: DataSource }) {
+  const { pref, setPref } = useTheme();
+  const options: [ThemePref, string][] = [
+    ["system", texts.profile.themeSystem],
+    ["light", texts.profile.themeLight],
+    ["dark", texts.profile.themeDark],
+  ];
+  const choose = (value: ThemePref) => {
+    if (value === pref) return;
+    setPref(value);
+    quiet(source.track("theme_changed", { theme: value }));
+  };
+  return (
+    <div className="profile-theme">
+      <Typography.Label>{texts.profile.theme}</Typography.Label>
+      <div className="tabs" role="group" aria-label={texts.profile.theme}>
+        {options.map(([value, label]) => (
+          <Button
+            key={value}
+            size="small"
+            variant={pref === value ? "primary" : "secondary"}
+            aria-pressed={pref === value}
+            onClick={() => choose(value)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -152,6 +188,7 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt }: Props) 
         <ErrorBanner kind={rebuildError} onRetry={rebuild} retrying={rebuilding} />
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
+      <ThemeControl source={source} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (
         <div className="profile-actions">
