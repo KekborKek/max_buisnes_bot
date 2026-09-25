@@ -99,7 +99,16 @@ async def test_full_path_from_start_to_ready_calendar(fake_max, clock):
             "type": "inline_keyboard",
             "payload": {
                 "buttons": [
-                    [{"type": "open_app", "text": "Открыть календарь", "web_app": BOT_USERNAME}]
+                    [
+                        {"type": "open_app", "text": "Открыть календарь", "web_app": BOT_USERNAME},
+                        # T14-13a (#85): «Настройки» → экран 13 в мини-аппе (start_param).
+                        {
+                            "type": "open_app",
+                            "text": "Настройки",
+                            "web_app": BOT_USERNAME,
+                            "payload": "settings",
+                        },
+                    ]
                 ]
             },
         }

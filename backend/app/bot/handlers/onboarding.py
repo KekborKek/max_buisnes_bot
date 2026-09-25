@@ -22,6 +22,7 @@ from app.bot.handlers.common import ensure_profile, income_year, reply_reference
 from app.bot.handlers.nds_answer import show_nds_answer
 from app.bot.router import router
 from app.calendar import dates, loader
+from app.calendar.timezones import OTHER_TIMEZONES, TIMEZONES
 from app.calendar.types import ReferenceFileError
 from app.core.models import DEFAULT_TIMEZONE, Profile
 from app.core.texts import t
@@ -39,20 +40,6 @@ INCOME_BANDS = ("lt10", "10_20", "20_60", "gt60")
 REGIMES = ("usn6", "usn15", "patent", "ausn")
 REGIME_IF_UNKNOWN = "usn6"  # «Не знаю» на режиме → самый частый (экран 2)
 EMPLOYEES = {"no": False, "yes": True}
-# D3: порядок кнопок списка «Другой пояс», по два в ряд. Подписи — onboarding.tz.<IANA>.
-OTHER_TIMEZONES = (
-    "Europe/Kaliningrad",
-    "Europe/Samara",
-    "Asia/Yekaterinburg",
-    "Asia/Omsk",
-    "Asia/Krasnoyarsk",
-    "Asia/Irkutsk",
-    "Asia/Yakutsk",
-    "Asia/Vladivostok",
-    "Asia/Magadan",
-    "Asia/Kamchatka",
-)
-TIMEZONES = (DEFAULT_TIMEZONE, *OTHER_TIMEZONES)
 
 ANSWERS: dict[int, tuple[str, ...]] = {
     1: (*INCOME_BANDS, UNKNOWN),

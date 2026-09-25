@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.calendar.timezones import TIMEZONES
+
 ItemTypeParam = Literal["obligation", "task"]
 CategoryOut = Literal["taxes", "contributions", "reports", "custom"]
 StatusOut = Literal["done", "overdue", "today", "upcoming"]
@@ -123,6 +125,35 @@ class TaskPatch(BaseModel):
         return None if v is None else _check_hour(v)
 
 
+class ReminderSettingsOut(BaseModel):
+    """Настройки напоминаний (экран 13) поверх умолчаний. d1 выключить нельзя — его здесь нет."""
+
+    d30: bool = Field(description="За 30 дней (только обязательства с подготовкой)")
+    d7: bool = Field(description="За 7 дней")
+    hour: int = Field(description="Час отправки по поясу пользователя: 9 · 10 · 18")
+    digest: bool = Field(description="Сводка по понедельникам (экран 12)")
+
+
+class ProfileSettingsInput(BaseModel):
+    """Сохранение экрана 13. Все поля обязательны; d1 не передаётся — он всегда включён."""
+
+    d30: bool
+    d7: bool
+    hour: Literal[9, 10, 18] = Field(description="9 · 10 · 18")
+    digest: bool
+    timezone: str = Field(
+        description="IANA-пояс из списка вопроса 4 экрана 2",
+        json_schema_extra={"enum": list(TIMEZONES)},
+    )
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone(cls, v: str) -> str:
+        if v not in TIMEZONES:
+            raise ValueError(f"timezone must be one of {TIMEZONES}")
+        return v
+
+
 class ProfileOut(BaseModel):
     """Ответы онбординга без служебных полей. nds_payer = null — определить нельзя (D25)."""
 
@@ -136,6 +167,7 @@ class ProfileOut(BaseModel):
         default=None,
         description="Дата сверки справочника (version каталога); null — справочник недоступен",
     )
+    reminders: ReminderSettingsOut = Field(description="Настройки напоминаний (экран 13)")
 
 
 class RebuildResponse(BaseModel):

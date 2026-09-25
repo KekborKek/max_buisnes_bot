@@ -29,6 +29,8 @@ from app.core.texts import t
 log = logging.getLogger(__name__)
 
 BUILD = "calendar:build"
+# Параметр запуска мини-аппа для кнопки «Настройки»: по нему открывается экран 13 (T14-13b).
+SETTINGS_START_PARAM = "settings"
 
 # Индикатор «печатает» — украшение: ждать ответа MAX дольше этого нельзя, сборка важнее.
 _TYPING_TIMEOUT_S = 2
@@ -115,10 +117,17 @@ def count_word(count: int) -> str:
     return t("calendar_ready.count_many")
 
 
-def ready_text(profile: Profile, result: BuildResult, reference: Reference, today: date) -> str:
+def nearest_title(result: BuildResult, reference: Reference) -> str | None:
+    """Название ближайшего события; None — показываем `calendar_ready.empty`."""
+    if result.this_year == 0 or result.nearest_due_date is None:
+        return None
     titles = {ob.id: ob.title for ob in reference.catalog.obligations}
-    title = titles.get(result.nearest_obligation_id or "")
-    if result.this_year == 0 or result.nearest_due_date is None or title is None:
+    return titles.get(result.nearest_obligation_id or "")
+
+
+def ready_text(profile: Profile, result: BuildResult, reference: Reference, today: date) -> str:
+    title = nearest_title(result, reference)
+    if title is None or result.nearest_due_date is None:
         text = t("calendar_ready.empty")
     else:
         text = t(
@@ -133,14 +142,19 @@ def ready_text(profile: Profile, result: BuildResult, reference: Reference, toda
     return text
 
 
-def ready_attachments() -> list[dict] | None:
-    """«Открыть календарь» (open_app, D27). «Настройки» — когда будет экран 13.
+def ready_attachments(*, with_settings: bool = True) -> list[dict] | None:
+    """«Открыть календарь» и «Настройки» в один ряд (open_app, D27).
 
-    Без MAX_BOT_USERNAME кнопку мини-аппа не показываем (keyboards.open_app).
+    «Настройки» — экран 13 в мини-аппе: параметр запуска `settings` (как `item_…` у карточки).
+    На пустом календаре её нет (экран 5, «Состояния»). Без MAX_BOT_USERNAME кнопок
+    мини-аппа не показываем (keyboards.open_app).
     """
     if not get_settings().max_bot_username:
         return None
-    return [kb.inline_keyboard([kb.open_app(t("calendar_ready.btn_open"))])]
+    row = [kb.open_app(t("calendar_ready.btn_open"))]
+    if with_settings:
+        row.append(kb.open_app(t("calendar_ready.btn_settings"), SETTINGS_START_PARAM))
+    return [kb.inline_keyboard(row)]
 
 
 @router.on_callback(BUILD)
@@ -173,4 +187,8 @@ async def on_build(ctx: Ctx) -> None:
         {"items_count": result.this_year, "seconds_since_start": seconds, "rebuild": rebuild},
     )
     today = moment.astimezone(ZoneInfo(profile.timezone)).date()
-    await ctx.reply(ready_text(profile, result, reference, today), attachments=ready_attachments())
+    empty = nearest_title(result, reference) is None
+    await ctx.reply(
+        ready_text(profile, result, reference, today),
+        attachments=ready_attachments(with_settings=not empty),
+    )

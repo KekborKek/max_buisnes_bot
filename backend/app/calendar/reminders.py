@@ -82,6 +82,16 @@ def send_at_utc(day: date, hour: int, tz: str) -> datetime:
     return datetime.combine(day, time(hour), tzinfo=ZoneInfo(tz)).astimezone(UTC)
 
 
+def _enabled_kinds(*, needs_prep: bool, d30: bool, d7: bool) -> frozenset[str]:
+    """Виды, включённые для обязательства: d30 — только needs_prep; d1 и overdue — всегда."""
+    enabled = {"d1", "overdue"}
+    if needs_prep and d30:
+        enabled.add("d30")
+    if d7:
+        enabled.add("d7")
+    return frozenset(enabled)
+
+
 def plan_obligation_notifications(
     due_date: date,
     *,
@@ -97,10 +107,10 @@ def plan_obligation_notifications(
     overdue — на следующий день после срока (D10). Всё в `hour` по `tz`; с send_at ≤ now —
     не включаются. `hour`, `d30`, `d7` — из Profile.reminders. (T4)
     """
-    enabled = {"d30": needs_prep and d30, "d7": d7, "d1": True, "overdue": True}
+    enabled = _enabled_kinds(needs_prep=needs_prep, d30=d30, d7=d7)
     planned = []
     for kind in _OBLIGATION_KINDS:
-        if not enabled[kind]:
+        if kind not in enabled:
             continue
         at = send_at_utc(due_date + timedelta(days=_KIND_OFFSET_DAYS[kind]), hour, tz)
         if at > now:
@@ -166,8 +176,12 @@ async def sync_obligation_notifications(
     - отмечено (`done_at`) → все pending отменяются, новых нет;
     - вид из плана уже pending → остаётся одно, `send_at` поправлен (смена пояса), лишние
       копии → cancelled; уже sent/failed → заново не создаётся;
-    - pending вида, выпавшего из плана, с send_at в будущем → cancelled (выключили d30);
-      с send_at в прошлом — не трогаем, его отправит планировщик; snooze не трогаем.
+    - pending выключенного вида (d30/d7 выключены в настройках, d30 без needs_prep) с send_at
+      в будущем → cancelled; с send_at в прошлом — не трогаем, его отправит планировщик;
+    - pending включённого вида, которого нет в плане, потому что новое время уже прошло
+      (сменили пояс или час в день d1), — остаётся одна копия со старым send_at: не теряем
+      последнее напоминание (решение по #85); если вид уже sent/failed — будущие копии
+      → cancelled. snooze не трогаем.
     `settings` — Profile.reminders. Пишет в сессию, не коммитит; у `uo` должен быть id.
     """
     if uo.id is None:
@@ -177,6 +191,7 @@ async def sync_obligation_notifications(
         return
 
     opts = reminder_settings(settings)
+    enabled = _enabled_kinds(needs_prep=needs_prep, d30=bool(opts["d30"]), d7=bool(opts["d7"]))
     planned = plan_obligation_notifications(
         uo.due_date,
         needs_prep=needs_prep,
@@ -222,7 +237,11 @@ async def sync_obligation_notifications(
                 )
             )
 
-    for rows in pending.values():
+    for kind, rows in pending.items():
+        if kind in enabled and kind not in finished:
+            # Включён, но новое время уже прошло: pending остаётся как было (одна копия).
+            # Уже sent/failed — будущие копии отменяются ниже, иначе ушли бы вторым сообщением.
+            rows = rows[1:]
         for n in rows:
             if as_utc(n.send_at) > now:
                 n.status = "cancelled"
@@ -269,6 +288,69 @@ async def sync_task_notification(
                 attempts=0,
             )
         )
+
+
+async def resync_user_notifications(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    tz: str,
+    settings: Mapping[str, Any] | None,
+    reference: Reference,
+    now: datetime,
+) -> None:
+    """Пересчёт pending пользователя после смены пояса или настроек (экран 13, reminders.md).
+
+    - неотмеченные обязательства → `sync_obligation_notifications` с новыми `tz` и `settings`;
+      записи, которой нет в справочнике, пропускаем — её pending отменит отправка
+      (`_claim` → `load_reminder_item` вернёт None);
+    - `task`-уведомления: pending с send_at в будущем и `attempts == 0` получают send_at
+      по новому поясу (у задачи свои remind_offset_days и remind_hour). Новое время уже
+      прошло — остаётся старое: это единственное напоминание по задаче (D11). В прошлом,
+      в отправке или на повторе (`attempts > 0`, см. `_claim`) — не трогаем;
+    - snooze и digest не трогаем: сводка считается сама каждую неделю.
+    Повторный вызов с теми же данными ничего не меняет. Пишет в сессию, не коммитит.
+    """
+    needs_prep = {ob.id: ob.needs_prep for ob in reference.catalog.obligations}
+    uos = await session.scalars(
+        select(UserObligation)
+        .where(UserObligation.user_id == user_id, UserObligation.done_at.is_(None))
+        .order_by(UserObligation.id)
+    )
+    for uo in list(uos):
+        prep = needs_prep.get(uo.obligation_id)
+        if prep is None:
+            continue
+        await sync_obligation_notifications(
+            session, uo, needs_prep=prep, tz=tz, settings=settings, now=now
+        )
+
+    rows = await session.scalars(
+        select(Notification)
+        .where(
+            Notification.user_id == user_id,
+            Notification.item_type == "task",
+            Notification.kind == "task",
+            Notification.status == "pending",
+            Notification.attempts == 0,
+        )
+        .order_by(Notification.id)
+    )
+    for n in list(rows):
+        if as_utc(n.send_at) <= now:
+            continue
+        task = await session.get(Task, n.item_id)
+        if task is None or task.done_at is not None or task.deleted_at is not None:
+            continue
+        planned = plan_task_notification(
+            task.due_date,
+            remind_offset_days=task.remind_offset_days,
+            remind_hour=task.remind_hour,
+            tz=tz,
+            now=now,
+        )
+        if planned is not None and as_utc(n.send_at) != planned.send_at:
+            n.send_at = planned.send_at
 
 
 # --- Отправка (T6) ------------------------------------------------------------------------------

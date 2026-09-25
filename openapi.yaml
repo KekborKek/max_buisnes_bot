@@ -360,6 +360,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/profile/settings:
+    put:
+      tags:
+      - miniapp
+      summary: Сохранить настройки напоминаний (экран 13) и пересчитать уведомления
+      description: Все поля обязательны; d1 не передаётся — он всегда включён. Незнакомые
+        ключи Profile.reminders сохраняются. После смены d30, d7, часа или пояса все
+        pending-уведомления пересчитываются одной транзакцией. Повтор того же тела
+        ничего не меняет. Событие reminder_settings_changed {changed} — только если
+        что-то изменилось.
+      operationId: save_settings_api_profile_settings_put
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileSettingsInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileOut'
+        '409':
+          description: 'Профиль не заполнен: онбординг не пройден (profile_incomplete)'
+        '503':
+          description: 'Справочник недоступен, а изменение требует пересчёта уведомлений
+            (d30, d7, час или пояс): настройки не сохранены (reference_unavailable).
+            Изменение только digest справочника не требует — ответ 200'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/me:
     get:
       tags:
@@ -437,6 +482,17 @@ paths:
       tags:
       - service
       summary: Проверка, что сервис жив
+      description: 'БД проверяем настоящим запросом, а не константами (issue #21):
+        Docker HEALTHCHECK
+
+        ходит именно сюда, и без этой проверки контейнер с мёртвой базой считается
+        здоровым.
+
+
+        `token_configured` — только факт наличия MAX_BOT_TOKEN (true/false); сам токен
+        и любые
+
+        секреты в ответ не попадают (правило 3 AGENTS.md). Эндпоинт публичный.'
       operationId: health_health_get
       responses:
         '200':
@@ -699,6 +755,9 @@ components:
           title: Reference Checked At
           description: Дата сверки справочника (version каталога); null — справочник
             недоступен
+        reminders:
+          $ref: '#/components/schemas/ReminderSettingsOut'
+          description: Настройки напоминаний (экран 13)
       type: object
       required:
       - income_band
@@ -707,9 +766,55 @@ components:
       - timezone
       - nds_payer
       - calendar_built_at
+      - reminders
       title: ProfileOut
       description: Ответы онбординга без служебных полей. nds_payer = null — определить
         нельзя (D25).
+    ProfileSettingsInput:
+      properties:
+        d30:
+          type: boolean
+          title: D30
+        d7:
+          type: boolean
+          title: D7
+        hour:
+          type: integer
+          enum:
+          - 9
+          - 10
+          - 18
+          title: Hour
+          description: 9 · 10 · 18
+        digest:
+          type: boolean
+          title: Digest
+        timezone:
+          type: string
+          enum:
+          - Europe/Moscow
+          - Europe/Kaliningrad
+          - Europe/Samara
+          - Asia/Yekaterinburg
+          - Asia/Omsk
+          - Asia/Krasnoyarsk
+          - Asia/Irkutsk
+          - Asia/Yakutsk
+          - Asia/Vladivostok
+          - Asia/Magadan
+          - Asia/Kamchatka
+          title: Timezone
+          description: IANA-пояс из списка вопроса 4 экрана 2
+      type: object
+      required:
+      - d30
+      - d7
+      - hour
+      - digest
+      - timezone
+      title: ProfileSettingsInput
+      description: Сохранение экрана 13. Все поля обязательны; d1 не передаётся —
+        он всегда включён.
     RebuildResponse:
       properties:
         items_count:
@@ -732,6 +837,33 @@ components:
       - profile
       title: RebuildResponse
       description: Итог пересборки календаря (экран 19).
+    ReminderSettingsOut:
+      properties:
+        d30:
+          type: boolean
+          title: D30
+          description: За 30 дней (только обязательства с подготовкой)
+        d7:
+          type: boolean
+          title: D7
+          description: За 7 дней
+        hour:
+          type: integer
+          title: Hour
+          description: 'Час отправки по поясу пользователя: 9 · 10 · 18'
+        digest:
+          type: boolean
+          title: Digest
+          description: Сводка по понедельникам (экран 12)
+      type: object
+      required:
+      - d30
+      - d7
+      - hour
+      - digest
+      title: ReminderSettingsOut
+      description: Настройки напоминаний (экран 13) поверх умолчаний. d1 выключить
+        нельзя — его здесь нет.
     TaskDraft:
       properties:
         title:

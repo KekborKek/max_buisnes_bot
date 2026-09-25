@@ -238,6 +238,8 @@ async def test_me_with_profile(miniapp_api):
         "nds_payer": None,
         "calendar_built_at": "2026-09-20T07:00:00Z",
         "reference_checked_at": "2026-01-01",  # version тестового справочника
+        # T14-13a (#85): настройки напоминаний экрана 13, у нового профиля — умолчания
+        "reminders": {"d30": True, "d7": True, "hour": 10, "digest": True},
     }
 
 
