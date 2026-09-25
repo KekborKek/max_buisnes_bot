@@ -45,18 +45,19 @@ export const MOCK_PROFILE: Profile = {
   nds_payer: false,
   calendar_built_at: "2026-09-20T10:00:00Z",
   reference_checked_at: "2026-09-20",
+  reminders: { d30: true, d7: true, hour: 10, digest: true },
 };
 
 const mockToday = () => todayIn(MOCK_PROFILE.timezone);
 
-function mockMe(hasProfile: boolean, startParam: string | null): Me {
+function mockMe(profile: Profile | null, startParam: string | null): Me {
   return {
     user_id: 1,
     first_name: "ТЕСТОВЫЕ ДАННЫЕ",
     is_dev: true,
     start_param: startParam,
-    has_profile: hasProfile,
-    profile: hasProfile ? MOCK_PROFILE : null,
+    has_profile: profile !== null,
+    profile,
     // Черновик из чата (экран 9, «Изменить») — только при start_param=task_draft.
     draft:
       startParam === "task_draft"
@@ -160,6 +161,8 @@ export function createMockSource(scenario: MockScenario): DataSource {
   // Состояние мока живёт, пока открыт мини-апп: отметки и задачи видны в списке и карточке.
   let cards: ItemCard[] = scenario === "empty" ? [] : mockCards(mockToday());
   let nextTaskId = 100;
+  // Профиль тоже живёт в моке: сохранённые на экране 13 настройки видны после «Назад» и на экране 19.
+  let profile: Profile = MOCK_PROFILE;
 
   /** Сбои чтения — как у календаря в T11. */
   const readFailure = () => {
@@ -218,7 +221,7 @@ export function createMockSource(scenario: MockScenario): DataSource {
       wait(() => {
         if (scenario === "unauthorized") throw new ApiError("unauthorized", 401);
         if (scenario === "offline") throw new ApiError("network");
-        return mockMe(scenario !== "no_profile", startParam);
+        return mockMe(scenario !== "no_profile" ? profile : null, startParam);
       }),
     calendar: () => read(() => cards.map(toCalendarItem)),
     item: (type, id) => read(() => find(type, id)),
@@ -249,13 +252,19 @@ export function createMockSource(scenario: MockScenario): DataSource {
           .filter((c) => c.type === "obligation" && !c.done_at && c.due_date >= today)
           .map((c) => c.due_date)
           .sort();
+        profile = { ...profile, calendar_built_at: new Date().toISOString() };
         return {
           items_count: cards.filter(
             (c) => c.type === "obligation" && c.due_date.slice(0, 4) === today.slice(0, 4),
           ).length,
           nearest_due_date: upcoming[0] ?? null,
-          profile: { ...MOCK_PROFILE, calendar_built_at: new Date().toISOString() },
+          profile,
         };
+      }),
+    saveSettings: ({ timezone, ...reminders }) =>
+      write(() => {
+        profile = { ...profile, timezone, reminders };
+        return profile;
       }),
     track: async (name, props = {}) => {
       console.debug("[ТЕСТОВЫЕ ДАННЫЕ] track", name, props);

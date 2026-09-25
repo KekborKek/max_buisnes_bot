@@ -37,6 +37,8 @@ interface Props {
   onProfile: (profile: Profile) => void;
   /** Календарь пересобран — оболочка перезагружает список и сбрасывает кеши. */
   onRebuilt: (result: RebuildResult) => void;
+  /** Строка «Напоминания» — переход на экран 13 (#86). */
+  onReminders: () => void;
 }
 
 function ProfileRows({ profile }: { profile: Profile }) {
@@ -104,7 +106,29 @@ function ThemeControl({ source }: { source: DataSource }) {
   );
 }
 
-export function ProfileScreen({ source, initial, onProfile, onRebuilt }: Props) {
+/** Вход на экран 13: строка с шевроном между профилем и выбором темы. */
+function RemindersEntry({ onOpen }: { onOpen: () => void }) {
+  return (
+    <CellList mode="island">
+      <CellSimple
+        role="button"
+        tabIndex={0}
+        className="settings-entry"
+        showChevron
+        title={texts.profile.reminders}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      />
+    </CellList>
+  );
+}
+
+export function ProfileScreen({ source, initial, onProfile, onRebuilt, onReminders }: Props) {
   const toast = useToast();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -188,6 +212,7 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt }: Props) 
         <ErrorBanner kind={rebuildError} onRetry={rebuild} retrying={rebuilding} />
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
+      {profile && <RemindersEntry onOpen={onReminders} />}
       <ThemeControl source={source} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (

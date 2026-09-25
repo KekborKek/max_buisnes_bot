@@ -43,6 +43,7 @@ function renderProfile() {
   const fake = fakeSource();
   const onProfile = vi.fn();
   const onRebuilt = vi.fn();
+  const onReminders = vi.fn();
   render(
     <ThemeProvider>
       <ToastProvider>
@@ -51,11 +52,12 @@ function renderProfile() {
           initial={PROFILE}
           onProfile={onProfile}
           onRebuilt={onRebuilt}
+          onReminders={onReminders}
         />
       </ToastProvider>
     </ThemeProvider>,
   );
-  return { ...fake, onProfile, onRebuilt };
+  return { ...fake, onProfile, onRebuilt, onReminders };
 }
 
 async function renderReady(profile: Profile = FRESH) {
@@ -160,6 +162,36 @@ test("409 — профиль не заполнен: своя плашка без
   expect(screen.getByRole("alert")).toHaveTextContent(texts.profile.incomplete);
   expect(screen.queryByRole("button", { name: texts.common.retry })).not.toBeInTheDocument();
   expect(source.track).toHaveBeenCalledWith("error", { where: "rebuild", kind: "incomplete" });
+});
+
+test("строка «Напоминания» между профилем и темой ведёт на экран 13", async () => {
+  const { onReminders } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.reminders });
+  const theme = screen.getByRole("group", { name: texts.profile.theme });
+  // Строка стоит после строк профиля и перед выбором темы.
+  expect(
+    screen.getByText(texts.profile.timezone).compareDocumentPosition(entry) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(entry.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  await userEvent.click(entry);
+  expect(onReminders).toHaveBeenCalledOnce();
+});
+
+test("строка «Напоминания» открывается с клавиатуры: Enter и пробел", async () => {
+  const { onReminders } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.reminders });
+  entry.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(onReminders).toHaveBeenCalledTimes(1);
+  await userEvent.keyboard(" ");
+  expect(onReminders).toHaveBeenCalledTimes(2);
+});
+
+test("пока профиль грузится, строки «Напоминания» нет", () => {
+  renderProfile();
+  expect(screen.queryByRole("button", { name: texts.profile.reminders })).not.toBeInTheDocument();
 });
 
 test("«Изменить» в MAX — openMaxLink с диплинком бота ?start=profile_edit", async () => {

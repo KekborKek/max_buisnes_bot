@@ -20,6 +20,7 @@ export const PROFILE: Profile = {
   nds_payer: false,
   calendar_built_at: null,
   reference_checked_at: "2026-09-20",
+  reminders: { d30: true, d7: true, hour: 10, digest: true },
 };
 
 export function makeMe(hasProfile = true): Me {
@@ -100,6 +101,7 @@ export function fakeSource() {
     updateTask: [] as Deferred<TaskCard>[],
     deleteTask: [] as Deferred<void>[],
     rebuild: [] as Deferred<RebuildResult>[],
+    saveSettings: [] as Deferred<Profile>[],
   };
   function pending<T>(list: Deferred<T>[]): Promise<T> {
     const d = deferred<T>();
@@ -118,6 +120,7 @@ export function fakeSource() {
     updateTask: vi.fn<DataSource["updateTask"]>(() => pending(calls.updateTask)),
     deleteTask: vi.fn<DataSource["deleteTask"]>(() => pending(calls.deleteTask)),
     rebuild: vi.fn<DataSource["rebuild"]>(() => pending(calls.rebuild)),
+    saveSettings: vi.fn<DataSource["saveSettings"]>(() => pending(calls.saveSettings)),
     track: vi.fn<DataSource["track"]>(() => Promise.resolve()),
   } satisfies DataSource;
   const last = <T>(list: Deferred<T>[]) => list[list.length - 1];
