@@ -34,13 +34,12 @@ export function writeThemePref(pref: ThemePref): void {
 
 /** index.html красит html/body синхронно до первого рендера (та же логика, продублирована
  * намеренно — инлайн-скрипт выполняется раньше любого бандла). Дальше это поле держит провайдер,
- * чтобы data-theme совпадал с реальной темой и после переключения, и после смены системной. */
+ * чтобы data-theme и color-scheme совпадали с реальной темой и после переключения, и после смены
+ * системной. color-scheme нужен отдельно от MaxUI: сама MAX UI 0.5.0 его не выставляет, а без него
+ * нативные контролы (`<input type="date">`, скроллбары) остаются в старой цветовой схеме. */
 function applyDataTheme(scheme: ColorSchemeType): void {
-  try {
-    document.documentElement.dataset.theme = scheme;
-  } catch {
-    // document недоступен (вне браузера) — тесты/SSR, страницу красить некому.
-  }
+  document.documentElement.dataset.theme = scheme;
+  document.documentElement.style.colorScheme = scheme;
 }
 
 interface ThemeValue {

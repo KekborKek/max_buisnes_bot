@@ -11,22 +11,24 @@
       (React ещё не запустился — MaxUI и ThemeProvider из src/shell/Theme.tsx применятся позже).
       Логика — та же, что в Theme.tsx (ключ localStorage, приоритет явного выбора над системной
       темой), продублирована намеренно: этот код обязан отработать раньше любого бандла.
-      Полностью в try/catch — localStorage/matchMedia могут быть недоступны.
+      localStorage читаем в отдельном try, чтобы его ошибка не отменяла проверку matchMedia —
+      иначе fallback разошёлся бы с Theme.tsx (там недоступный localStorage не мешает system).
     -->
     <script>
+      var stored = null;
       try {
-        var stored = localStorage.getItem("profile.theme");
-        var scheme =
-          stored === "light" || stored === "dark"
-            ? stored
-            : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light";
-        document.documentElement.dataset.theme = scheme;
-        document.documentElement.style.colorScheme = scheme;
+        stored = localStorage.getItem("profile.theme");
       } catch (e) {
-        /* тема останется дефолтной (светлой) — не мигание, а меньшее зло без localStorage/matchMedia */
+        /* недоступен — считаем, что явного выбора нет, дальше решает системная тема */
       }
+      var scheme =
+        stored === "light" || stored === "dark"
+          ? stored
+          : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+      document.documentElement.dataset.theme = scheme;
+      document.documentElement.style.colorScheme = scheme;
     </script>
   </head>
   <body>

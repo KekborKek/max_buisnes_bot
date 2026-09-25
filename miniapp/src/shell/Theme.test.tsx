@@ -48,6 +48,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  document.documentElement.style.colorScheme = "";
 });
 
 test("без сохранённого выбора тема системная и меняется вслед за matchMedia", () => {
@@ -83,6 +84,7 @@ test("выбор «Светлая»/«Тёмная» применяется ср
   expect(screen.getByTestId("pref")).toHaveTextContent("light");
   expect(screen.getByTestId("scheme")).toHaveTextContent("light");
   expect(document.documentElement.dataset.theme).toBe("light");
+  expect(document.documentElement.style.colorScheme).toBe("light");
   expect(localStorage.getItem("profile.theme")).toBe("light");
 
   // «Перезапуск»: новый монтаж ThemeProvider, как при открытии мини-аппа заново.
@@ -94,9 +96,10 @@ test("выбор «Светлая»/«Тёмная» применяется ср
   );
   expect(screen.getByTestId("pref")).toHaveTextContent("light");
   expect(screen.getByTestId("scheme")).toHaveTextContent("light");
+  expect(document.documentElement.style.colorScheme).toBe("light");
 });
 
-test("недоступный localStorage → «Как в системе», без падения", () => {
+test("недоступный localStorage → «Как в системе», без падения", async () => {
   const fake = fakeMatchMedia(false);
   vi.stubGlobal("matchMedia", fake.matchMedia);
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
@@ -105,6 +108,7 @@ test("недоступный localStorage → «Как в системе», бе
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("denied");
   });
+  const user = userEvent.setup();
 
   expect(() =>
     render(
@@ -115,6 +119,14 @@ test("недоступный localStorage → «Как в системе», бе
   ).not.toThrow();
   expect(screen.getByTestId("pref")).toHaveTextContent("system");
   expect(readThemePref()).toBe("system");
+
+  // Явный выбор при бросающем setItem не должен ронять приложение: тема применяется
+  // (просто не переживёт перезапуск), а не откатывается и не падает.
+  await expect(user.click(screen.getByRole("button", { name: "dark" }))).resolves.not.toThrow();
+  expect(screen.getByTestId("pref")).toHaveTextContent("dark");
+  expect(screen.getByTestId("scheme")).toHaveTextContent("dark");
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(document.documentElement.style.colorScheme).toBe("dark");
 });
 
 test("битое значение в localStorage → «Как в системе», без падения", () => {
@@ -128,4 +140,43 @@ test("битое значение в localStorage → «Как в системе
     </ThemeProvider>,
   );
   expect(screen.getByTestId("pref")).toHaveTextContent("system");
+});
+
+test("явный выбор игнорирует смену системной темы", async () => {
+  const fake = fakeMatchMedia(false); // система светлая
+  vi.stubGlobal("matchMedia", fake.matchMedia);
+  const user = userEvent.setup();
+
+  render(
+    <ThemeProvider>
+      <Probe />
+    </ThemeProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "light" }));
+  expect(screen.getByTestId("pref")).toHaveTextContent("light");
+  expect(screen.getByTestId("scheme")).toHaveTextContent("light");
+
+  // Система переключилась на тёмную, но пользователь уже выбрал светлую явно — это не «system».
+  act(() => fake.change(true));
+  expect(screen.getByTestId("pref")).toHaveTextContent("light");
+  expect(screen.getByTestId("scheme")).toHaveTextContent("light");
+  expect(document.documentElement.dataset.theme).toBe("light");
+  expect(document.documentElement.style.colorScheme).toBe("light");
+});
+
+test("MaxUI получает выбранную colorScheme (класс MaxUI_colorScheme_dark на обёртке)", async () => {
+  const fake = fakeMatchMedia(false);
+  vi.stubGlobal("matchMedia", fake.matchMedia);
+  const user = userEvent.setup();
+
+  render(
+    <ThemeProvider>
+      <Probe />
+    </ThemeProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "dark" }));
+
+  const maxUiRoot = screen.getByTestId("scheme").closest('[class*="MaxUI_colorScheme"]');
+  expect(maxUiRoot).not.toBeNull();
+  expect(maxUiRoot?.className).toMatch(/MaxUI_colorScheme_dark/);
 });
