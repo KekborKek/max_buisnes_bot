@@ -471,6 +471,47 @@ test("без смены пояса кеш месяцев остаётся", asyn
   vi.useRealTimers();
 });
 
+test("«Назад» с экрана 13 до ответа сохранения: остаёмся на 19, профиль всё равно обновлён", async () => {
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+
+  // Человек нажал «Назад», не дождавшись ответа, — он на 19.
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  await act(async () =>
+    last("saveSettings").resolve({ ...makeMe(true).profile!, timezone: "Asia/Omsk" }),
+  );
+  // Ответ пришёл: второго «Назад» нет — по-прежнему экран 19, не список; тоста нет.
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.list.addTask })).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.settings.saved)).not.toBeInTheDocument();
+  // Профиль ушёл в оболочку: пояс сменился — список 14 грузится заново.
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+});
+
+test("смена пояса после ошибки календаря: список 14 снова в состоянии загрузки", async () => {
+  window.history.replaceState(null, "", "/?start_param=settings");
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().reject(new ApiError("network")));
+  await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
+  await act(async () =>
+    last("saveSettings").resolve({ ...makeMe(true).profile!, timezone: "Asia/Omsk" }),
+  );
+  // Список ещё не загружен, запрос в новом поясе идёт — скелетон, как после «Пересобрать».
+  expect(screen.getByTestId("skeleton")).toBeInTheDocument();
+  expect(source.calendar).toHaveBeenCalledTimes(2);
+});
+
 test("экран 19: если профиль не обновился, после сохранения виден новый пояс из оболочки", async () => {
   const { source, lastMe, lastCalendar, last } = fakeSource();
   render(<App source={source} />);

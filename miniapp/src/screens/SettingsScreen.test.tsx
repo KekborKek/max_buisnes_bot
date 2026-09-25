@@ -30,14 +30,14 @@ function renderSettings(profile: Profile = CUSTOM, source: SettingsRoute["source
     home: vi.fn(),
   };
   const onSaved = vi.fn();
-  render(
+  const view = render(
     <ToastProvider>
       <NavigationContext.Provider value={nav}>
         <SettingsScreen source={fake.source} route={route} profile={profile} onSaved={onSaved} />
       </NavigationContext.Provider>
     </ToastProvider>,
   );
-  return { ...fake, nav, onSaved };
+  return { ...fake, nav, onSaved, unmount: view.unmount };
 }
 
 const sw = (name: string) => screen.getByRole("switch", { name: new RegExp(`^${name}`) });
@@ -196,7 +196,66 @@ test("401 — как везде: common.reopen без «Повторить»", a
   expect(screen.queryByRole("button", { name: texts.common.retry })).not.toBeInTheDocument();
 });
 
-test("пояс вне списка экрана 2 — отдельной строкой с идентификатором, выбран", () => {
-  renderSettings({ ...CUSTOM, timezone: "Europe/Berlin" });
+test("пояс вне списка экрана 2: строка с идентификатором, подсказка, «Сохранить» — после выбора из списка", async () => {
+  const { source } = renderSettings({ ...CUSTOM, timezone: "Europe/Berlin" });
   expect(zone("Europe/Berlin")).toBeChecked();
+  expect(screen.getByText(texts.settings.timezoneUnknown)).toBeInTheDocument();
+  expect(saveBtn()).toBeDisabled();
+
+  // Другие поля поменяли, а пояс всё ещё не из списка — сохранить нельзя (бэкенд ответил бы 422).
+  await userEvent.click(hourBtn(9));
+  expect(saveBtn()).toBeDisabled();
+  await userEvent.click(saveBtn());
+  expect(source.saveSettings).not.toHaveBeenCalled();
+
+  await userEvent.click(zone("Москва, UTC+3"));
+  expect(screen.queryByText(texts.settings.timezoneUnknown)).not.toBeInTheDocument();
+  expect(saveBtn()).toBeEnabled();
+  await userEvent.click(saveBtn());
+  expect(source.saveSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ hour: 9, timezone: "Europe/Moscow" }),
+  );
+});
+
+test("пояс из списка — подсказки нет", () => {
+  renderSettings();
+  expect(screen.queryByText(texts.settings.timezoneUnknown)).not.toBeInTheDocument();
+});
+
+test("правка формы после ошибки снимает плашку", async () => {
+  const { last } = renderSettings();
+  await userEvent.click(hourBtn(10));
+  await userEvent.click(saveBtn());
+  await act(async () => last("saveSettings").reject(new ApiError("network")));
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+
+  // Вернули как было: «Сохранить» неактивна, и плашки с бесполезным «Повторить» нет.
+  await userEvent.click(hourBtn(18));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(saveBtn()).toBeDisabled();
+});
+
+test("во время запроса переключатели aria-disabled (не disabled) и не меняются", async () => {
+  renderSettings();
+  await userEvent.click(hourBtn(10));
+  await userEvent.click(saveBtn());
+  for (const name of [texts.settings.d30, texts.settings.d7, texts.settings.digest]) {
+    const toggle = sw(name);
+    const before = (toggle as HTMLInputElement).checked;
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    expect(toggle).not.toBeDisabled();
+    await userEvent.click(toggle);
+    expect((toggle as HTMLInputElement).checked).toBe(before);
+  }
+});
+
+test("ушли с экрана до ответа: профиль — в оболочку, но без «Назад» и тоста", async () => {
+  const { last, nav, onSaved, unmount } = renderSettings();
+  await userEvent.click(hourBtn(10));
+  await userEvent.click(saveBtn());
+  unmount();
+  const saved: Profile = { ...CUSTOM, reminders: { ...CUSTOM.reminders!, hour: 10 } };
+  await act(async () => last("saveSettings").resolve(saved));
+  expect(onSaved).toHaveBeenCalledWith(saved);
+  expect(nav.back).not.toHaveBeenCalled();
 });

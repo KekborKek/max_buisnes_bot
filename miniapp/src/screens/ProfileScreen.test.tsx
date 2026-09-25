@@ -179,6 +179,16 @@ test("строка «Напоминания» между профилем и т�
   expect(onReminders).toHaveBeenCalledOnce();
 });
 
+test("строка «Напоминания» открывается с клавиатуры: Enter и пробел", async () => {
+  const { onReminders } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.reminders });
+  entry.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(onReminders).toHaveBeenCalledTimes(1);
+  await userEvent.keyboard(" ");
+  expect(onReminders).toHaveBeenCalledTimes(2);
+});
+
 test("пока профиль грузится, строки «Напоминания» нет", () => {
   renderProfile();
   expect(screen.queryByRole("button", { name: texts.profile.reminders })).not.toBeInTheDocument();

@@ -231,6 +231,7 @@ function CalendarApp({ source, profile, startParam, draft, onProfile }: Calendar
       if (next.timezone !== timezone) {
         setCards({});
         resetMonths();
+        setCalendar((c) => ({ ...c, loading: true }));
       }
       onProfile(next);
     },

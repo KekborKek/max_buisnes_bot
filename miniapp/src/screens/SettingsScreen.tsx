@@ -71,6 +71,16 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
   const [error, setError] = useState<SaveError | null>(null);
   // Защита от второго запроса, пока первый в пути, — не дожидаясь перерисовки кнопки.
   const inFlight = useRef(false);
+  // Ушли с экрана («Назад») до ответа — профиль в оболочку всё равно, а «Назад» и тост — нет:
+  // иначе второй «Назад» увёл бы с того экрана, куда человек уже вернулся сам.
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (openedRoutes.has(route)) return;
@@ -79,10 +89,17 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
   }, [source, route]);
 
   const dirty = !sameSettings(values, initial);
-  const set = (patch: Partial<ReminderSettingsInput>) => setValues((v) => ({ ...v, ...patch }));
+  // Пояс не из списка экрана 2 бэкенд не примет (422) — сначала выбрать из списка.
+  const zoneKnown = Object.keys(texts.timezone).includes(values.timezone);
+  const canSave = dirty && zoneKnown;
+  // Любая правка снимает плашку прошлой ошибки: «Повторить» относился к другим значениям.
+  const set = (patch: Partial<ReminderSettingsInput>) => {
+    setError(null);
+    setValues((v) => ({ ...v, ...patch }));
+  };
 
   const save = () => {
-    if (!dirty || inFlight.current) return;
+    if (!canSave || inFlight.current) return;
     inFlight.current = true;
     setSaving(true);
     setError(null);
@@ -90,22 +107,25 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
       (next) => {
         inFlight.current = false;
         onSaved(next);
+        if (!mounted.current) return;
         nav.back();
         toast(texts.settings.saved);
       },
       (e: unknown) => {
         // Форма не сбрасывается: выбранное остаётся на месте, «Сохранить» можно нажать снова.
         inFlight.current = false;
-        setSaving(false);
         const incomplete = e instanceof ApiError && e.status === 409;
         const kind = incomplete ? "incomplete" : errorKind(e);
-        setError(kind);
         quiet(source.track("error", { where: "settings", kind }));
+        if (!mounted.current) return;
+        setSaving(false);
+        setError(kind);
       },
     );
   };
 
-  // Пояс вне списка экрана 2 (через онбординг не получить) показываем идентификатором, как на 19.
+  // Пояс вне списка экрана 2 (через онбординг не получить) показываем идентификатором, как на 19;
+  // сохранить с ним нельзя — под списком подсказка выбрать пояс из списка.
   const zones = Object.keys(texts.timezone);
   if (!zones.includes(initial.timezone)) zones.push(initial.timezone);
 
@@ -113,6 +133,8 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
     <div className="screen">
       <Typography.Headline className="form-title">{texts.settings.title}</Typography.Headline>
 
+      {/* Во время запроса переключатели не `disabled`, а aria-disabled + игнор onChange —
+          по той же причине, что «За 1 день»: disabled в тёмной теме читается как «выкл». */}
       <CellList mode="island" header={<CellHeader>{texts.settings.days}</CellHeader>}>
         <CellSimple
           as="label"
@@ -120,8 +142,10 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
           after={
             <Switch
               checked={values.d30}
-              disabled={saving}
-              onChange={(e) => set({ d30: e.target.checked })}
+              aria-disabled={saving || undefined}
+              onChange={(e) => {
+                if (!saving) set({ d30: e.target.checked });
+              }}
             />
           }
         />
@@ -131,8 +155,10 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
           after={
             <Switch
               checked={values.d7}
-              disabled={saving}
-              onChange={(e) => set({ d7: e.target.checked })}
+              aria-disabled={saving || undefined}
+              onChange={(e) => {
+                if (!saving) set({ d7: e.target.checked });
+              }}
             />
           }
         />
@@ -178,6 +204,7 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
         mode="island"
         role="radiogroup"
         aria-label={texts.settings.timezone}
+        aria-describedby={zoneKnown ? undefined : "settings-timezone-hint"}
         header={<CellHeader>{texts.settings.timezone}</CellHeader>}
       >
         {zones.map((zone) => (
@@ -196,6 +223,11 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
           />
         ))}
       </CellList>
+      {!zoneKnown && (
+        <Typography.Label id="settings-timezone-hint" className="field-error">
+          {texts.settings.timezoneUnknown}
+        </Typography.Label>
+      )}
 
       <CellList mode="island">
         <CellSimple
@@ -205,8 +237,10 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
           after={
             <Switch
               checked={values.digest}
-              disabled={saving}
-              onChange={(e) => set({ digest: e.target.checked })}
+              aria-disabled={saving || undefined}
+              onChange={(e) => {
+                if (!saving) set({ digest: e.target.checked });
+              }}
             />
           }
         />
@@ -222,7 +256,7 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
         <ErrorBanner kind={error} onRetry={save} retrying={saving} />
       )}
       <div className="card-actions">
-        <Button size="large" stretched loading={saving} disabled={!dirty} onClick={save}>
+        <Button size="large" stretched loading={saving} disabled={!canSave} onClick={save}>
           {texts.settings.save}
         </Button>
       </div>
