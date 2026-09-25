@@ -159,6 +159,7 @@ disclaimer:
 | `item_done` | `item_id`, `item_type`, `source`, `days_before_deadline` | 8, 16 |
 | `item_undone` | `item_id`, `item_type`, `source` | 8, 16 |
 | `task_created` | `source` (`chat`/`form`), `remind_offset` | 9, 17 |
+| `task_draft_stale` | `action` (`save`/`anyway`/`yes`/`cancel`) — нажата кнопка прежнего черновика | 9 |
 | `date_not_parsed` | — | 10 |
 | `fallback_shown` | `case` (`unknown`/`no_date`/`service`) | 10 |
 | `about_opened` | — | 11 |
