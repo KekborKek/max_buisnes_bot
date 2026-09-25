@@ -320,6 +320,11 @@ async def test_save_of_past_draft_is_refused(fake_max, no_bot_name, clock):
         "task.past_date", date="23 сентября", next_year_date="23 сентября 2027"
     )
 
+    # «Да» на этом past_date — снова confirm, уже на следующий год
+    await process_update(tap(fake_max.sent[-1], "task.btn_yes"), fake_max)
+    assert fake_max.sent[-1]["text"] == confirm_text("Оплатить аренду", "23 сентября 2027")
+    assert (await state_data())["task_draft"]["due_date"] == "2027-09-23"
+
 
 async def test_duplicate_offers_add_anyway(fake_max, no_bot_name):
     await onboarded()
@@ -437,6 +442,7 @@ async def test_save_under_old_confirm_does_not_save_new_draft(fake_max, no_bot_n
     await process_update(tap(first, "task.btn_save"), fake_max)
     assert await tasks() == []
     assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert ("task_draft_stale", {"action": "save"}) in await events()
     assert draft_fields(await state_data()) == {
         "title": "Заплатить налог",
         "due_date": "2026-11-05",
@@ -453,6 +459,7 @@ async def test_cancel_under_old_confirm_keeps_new_draft(fake_max, no_bot_name):
 
     await process_update(tap(first, "task.btn_cancel"), fake_max)
     assert fake_max.sent[-1]["text"] == t("task.cancelled")
+    assert ("task_draft_stale", {"action": "cancel"}) in await events()
     assert draft_fields(await state_data())["title"] == "Заплатить налог"
 
     await process_update(tap(second, "task.btn_save"), fake_max)
@@ -471,6 +478,7 @@ async def test_add_anyway_under_old_duplicate_does_not_save_new_draft(fake_max, 
 
     await process_update(tap(duplicate, "task.btn_add_anyway"), fake_max)
     assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert ("task_draft_stale", {"action": "anyway"}) in await events()
     assert [x.title for x in await tasks()] == ["Оплатить аренду"]  # только прежняя
 
 
@@ -482,6 +490,7 @@ async def test_yes_under_old_past_date_does_not_touch_new_draft(fake_max, no_bot
 
     await process_update(tap(past, "task.btn_yes"), fake_max)
     assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert ("task_draft_stale", {"action": "yes"}) in await events()
     assert draft_fields(await state_data()) == {
         "title": "Заплатить налог",
         "due_date": "2026-11-05",
@@ -507,6 +516,52 @@ async def test_legacy_button_without_id_does_not_save_new_draft(fake_max, no_bot
     expected = "task.cancelled" if action == "cancel" else "task.draft_stale"
     assert fake_max.sent[-1]["text"] == t(expected)
     assert draft_fields(await state_data())["title"] == "Заплатить налог"
+    assert ("task_draft_stale", {"action": action}) in await events()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["task:saveX", "task:save:", "task:anywayX", "task:anyway:", "task:yes:", "task:cancelX"],
+)
+async def test_malformed_payload_is_unknown(fake_max, no_bot_name, bad):
+    """Payload не вида «<action>» / «<action>:<id>» — «не понял», черновик не тронут."""
+    await onboarded()
+    await process_update(write("заплатить налог 5 ноября"), fake_max)
+    before = (await state_data())["task_draft"]
+
+    await process_update(press(bad), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+    assert await tasks() == []
+    assert (await state_data())["task_draft"] == before
+    assert all(name != "task_draft_stale" for name, _ in await events())
+
+
+async def test_duplicate_found_on_save_keeps_draft_and_add_anyway_saves(fake_max, no_bot_name):
+    """Confirm, затем такая же задача появилась (например, из мини-аппа): «Сохранить» → duplicate.
+
+    Черновик тот же (id не меняется): «Добавить всё равно» сохраняет, кнопки confirm живы.
+    """
+    await onboarded()
+    await process_update(write("оплатить аренду 5 ноября"), fake_max)
+    confirm = fake_max.sent[-1]
+    draft_id = (await state_data())["task_draft"]["id"]
+    async with SessionLocal() as s:
+        s.add(Task(user_id=USER_ID, title="Оплатить аренду", due_date=date(2026, 11, 5)))
+        await s.commit()
+
+    await process_update(tap(confirm, "task.btn_save"), fake_max)
+    duplicate = fake_max.sent[-1]
+    assert duplicate["text"] == t("task.duplicate", date="5 ноября")
+    assert (await state_data())["task_draft"]["id"] == draft_id
+    assert payload_of(duplicate, "task.btn_add_anyway") == f"{task_chat.ANYWAY}:{draft_id}"
+
+    await process_update(tap(duplicate, "task.btn_add_anyway"), fake_max)
+    assert fake_max.sent[-1]["text"] == t(
+        "task.saved", count=2, count_word=t("calendar_ready.count_few")
+    )
+    assert len(await tasks()) == 2
+    assert all(name != "task_draft_stale" for name, _ in await events())
 
 
 async def test_legacy_button_with_legacy_draft_works_as_before(fake_max, no_bot_name):

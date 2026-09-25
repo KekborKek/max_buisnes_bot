@@ -14,7 +14,8 @@ title и due_date): его показывает `confirm`, сохраняет «
 Черновик один, а сообщений с кнопками может быть несколько (#87). Каждый новый черновик получает
 короткий `id`, и кнопки confirm / duplicate / past_date несут его в payload. Кнопка не текущего
 черновика ничего не сохраняет: `task.draft_stale` («Отмена» — просто `cancelled`, текущий черновик
-живёт дальше). Кнопки, отправленные до #87 (payload без id), работают только с черновиком без id.
+живёт дальше) и событие `task_draft_stale`. Кнопки, отправленные до #87 (payload без id), работают
+только с черновиком без id. Payload другого вида («task:saveX», «task:save:») — «не понял».
 
 Payload кнопок (`<id>` — id черновика):
     task:save:<id> — «Сохранить»   task:anyway:<id> — «Добавить всё равно»
@@ -24,7 +25,8 @@ Payload кнопок (`<id>` — id черновика):
 
 import logging
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from enum import Enum
 
 from sqlalchemy import func, select
 
@@ -75,23 +77,47 @@ def next_same_day(day: date, today: date) -> date | None:
     return None
 
 
-def _pressed_id(ctx: Ctx, action: str) -> str | None:
-    """Id черновика из payload «<action>:<id>»; старая кнопка без id — None."""
-    rest = (ctx.payload or "")[len(action) :]
-    return rest[1:] if rest.startswith(":") and len(rest) > 1 else None
+class Press(Enum):
+    """Чья кнопка нажата: текущего черновика, прежнего или payload не нашего вида."""
+
+    OWN = "own"
+    STALE = "stale"
+    BAD = "bad"
 
 
-def _is_stale(data: dict, pressed_id: str | None) -> bool:
-    """Кнопка от другого черновика: id в payload не совпадает с id текущего.
+def _press(ctx: Ctx, action: str, data: dict) -> Press:
+    """Разбор payload кнопки черновика: ровно `action` (кнопка до #87) или «<action>:<id>».
 
-    Черновика нет вовсе (сохранён, отменён) — не «устарел», а «не понял», как раньше.
+    Кнопка от другого черновика — id в payload не совпадает с id текущего. Черновика нет
+    вовсе (сохранён, отменён) — не «устарел»: обработчик ответит «не понял», как раньше.
     Старая кнопка без id совпадает только с черновиком без id (записанным до #87).
     """
+    raw_payload = ctx.payload or ""
+    if raw_payload == action:
+        pressed: str | None = None
+    elif raw_payload.startswith(f"{action}:") and len(raw_payload) > len(action) + 1:
+        pressed = raw_payload[len(action) + 1 :]
+    else:
+        return Press.BAD
     raw = data.get(fallback.TASK_DRAFT_KEY)
-    return isinstance(raw, dict) and raw.get("id") != pressed_id
+    if isinstance(raw, dict) and raw.get("id") != pressed:
+        return Press.STALE
+    return Press.OWN
 
 
-async def _reply_stale(ctx: Ctx) -> None:
+def _draft_id(data: dict) -> str | None:
+    """Id текущего черновика; у черновика до #87 его нет."""
+    raw = data.get(fallback.TASK_DRAFT_KEY)
+    value = raw.get("id") if isinstance(raw, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+async def _track_stale(ctx: Ctx, action: str) -> None:
+    await ctx.track("task_draft_stale", {"action": action.removeprefix("task:")})
+
+
+async def _reply_stale(ctx: Ctx, action: str) -> None:
+    await _track_stale(ctx, action)
     await ctx.reply(t("task.draft_stale"))
 
 
@@ -117,19 +143,24 @@ async def _forget_draft(ctx: Ctx) -> None:
     await ctx.set_state(state, data)
 
 
-async def _load_today(ctx: Ctx) -> tuple[Profile | None, date, str]:
+async def _load_today(ctx: Ctx) -> tuple[Profile | None, date, str, datetime]:
+    """Профиль, сегодня и пояс пользователя и `now` — один на весь обработчик."""
     assert ctx.user_id is not None
+    now = common.now()
     profile = await ctx.session.get(Profile, ctx.user_id)
-    today, tz = rem.user_today(profile, common.now())
-    return profile, today, tz
+    today, tz = rem.user_today(profile, now)
+    return profile, today, tz, now
 
 
 # --- клавиатуры ----------------------------------------------------------------------------
 
 
-def payload(action: str, draft_id: str) -> str:
-    """Payload кнопки черновика: «task:save:<id>» (до 1024 символов — docs/max-api-notes.md)."""
-    return f"{action}:{draft_id}"
+def payload(action: str, draft_id: str | None) -> str:
+    """Payload кнопки черновика: «task:save:<id>» (до 1024 символов — docs/max-api-notes.md).
+
+    Черновик до #87 без id — кнопка тоже без id, как раньше.
+    """
+    return f"{action}:{draft_id}" if draft_id else action
 
 
 def confirm_keyboard(draft_id: str) -> dict:
@@ -141,7 +172,7 @@ def confirm_keyboard(draft_id: str) -> dict:
     return kb.inline_keyboard([kb.callback(t("task.btn_save"), payload(SAVE, draft_id))], second)
 
 
-def past_date_keyboard(draft_id: str) -> dict:
+def past_date_keyboard(draft_id: str | None) -> dict:
     return kb.inline_keyboard(
         [
             kb.callback(t("task.btn_yes"), payload(YES, draft_id)),
@@ -150,7 +181,7 @@ def past_date_keyboard(draft_id: str) -> dict:
     )
 
 
-def duplicate_keyboard(draft_id: str) -> dict:
+def duplicate_keyboard(draft_id: str | None) -> dict:
     return kb.inline_keyboard(
         [
             kb.callback(t("task.btn_add_anyway"), payload(ANYWAY, draft_id)),
@@ -191,14 +222,14 @@ async def _put_draft(ctx: Ctx, title: str, due_date: date) -> str:
     return draft_id
 
 
-def will_remind(due_date: date, tz: str) -> bool:
+def will_remind(due_date: date, tz: str, now: datetime) -> bool:
     """Будет ли напоминание, если сохранить сейчас: тот же расчёт, что в `_save` (D11)."""
     planned = rem.plan_task_notification(
         due_date,
         remind_offset_days=REMIND_OFFSET_DAYS,
         remind_hour=REMIND_HOUR,
         tz=tz,
-        now=common.now(),
+        now=now,
     )
     return planned is not None
 
@@ -220,7 +251,9 @@ async def show_past_date(ctx: Ctx, title: str, due_date: date, today: date) -> N
     )
 
 
-async def propose(ctx: Ctx, title: str, due_date: date, today: date, tz: str) -> None:
+async def propose(
+    ctx: Ctx, title: str, due_date: date, today: date, tz: str, now: datetime
+) -> None:
     """`confirm` с черновиком; такая же задача на эту дату уже есть — `duplicate`.
 
     Напоминание обещаем, только если оно будет создано (#87): на сегодня и на завтра после
@@ -234,7 +267,7 @@ async def propose(ctx: Ctx, title: str, due_date: date, today: date, tz: str) ->
         )
         return
     day = format_date(due_date, today)
-    if will_remind(due_date, tz):
+    if will_remind(due_date, tz, now):
         text = t(
             "task.confirm",
             title=title,
@@ -284,12 +317,13 @@ async def _save(ctx: Ctx, action: str, *, check_duplicate: bool) -> None:
     """«Сохранить» / «Добавить всё равно»: `Task` + `task`-уведомление + `saved`."""
     if ctx.user_id is None:
         return
-    profile, today, tz = await _load_today(ctx)
+    profile, today, tz, now = await _load_today(ctx)
     _, data = await ctx.get_state()
-    if _is_stale(data, _pressed_id(ctx, action)):
-        await _reply_stale(ctx)
+    press = _press(ctx, action, data)
+    if press is Press.STALE:
+        await _reply_stale(ctx, action)
         return
-    pending = _draft_from(data)
+    pending = _draft_from(data) if press is Press.OWN else None
     if profile is None or pending is None:
         await fallback.show_unknown(ctx)
         return
@@ -298,10 +332,10 @@ async def _save(ctx: Ctx, action: str, *, check_duplicate: bool) -> None:
         await show_past_date(ctx, title, due_date, today)
         return
     if check_duplicate and await _has_duplicate(ctx, title, due_date):
-        draft_id = await _put_draft(ctx, title, due_date)
+        # Черновик тот же: кнопки исходного confirm продолжают работать.
         await ctx.reply(
             t("task.duplicate", date=format_date(due_date, today)),
-            attachments=[duplicate_keyboard(draft_id)],
+            attachments=[duplicate_keyboard(_draft_id(data))],
         )
         return
 
@@ -314,7 +348,7 @@ async def _save(ctx: Ctx, action: str, *, check_duplicate: bool) -> None:
     )
     ctx.session.add(task)
     await ctx.session.flush()
-    await rem.sync_task_notification(ctx.session, task, tz=tz, now=common.now())
+    await rem.sync_task_notification(ctx.session, task, tz=tz, now=now)
     await ctx.track("task_created", {"source": "chat", "remind_offset": REMIND_OFFSET_DAYS})
     await _forget_draft(ctx)
     count = await _calendar_count(ctx, today)
@@ -338,7 +372,7 @@ async def on_free_text(ctx: Ctx) -> None:
         await fallback.show_unknown(ctx)
         return
 
-    profile, today, tz = await _load_today(ctx)
+    profile, today, tz, now = await _load_today(ctx)
     if not is_onboarded(profile):
         # До конца онбординга свободный текст — забота экрана 2 (use_buttons).
         await ctx.reply(t("onboarding.use_buttons"), attachments=[start_keyboard()])
@@ -359,7 +393,7 @@ async def on_free_text(ctx: Ctx) -> None:
     if parsed.explicit_year and parsed.due_date < today:
         await show_past_date(ctx, parsed.title, parsed.due_date, today)
         return
-    await propose(ctx, parsed.title, parsed.due_date, today, tz)
+    await propose(ctx, parsed.title, parsed.due_date, today, tz, now)
 
 
 @router.on_callback(SAVE)
@@ -377,17 +411,18 @@ async def on_yes(ctx: Ctx) -> None:
     """«Да» на past_date: дата → тот же день ближайшего не прошедшего года, снова `confirm`."""
     if ctx.user_id is None:
         return
-    _, today, tz = await _load_today(ctx)
+    _, today, tz, now = await _load_today(ctx)
     _, data = await ctx.get_state()
-    if _is_stale(data, _pressed_id(ctx, YES)):
-        await _reply_stale(ctx)
+    press = _press(ctx, YES, data)
+    if press is Press.STALE:
+        await _reply_stale(ctx, YES)
         return
-    pending = _draft_from(data)
+    pending = _draft_from(data) if press is Press.OWN else None
     next_date = next_same_day(pending[1], today) if pending else None
     if pending is None or next_date is None:
         await fallback.show_unknown(ctx)
         return
-    await propose(ctx, pending[0], next_date, today, tz)
+    await propose(ctx, pending[0], next_date, today, tz, now)
 
 
 @router.on_callback(CANCEL)
@@ -396,7 +431,13 @@ async def on_cancel(ctx: Ctx) -> None:
     if ctx.user_id is None:
         return
     _, data = await ctx.get_state()
-    if not _is_stale(data, _pressed_id(ctx, CANCEL)):
+    press = _press(ctx, CANCEL, data)
+    if press is Press.BAD:
+        await fallback.show_unknown(ctx)
+        return
+    if press is Press.STALE:
+        await _track_stale(ctx, CANCEL)
+    else:
         await _forget_draft(ctx)
     await ctx.reply(t("task.cancelled"))
 
@@ -405,13 +446,13 @@ async def _with_date(ctx: Ctx, days: int) -> None:
     """«Завтра» / «Через неделю» экрана 10: название из `task_title`, дата подставлена."""
     if ctx.user_id is None:
         return
-    _, today, tz = await _load_today(ctx)
+    _, today, tz, now = await _load_today(ctx)
     _, data = await ctx.get_state()
     title = data.get(fallback.TASK_TITLE_KEY)
     if not isinstance(title, str) or not title:
         await fallback.show_unknown(ctx)
         return
-    await propose(ctx, title, today + timedelta(days=days), today, tz)
+    await propose(ctx, title, today + timedelta(days=days), today, tz, now)
 
 
 @router.on_callback(fallback.TOMORROW)
