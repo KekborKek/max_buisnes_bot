@@ -245,11 +245,14 @@ body {
   pointer-events: none;
 }
 
+/* Цвета тоста — инверсия темы: фон цвета основного текста, текст цвета фона. `--background-overlay`
+ * не годится: в тёмной теме это полупрозрачный тёмный, а `--text-primary-inverse` там почти чёрный —
+ * тост превращался в пустую полупрозрачную плашку. */
 .toast {
   max-width: calc(100% - 32px);
   padding: 10px 16px;
   border-radius: 12px;
-  background: var(--background-overlay);
+  background: var(--text-primary);
   color: var(--text-primary-inverse);
 }
 
