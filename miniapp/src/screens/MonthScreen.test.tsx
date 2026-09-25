@@ -93,7 +93,7 @@ test("загрузка: шапка и сетка сразу, точек нет, 
   );
 });
 
-test("месяц пуст: monthEmpty в предложном падеже и «+ Задача» на форму", async () => {
+test("месяц пуст: monthEmpty в предложном падеже, «+ Задача» одна и ведёт на форму с датой сегодня", async () => {
   // Просроченное из другого месяца (бэкенд добавляет такие к периоду) месяц не наполняет.
   const { nav } = renderMonth(
     loaded([makeItem({ due_date: "2026-09-01", status: "overdue", title: "Старое" })]),
@@ -102,8 +102,51 @@ test("месяц пуст: monthEmpty в предложном падеже и «
   expect(screen.getByText("В октябре обязательных сроков нет")).toBeInTheDocument();
   expect(screen.queryByText("Старое")).not.toBeInTheDocument();
   expect(screen.queryByText(texts.month.dayEmpty)).not.toBeInTheDocument();
+  // Кнопка не дублируется: в пустом месяце нижней панели bottom-bar нет.
+  expect(screen.getAllByRole("button", { name: texts.month.addTask })).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
-  expect(nav.push).toHaveBeenCalledWith({ name: "task", draft: false });
+  expect(nav.push).toHaveBeenCalledWith({
+    name: "task",
+    draft: false,
+    date: TODAY,
+    from: "month",
+  });
+});
+
+test("месяц с событиями: «+ Задача» в нижней панели всегда, дата — выбранный (сегодняшний) день", async () => {
+  const { nav } = renderMonth(loaded(ITEMS));
+  // Ровно одна кнопка «+ Задача» — в нижней панели, не в пустом блоке (события есть).
+  expect(screen.getAllByRole("button", { name: texts.month.addTask })).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
+  expect(nav.push).toHaveBeenLastCalledWith({
+    name: "task",
+    draft: false,
+    date: TODAY,
+    from: "month",
+  });
+});
+
+test("выбран будущий день — дата в форме та же; выбран день в прошлом месяце — завтра", async () => {
+  const { nav, prev } = renderMonth(loaded(ITEMS));
+  // Будущий день этого месяца.
+  await userEvent.click(day("28 октября, Налоги, Отчётность"));
+  await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
+  expect(nav.push).toHaveBeenLastCalledWith({
+    name: "task",
+    draft: false,
+    date: "2026-10-28",
+    from: "month",
+  });
+
+  // Ушли в прошлый месяц (сентябрь, весь он раньше «сегодня» 2026-10-14) — выбор 1-го числа.
+  await userEvent.click(prev());
+  await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
+  expect(nav.push).toHaveBeenLastCalledWith({
+    name: "task",
+    draft: false,
+    date: "2026-10-15",
+    from: "month",
+  });
 });
 
 test("день пуст: dayEmpty, сетка с точками остаётся", async () => {
