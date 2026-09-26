@@ -7,6 +7,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import (
@@ -16,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
@@ -141,7 +143,8 @@ async def test_old_schema_gets_safe_columns_and_keeps_rows(tmp_engine, caplog):
     assert [(fk["table"], fk["to"], fk["on_delete"]) for fk in fks] == [("owners", "id", "CASCADE")]
 
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 5
+    assert len([m for m in warnings if "добавлена колонка" in m]) == 5
+    assert any("создан индекс ix_items_owner_id" in m for m in warnings)
     assert any("items" in m and "priority" in m for m in warnings)
     assert not _problems(caplog)
 
@@ -182,6 +185,82 @@ async def test_failed_alter_is_logged_and_others_applied(tmp_engine, caplog):
     assert len(applied) == 1 and "note" in applied[0]
     assert "stamp" not in await _columns(tmp_engine, "items")
     assert any("stamp" in r.getMessage() for r in _problems(caplog))
+
+
+async def test_composite_index_on_two_new_columns(tmp_engine, caplog):
+    """Индекс создаётся после всех ALTER: на момент первого ALTER второй колонки ещё нет."""
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    await _execute(
+        tmp_engine,
+        "CREATE TABLE items (id INTEGER PRIMARY KEY)",
+        "INSERT INTO items (id) VALUES (1)",
+    )
+    md = MetaData()
+    Table(
+        "items",
+        md,
+        Column("id", Integer, primary_key=True),
+        Column("a", Integer),
+        Column("b", String(20)),
+        Index("ix_items_a_b", "a", "b"),
+    )
+
+    applied = await _start(tmp_engine, md)
+
+    assert len(applied) == 2
+    async with tmp_engine.connect() as conn:
+        cols = [r[2] for r in await conn.execute(text("PRAGMA index_info(ix_items_a_b)"))]
+    assert cols == ["a", "b"]
+    assert not _problems(caplog)
+
+
+async def test_unique_index_column_is_not_added(tmp_engine, caplog):
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    await _execute(tmp_engine, "CREATE TABLE items (id INTEGER PRIMARY KEY)")
+    md = MetaData()
+    Table(
+        "items",
+        md,
+        Column("id", Integer, primary_key=True),
+        Column("code", String(8)),
+        Index("ux_items_code", "code", unique=True),
+    )
+    alters = _count_alters(tmp_engine)
+
+    assert await _start(tmp_engine, md) == []
+    assert alters == []
+    assert "code" not in await _columns(tmp_engine, "items")
+    assert any(
+        "колонка code" in r.getMessage() and "уникальный индекс" in r.getMessage()
+        for r in _problems(caplog)
+    )
+
+
+async def test_failed_index_is_logged_as_index_error(tmp_engine, caplog):
+    """Колонка добавлена (ALTER не откатить), а сбой индекса в логе — именно про индекс."""
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    await _execute(
+        tmp_engine,
+        "CREATE TABLE items (id INTEGER PRIMARY KEY)",
+        # имя занято таблицей: у индексов и таблиц SQLite одно пространство имён
+        "CREATE TABLE ix_items_note (id INTEGER)",
+    )
+    md = MetaData()
+    Table(
+        "items",
+        md,
+        Column("id", Integer, primary_key=True),
+        Column("note", String(20), index=True),
+    )
+
+    applied = await _start(tmp_engine, md)
+
+    assert len(applied) == 1
+    assert "note" in await _columns(tmp_engine, "items")
+    errors = [r.getMessage() for r in _problems(caplog)]
+    assert len(errors) == 1
+    assert "индекс ix_items_note" in errors[0]
+    assert "не удалось добавить колонку" not in errors[0]
 
 
 # --- Несовместимые расхождения -----------------------------------------------------------
@@ -310,6 +389,47 @@ def test_db_nullable_model_not_null_is_not_drift():
 
 # --- Настоящие модели --------------------------------------------------------------------
 
+# Снимок DDL базы, созданной моделями из c0e0ec6 («Создать шаблон репозитория») через
+# create_all на SQLite. Снимок, а не импорт старого кода: так тест не зависит от истории.
+SCHEMA_C0E0EC6 = [
+    """CREATE TABLE users (
+        user_id BIGINT NOT NULL, name VARCHAR(255), phone VARCHAR(32),
+        created_at DATETIME NOT NULL, PRIMARY KEY (user_id))""",
+    """CREATE TABLE dialog_states (
+        user_id BIGINT NOT NULL, state VARCHAR(64), data JSON NOT NULL,
+        updated_at DATETIME NOT NULL, PRIMARY KEY (user_id))""",
+    """CREATE TABLE processed_updates (
+        "key" VARCHAR(128) NOT NULL, created_at DATETIME NOT NULL, PRIMARY KEY ("key"))""",
+    """CREATE TABLE events (
+        id INTEGER NOT NULL, user_id BIGINT, name VARCHAR(64) NOT NULL, props JSON NOT NULL,
+        created_at DATETIME NOT NULL, PRIMARY KEY (id))""",
+    "CREATE INDEX ix_events_name ON events (name)",
+    "CREATE INDEX ix_events_user_id ON events (user_id)",
+]
+
+
+async def test_real_models_on_c0e0ec6_schema_no_alter_no_errors(tmp_engine, caplog):
+    """Страж: база, созданная первыми моделями и с данными, стартует без ALTER и ERROR."""
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    await _execute(
+        tmp_engine,
+        *SCHEMA_C0E0EC6,
+        "INSERT INTO users VALUES (1, 'Тест', NULL, '2026-09-16 08:00:00.000000')",
+        "INSERT INTO dialog_states VALUES (1, NULL, '{}', '2026-09-16 08:00:00.000000')",
+        "INSERT INTO processed_updates VALUES ('k1', '2026-09-16 08:00:00.000000')",
+        "INSERT INTO events VALUES (1, 1, 'bot_started', '{}', '2026-09-16 08:00:00.000000')",
+    )
+    alters = _count_alters(tmp_engine)
+
+    await init_db(tmp_engine)
+
+    assert alters == []
+    assert not _problems(caplog)
+    async with tmp_engine.connect() as conn:
+        assert await conn.scalar(text("SELECT name FROM users WHERE user_id = 1")) == "Тест"
+        tables = set((await conn.execute(text("SELECT name FROM sqlite_master"))).scalars())
+    assert {"profiles", "tasks", "notifications"} <= tables  # новые таблицы — от create_all
+
 
 async def test_real_models_fresh_db_twice_no_alter_no_alarms(tmp_engine, caplog):
     caplog.set_level(logging.WARNING, logger=LOGGER)
@@ -355,6 +475,15 @@ async def test_purge_respects_max_age():
 
     assert await purge_processed_updates(max_age=timedelta(hours=1)) == 1
     assert await _keys() == {"minute"}
+
+
+async def test_purge_normalizes_aware_now_to_utc():
+    """created_at хранится без смещения (UTC): «сейчас» в другом поясе приводится к UTC."""
+    await _add_keys(old=timedelta(hours=25), recent=timedelta(hours=23))
+    now_moscow = datetime.now(ZoneInfo("Europe/Moscow"))
+
+    assert await purge_processed_updates(now=now_moscow) == 1
+    assert await _keys() == {"recent"}
 
 
 async def test_lifespan_purges_old_keys(monkeypatch):

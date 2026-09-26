@@ -172,6 +172,10 @@ def _add_column_ddl(col: Column, dialect: Dialect) -> str:
         isinstance(c, UniqueConstraint) and col.name in c.columns for c in table.constraints
     ):
         raise ValueError("колонка с ограничением UNIQUE")
+    if any(index.unique and col.name in index.columns for index in table.indexes):
+        # ALTER без индекса оставил бы колонку без уникальности, а сбой создания индекса
+        # после ALTER не откатить: DDL в pysqlite идёт в autocommit
+        raise ValueError("колонка входит в уникальный индекс")
     default_sql = _default_sql(col, dialect)
     if not col.nullable and default_sql is None:
         raise ValueError("новая NOT NULL колонка без скалярного или серверного default")
@@ -255,7 +259,11 @@ async def sync_schema(target: AsyncEngine, metadata: MetaData) -> list[str]:
     """Добавляет безопасные недостающие колонки, о прочих расхождениях пишет log.error.
 
     Возвращает выполненные ALTER. Не бросает исключений: старт приложения важнее, а о сбое
-    будет log.exception. Каждый ALTER — в своей транзакции, чтобы неудачный не отменял прочие.
+    будет log.exception. DDL в pysqlite выполняется в autocommit: каждый ALTER применяется
+    сразу и откатить его нельзя, поэтому сначала выполняются все ALTER (неудачный не мешает
+    остальным), а затем отдельным проходом создаются индексы, в которые входят новые колонки,
+    — в том числе составные на несколько новых колонок. Уникальные индексы сюда не попадают:
+    такие колонки автоматически не добавляются (_add_column_ddl).
     """
     if target.dialect.name != "sqlite":
         log.info("Сверка схемы БД рассчитана на SQLite, для %s пропущена", target.dialect.name)
@@ -269,14 +277,12 @@ async def sync_schema(target: AsyncEngine, metadata: MetaData) -> list[str]:
         plan = plan_schema_changes(existing, metadata, target.dialect)
         for problem in plan.problems:
             log.error("Схема БД разошлась с моделями: %s. %s", problem, SCHEMA_FIX_HINT)
+
+        added: dict[str, set[str]] = {}
         for change in plan.add:
             try:
                 async with target.begin() as conn:
                     await conn.execute(text(change.ddl))
-                    table = metadata.tables[change.table]
-                    for index in table.indexes:
-                        if change.column in index.columns:
-                            await conn.run_sync(index.create, checkfirst=True)
             except Exception:
                 log.exception(
                     "Схема БД: не удалось добавить колонку %s.%s (%s). %s",
@@ -287,12 +293,31 @@ async def sync_schema(target: AsyncEngine, metadata: MetaData) -> list[str]:
                 )
                 continue
             applied.append(change.ddl)
+            added.setdefault(change.table, set()).add(change.column)
             log.warning(
                 "Схема БД: в таблицу %s добавлена колонка %s (%s)",
                 change.table,
                 change.column,
                 change.ddl,
             )
+
+        for table_name, columns in added.items():
+            for index in metadata.tables[table_name].indexes:
+                if not columns & set(index.columns.keys()):
+                    continue
+                try:
+                    async with target.begin() as conn:
+                        await conn.run_sync(index.create, checkfirst=True)
+                except Exception:
+                    log.exception(
+                        "Схема БД: колонки добавлены, но не удалось создать индекс %s "
+                        "на таблице %s. Создайте его вручную. %s",
+                        index.name,
+                        table_name,
+                        SCHEMA_FIX_HINT,
+                    )
+                    continue
+                log.warning("Схема БД: на таблице %s создан индекс %s", table_name, index.name)
     except Exception:
         log.exception("Сверка схемы БД не удалась, приложение продолжает работу")
     return applied
@@ -320,10 +345,15 @@ PROCESSED_UPDATES_TTL = timedelta(hours=24)
 async def purge_processed_updates(
     now: datetime | None = None, max_age: timedelta = PROCESSED_UPDATES_TTL
 ) -> int:
-    """Удаляет ключи обработанных апдейтов старше `max_age`. Возвращает число удалённых."""
+    """Удаляет ключи обработанных апдейтов старше `max_age`. Возвращает число удалённых.
+
+    `created_at` в SQLite хранится строкой без смещения (UTC, как пишет utcnow), поэтому
+    порог приводим к UTC: иначе aware-время в другом поясе сравнивалось бы по местным часам.
+    Индекса по `created_at` нет — это полный скан таблицы раз в старт, для неё это дёшево.
+    """
     from app.core.models import ProcessedUpdate
 
-    cutoff = (now or datetime.now(UTC)) - max_age
+    cutoff = (now or datetime.now(UTC)).astimezone(UTC) - max_age
     async with SessionLocal() as session:
         result = await session.execute(
             delete(ProcessedUpdate).where(ProcessedUpdate.created_at < cutoff)
