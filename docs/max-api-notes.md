@@ -45,7 +45,7 @@
 - **`open_app`** (схема `OpenAppButton` в https://dev.max.ru/docs-api/methods/POST/messages, сверено 23.09.2026): `{"type": "open_app", "text", "web_app"?, "contact_id"?, "payload"?}`.
   - `web_app` — «публичное имя (username) бота или ссылка на него, чьё мини-приложение надо запустить»;
   - `contact_id` — «идентификатор бота, чьё мини-приложение надо запустить» (int64);
-  - `payload` — «параметр запуска, который будет передан в initData мини-приложения». В мини-аппе параметр запуска — `WebApp.initDataUnsafe.start_param` (https://dev.max.ru/docs/webapps/bridge). Что `payload` кнопки приходит именно в `start_param`, а не в другое поле initData, — **[сверить]** на живом запуске.
+  - `payload` — «параметр запуска, который будет передан в initData мини-приложения». В мини-аппе параметр запуска — `WebApp.initDataUnsafe.start_param` (https://dev.max.ru/docs/webapps/bridge). Что `payload` кнопки приходит именно в `start_param` подписанной initData, — **подтверждено 27.09 на проде** (мобильный MAX): кнопка «Изменить» с `task_draft_<id>` дала сверку id в `/api/me` (#96).
   - Ни одно из полей в схеме не обязательно; ограничений длины и алфавита `payload` схема не задаёт. Наши значения — `task_draft`, `item_<type>_<id>` (латиница, цифры, `_`).
   - В коде — `bot/keyboards.open_app(text, payload, *, web_app, contact_id)`; без адреса берёт `MAX_BOT_USERNAME`. Пустой `MAX_BOT_USERNAME` — кнопку не показываем.
 - В `payload` — короткий идентификатор, не данные.
