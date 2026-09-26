@@ -37,7 +37,7 @@ from app.bot import keyboards as kb
 from app.bot.formatting import count_words, format_date
 from app.calendar import loader
 from app.calendar.reminders import DIGEST_KIND, as_utc, reminder_settings, send_at_utc
-from app.calendar.types import ItemType, Reference
+from app.calendar.types import ItemType, NotificationKind, Reference
 from app.core import events
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-KIND = DIGEST_KIND
+KIND: NotificationKind = DIGEST_KIND
 # item_type записи-отметки «сводка за неделю отправлялась»; item_id — ГГГГММДД понедельника.
 ITEM_TYPE = "week"
 # Кнопка «Без сводки» (app/bot/handlers/digest.py).
