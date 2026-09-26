@@ -11,7 +11,7 @@ import {
   Radio,
   Typography,
 } from "@maxhub/max-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { addDays } from "../calendar";
 import { errorKind, type ErrorKind } from "../data/http";
@@ -117,6 +117,17 @@ export function TaskFormScreen({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<ErrorKind | null>(null);
   const confirmCancel = useConfirmPress();
+  // Ушли с экрана («Назад») до ответа — данные в кэш всё равно, а навигация и тост — нет:
+  // иначе повторная навигация увела бы дальше того экрана, куда человек уже вернулся сам
+  // (см. SettingsScreen.tsx).
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Правка задачи, которой нет в кэше (не должно случаться: «Перенести» есть только в карточке).
   if (taskId !== undefined && editing?.type !== "task") {
@@ -156,6 +167,7 @@ export function TaskFormScreen({
     request.then(
       (card) => {
         upsert(card);
+        if (!mounted.current) return;
         if (taskId !== undefined) {
           nav.back();
           toast(texts.form.updated);
@@ -171,9 +183,10 @@ export function TaskFormScreen({
       (e: unknown) => {
         // Форма не закрывается, введённое остаётся на месте.
         const kind = errorKind(e);
+        void source.track("error", { where: "task_form", kind }).catch(() => undefined);
+        if (!mounted.current) return;
         setSaving(false);
         setError(kind);
-        void source.track("error", { where: "task_form", kind }).catch(() => undefined);
       },
     );
   };

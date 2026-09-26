@@ -38,7 +38,7 @@ function renderForm(
     upsert: vi.fn(),
     remove: vi.fn(),
   };
-  render(
+  const { unmount } = render(
     <ToastProvider>
       <NavigationContext.Provider value={nav}>
         <CalendarStoreContext.Provider value={store}>
@@ -54,7 +54,7 @@ function renderForm(
       </NavigationContext.Provider>
     </ToastProvider>,
   );
-  return { ...fake, nav, store };
+  return { ...fake, nav, store, unmount };
 }
 
 const nameField = () => screen.getByLabelText(texts.form.name);
@@ -229,6 +229,51 @@ test("правка: поля из карточки, PATCH, назад на 16 + 
   expect(store.upsert).toHaveBeenCalledWith(updated);
   expect(nav.back).toHaveBeenCalledOnce();
   expect(screen.getByText(texts.form.updated)).toBeInTheDocument();
+});
+
+test("правка: ушли назад до ответа — экран размонтирован, ответ пришёл, «Назад» не повторяется (FRONT-22)", async () => {
+  const task = makeTaskCard({ id: 3, title: "Аренда", remind_offset_days: 3, remind_hour: 18 });
+  const { last, nav, store, unmount } = renderForm({
+    taskId: 3,
+    cards: { [itemKey("task", 3)]: task },
+  });
+  await userEvent.click(saveButton());
+  const request = last("updateTask");
+  unmount();
+  const updated = { ...task, due_date: "2026-11-05" };
+  await act(async () => request.resolve(updated));
+  // Данные в общий кэш попадают в любом случае — их не теряем.
+  expect(store.upsert).toHaveBeenCalledWith(updated);
+  // Но навигация и тост — уже нет: пользователь сам ушёл дальше «Назад» до ответа.
+  expect(nav.back).not.toHaveBeenCalled();
+});
+
+test("правка: ушли назад до ответа с ошибкой — экран размонтирован, «Назад» не вызывается, ошибка учтена (FRONT-22)", async () => {
+  const task = makeTaskCard({ id: 3, title: "Аренда" });
+  const { source, last, nav, unmount } = renderForm({
+    taskId: 3,
+    cards: { [itemKey("task", 3)]: task },
+  });
+  await userEvent.click(saveButton());
+  const request = last("updateTask");
+  unmount();
+  await act(async () => request.reject(new ApiError("network")));
+  // Аналитика ошибки всё равно пишется.
+  expect(source.track).toHaveBeenCalledWith("error", { where: "task_form", kind: "network" });
+  expect(nav.back).not.toHaveBeenCalled();
+});
+
+test("новая задача из «Месяца»: ушли назад до ответа — onCreatedFromMonth и «Домой» не вызываются (FRONT-22)", async () => {
+  const onCreatedFromMonth = vi.fn();
+  const { last, nav, unmount } = renderForm({ initialDate: "2026-10-05", onCreatedFromMonth });
+  await userEvent.type(nameField(), "Сверить кассу");
+  await userEvent.click(saveButton());
+  const request = last("createTask");
+  unmount();
+  const created = makeTaskCard({ id: 12, title: "Сверить кассу", due_date: "2026-10-05" });
+  await act(async () => request.resolve(created));
+  expect(onCreatedFromMonth).not.toHaveBeenCalled();
+  expect(nav.home).not.toHaveBeenCalled();
 });
 
 test("«Отмена»: ничего не ввели — сразу назад", async () => {
