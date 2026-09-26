@@ -41,10 +41,17 @@ down:
 # Удаляет ЛОКАЛЬНУЮ базу SQLite (путь из DATABASE_URL в .env, по умолчанию backend/data/app.db)
 # и том Docker app-data. Спрашивает подтверждение. НА ПРОДЕ НЕ ЗАПУСКАТЬ: там живые пользователи,
 # схема обновляется лёгкой миграцией при старте (docs/decisions.md, 27.09.2026).
-# При APP_ENV=prod в .env цель отказывается работать.
+# Отказывается работать при APP_ENV=prod (в окружении или .env) и при наличии тома caddy-data
+# (признак прод-профиля).
 db-reset:
-	@if grep -Eq '^[[:space:]]*APP_ENV=["'"'"']?prod' .env 2>/dev/null; then \
-		echo "APP_ENV=prod в .env: make db-reset на проде запрещён — там живые пользователи."; exit 1; \
+	@if [ "$${APP_ENV:-}" = "prod" ] || grep -Eq '^[[:space:]]*(export[[:space:]]+)?APP_ENV[[:space:]]*=[[:space:]]*["'"'"']?prod' .env 2>/dev/null; then \
+		echo "APP_ENV=prod (в окружении или .env): make db-reset на проде запрещён — там живые пользователи."; exit 1; \
+	fi
+	@caddy="$${COMPOSE_PROJECT_NAME:-max-business-bot}_caddy-data"; \
+	if command -v docker >/dev/null 2>&1 && docker volume inspect "$$caddy" >/dev/null 2>&1; then \
+		echo "Есть том $$caddy — признак прод-профиля (Caddy): make db-reset отказывается работать."; \
+		echo "Если это не прод, а локальный запуск с --profile prod, удалите том сами: docker volume rm $$caddy"; \
+		exit 1; \
 	fi
 	@url="$$(sed -n 's/^[[:space:]]*DATABASE_URL=//p' .env 2>/dev/null | tail -n 1)"; \
 	url="$${url:-$${DATABASE_URL:-sqlite+aiosqlite:///./data/app.db}}"; \
@@ -60,8 +67,12 @@ db-reset:
 	[ -n "$$has_vol" ] && echo "  том Docker $$vol (контейнер backend будет остановлен)"; \
 	printf "Все данные в них пропадут. Введите yes для подтверждения: "; \
 	read answer; [ "$$answer" = "yes" ] || { echo "Отменено, ничего не удалено."; exit 1; }; \
-	for f in $$files; do rm -f "$$f" && echo "Удалён $$f"; done; \
-	if [ -n "$$has_vol" ]; then docker compose rm -sf backend >/dev/null 2>&1 && docker volume rm "$$vol" >/dev/null && echo "Удалён том $$vol"; fi; \
+	for f in $$files; do rm -f "$$f" || { echo "Ошибка: не удалось удалить $$f."; exit 1; }; echo "Удалён $$f"; done; \
+	if [ -n "$$has_vol" ]; then \
+		docker compose rm -sf backend >/dev/null || { echo "Ошибка: не удалось остановить контейнер backend, том $$vol не удалён."; exit 1; }; \
+		docker volume rm "$$vol" >/dev/null || { echo "Ошибка: не удалось удалить том $$vol (см. сообщение Docker выше)."; exit 1; }; \
+		echo "Удалён том $$vol"; \
+	fi; \
 	echo "Готово. Таблицы создадутся заново при следующем старте бэкенда."
 
 check-tools:
