@@ -14,7 +14,7 @@ from sqlalchemy import text as sql_text
 from app.api.routes import router as api_router
 from app.calendar import reminders
 from app.core.config import get_settings
-from app.core.db import SessionLocal, init_db
+from app.core.db import SessionLocal, init_db, purge_processed_updates
 from app.core.max_client import MaxClient
 from app.webhook import router as webhook_router
 
@@ -48,6 +48,11 @@ async def scheduler_loop(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    try:
+        purged = await purge_processed_updates()
+        log.info("Чистка processed_updates при старте: удалено %d", purged)
+    except Exception:
+        log.exception("Чистка processed_updates не удалась, старт продолжается")
     app.state.max_client = MaxClient()
     app.state.scheduler_task = None
     if get_settings().scheduler_enabled:
