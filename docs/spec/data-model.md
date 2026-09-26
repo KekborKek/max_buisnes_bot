@@ -147,7 +147,7 @@ last_checked_at: "2026-09-20"
 |---|---|---|
 | `id` | PK | |
 | `user_id` | FK | |
-| `item_type` | str | `obligation` · `task` |
+| `item_type` | str | `obligation` · `task` · `week` (записи сводки `digest`, `calendar/digest.py`) |
 | `item_id` | int | `UserObligation.id` или `Task.id` |
 | `kind` | str | `d30` · `d7` · `d1` · `overdue` · `snooze` · `task` · `digest` |
 | `send_at` | datetime UTC | 10:00 по поясу пользователя, пересчитан в UTC |
