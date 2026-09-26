@@ -225,6 +225,39 @@ test("?start_param=task_draft открывает форму 17 с чернови
   expect(screen.getByLabelText(texts.form.date)).toHaveValue("2099-11-05");
 });
 
+test("?start_param=task_draft_<id> со своим черновиком — форма 17 заполнена, без тоста", async () => {
+  window.history.replaceState(null, "", "/?start_param=task_draft_ab12cd34");
+  const { source, lastMe } = fakeSource();
+  render(<App source={source} />);
+  expect(source.me).toHaveBeenCalledWith("task_draft_ab12cd34");
+  await act(async () =>
+    lastMe().resolve({
+      ...makeMe(true),
+      draft: { title: "Оплатить аренду", due_date: "2099-11-05" },
+      draft_stale: false,
+    }),
+  );
+  expect(screen.getByLabelText(texts.form.name)).toHaveValue("Оплатить аренду");
+  expect(screen.queryByText(texts.form.draftStale)).not.toBeInTheDocument();
+  expect(source.track).not.toHaveBeenCalledWith("task_draft_stale", expect.anything());
+});
+
+test("черновик из старого сообщения: форма 17 пустая, тост и task_draft_stale (#96)", async () => {
+  window.history.replaceState(null, "", "/?start_param=task_draft_00ff00ff");
+  const { source, lastMe } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve({ ...makeMe(true), draft: null, draft_stale: true }));
+  expect(screen.getByText(texts.form.titleNew)).toBeInTheDocument();
+  expect(screen.getByLabelText(texts.form.name)).toHaveValue("");
+  expect(screen.getByText(texts.form.draftStale)).toBeInTheDocument();
+  expect(source.track).toHaveBeenCalledWith("task_draft_stale", { action: "edit" });
+  expect(source.track.mock.calls.filter(([name]) => name === "task_draft_stale")).toHaveLength(1);
+
+  // «Назад» — на список 14, как у любого входа из бота
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
+});
+
 test("отметка в карточке сразу видна в списке — без перезагрузки календаря", async () => {
   const { source, lastMe, lastCalendar, last } = fakeSource();
   render(<App source={source} />);

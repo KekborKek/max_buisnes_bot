@@ -195,3 +195,11 @@ class MeResponse(BaseModel):
     has_profile: bool = False
     profile: ProfileOut | None = None
     draft: TaskDraft | None = None
+    draft_stale: bool = Field(
+        default=False,
+        description=(
+            "Мини-апп открыт кнопкой черновика из старого сообщения (start_param "
+            "task_draft_<id>, id не совпал с текущим черновиком или черновика уже нет): "
+            "draft = null, форма 17 открывается пустой с тостом (#96)"
+        ),
+    )

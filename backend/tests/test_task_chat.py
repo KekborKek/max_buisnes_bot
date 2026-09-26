@@ -4,6 +4,7 @@
 """
 
 import itertools
+import re
 from datetime import UTC, date, datetime
 
 import pytest
@@ -175,7 +176,7 @@ async def test_confirm_keyboard_save_then_edit_and_cancel(fake_max, bot_name):
     assert rows[0][0]["payload"] == f"{task_chat.SAVE}:{draft_id}"
     edit = rows[1][0]
     assert edit["type"] == "open_app"
-    assert edit["payload"] == "task_draft"
+    assert edit["payload"] == f"task_draft_{draft_id}"  # форма 17 со своим черновиком (#96)
     assert edit["web_app"] == BOT_NAME
     assert rows[1][1]["payload"] == f"{task_chat.CANCEL}:{draft_id}"
 
@@ -424,6 +425,17 @@ def test_draft_payload_fits_max_limit():
         assert len(task_chat.payload(action, "ab12cd34")) <= 1024
 
 
+def test_draft_start_param_format():
+    """start_param «Изменить» / «Выбрать дату» (#96): латиница, цифры и `_`, как `item_*`.
+
+    Ограничений длины и алфавита payload open_app схема MAX не задаёт (docs/max-api-notes.md).
+    """
+    draft_id = fallback.new_draft_id()
+    assert re.fullmatch(r"[0-9a-f]{8}", draft_id)
+    assert fallback.draft_start_param(draft_id) == f"task_draft_{draft_id}"
+    assert fallback.draft_start_param(None) == "task_draft"
+
+
 # --- #87: кнопка старого черновика не сохраняет новый --------------------------------------
 
 
@@ -452,6 +464,22 @@ async def test_save_under_old_confirm_does_not_save_new_draft(fake_max, no_bot_n
     await process_update(tap(second, "task.btn_save"), fake_max)
     [task] = await tasks()
     assert (task.title, task.due_date) == ("Заплатить налог", date(2026, 11, 5))
+
+
+async def test_edit_under_old_confirm_does_not_open_new_draft(fake_max, bot_name, miniapp_api):
+    """«Изменить» под первым из двух confirm — форма 17 без чужого черновика (#96)."""
+    first, second = await two_drafts(fake_max)
+
+    old = await miniapp_api.request(
+        "GET", "/api/me", USER_ID, start_param=payload_of(first, "task.btn_edit")
+    )
+    assert (old.json()["draft"], old.json()["draft_stale"]) == (None, True)
+
+    new = await miniapp_api.request(
+        "GET", "/api/me", USER_ID, start_param=payload_of(second, "task.btn_edit")
+    )
+    assert new.json()["draft"] == {"title": "Заплатить налог", "due_date": "2026-11-05"}
+    assert new.json()["draft_stale"] is False
 
 
 async def test_cancel_under_old_confirm_keeps_new_draft(fake_max, no_bot_name):

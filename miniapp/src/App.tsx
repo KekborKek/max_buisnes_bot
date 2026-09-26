@@ -25,7 +25,7 @@ import { ProfileScreen } from "./screens/ProfileScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
-import { ToastProvider } from "./shell/Toast";
+import { ToastProvider, useToast } from "./shell/Toast";
 import {
   type CalendarStore,
   CalendarStoreContext,
@@ -68,6 +68,10 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
               has_profile: result.has_profile,
             }),
           );
+          // «Изменить» / «Выбрать дату» из старого сообщения бота: черновик не свой (#96).
+          if (result.draft_stale) {
+            quiet(source.track("task_draft_stale", { action: "edit" }));
+          }
         }
       },
       (e: unknown) => {
@@ -105,12 +109,14 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
   let content;
   if (profile) {
     const draft = me.kind === "ready" ? (me.me.draft ?? null) : null;
+    const draftStale = me.kind === "ready" && me.me.draft_stale === true;
     content = (
       <CalendarApp
         source={source}
         profile={profile}
         startParam={startParam}
         draft={draft}
+        draftStale={draftStale}
         onProfile={updateProfile}
       />
     );
@@ -147,14 +153,23 @@ interface CalendarAppProps {
   source: DataSource;
   profile: Profile;
   startParam: string | null;
-  /** Черновик задачи из бота для формы 17 (`start_param=task_draft`). */
+  /** Черновик задачи из бота для формы 17 (`start_param=task_draft[_<id>]`). */
   draft: TaskDraft | null;
+  /** Черновик из старого сообщения бота: форма 17 пустая, при входе — тост (#96). */
+  draftStale: boolean;
   /** Свежий профиль с экрана 19 или 13. Стабилен. */
   onProfile: (profile: Profile) => void;
 }
 
 /** Календарь пользователя с профилем: экраны 14/15/16/17/19/13. Данные общие для вкладок. */
-function CalendarApp({ source, profile, startParam, draft, onProfile }: CalendarAppProps) {
+function CalendarApp({
+  source,
+  profile,
+  startParam,
+  draft,
+  draftStale,
+  onProfile,
+}: CalendarAppProps) {
   const [calendar, setCalendar] = useState<CalendarState>({
     items: null,
     loading: true,
@@ -267,6 +282,15 @@ function CalendarApp({ source, profile, startParam, draft, onProfile }: Calendar
     }),
     [stack, back, source],
   );
+
+  // Форма 17 открыта пустой вместо чужого черновика — объясняем почему, один раз за запуск (#96).
+  const toast = useToast();
+  const staleShown = useRef(false);
+  useEffect(() => {
+    if (!draftStale || staleShown.current) return;
+    staleShown.current = true;
+    toast(texts.form.draftStale);
+  }, [draftStale, toast]);
 
   const [backButton] = useState(getBackButton);
   useBackButton(backButton, stack.length > 1, back);

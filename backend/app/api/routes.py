@@ -4,6 +4,7 @@
 """
 
 import logging
+import re
 from datetime import date
 from typing import Annotated
 
@@ -34,6 +35,11 @@ OptionalRef = Annotated[Reference | None, Depends(optional_reference)]
 # чтобы считать конверсию входа по QR-диплинку (issue #12).
 OPENED_EVENT = "miniapp_opened"
 
+# start_param «Изменить» (экран 9) и «Выбрать дату» (экран 10): «task_draft_<id>» (#96).
+# Голый «task_draft» — кнопки, отправленные до #96: черновик отдаётся без сверки, как раньше.
+DRAFT_PARAM = "task_draft"
+_DRAFT_ID_PARAM = re.compile(r"task_draft_([0-9a-z]{1,32})")
+
 
 def launch_start_param(launch: dict) -> str | None:
     """start_param из подписанной initData: payload диплинка `?start=`.
@@ -45,13 +51,23 @@ def launch_start_param(launch: dict) -> str | None:
     return str(value) if value else None
 
 
-def task_draft(state: DialogState | None) -> TaskDraft | None:
-    """Черновик из бота: data["task_draft"] = {"title": str, "due_date": "YYYY-MM-DD"} (T8b).
+def draft_id_from(start_param: str | None) -> str | None:
+    """Id черновика из start_param «task_draft_<id>»; другой start_param — None."""
+    match = _DRAFT_ID_PARAM.fullmatch(start_param or "")
+    return match.group(1) if match else None
 
+
+def task_draft(state: DialogState | None, draft_id: str | None = None) -> TaskDraft | None:
+    """Черновик из бота: data["task_draft"] = {"title", "due_date": "YYYY-MM-DD", "id"} (T8b).
+
+    `draft_id` — из start_param кнопки (#96): черновик отдаётся, только если id совпал.
+    Без него (голый `task_draft`, другой вход) — текущий черновик, как раньше.
     Битый или неполный черновик — null: форма откроется пустой, а не с ошибкой.
     """
     raw = (state.data or {}).get("task_draft") if state is not None else None
     if not isinstance(raw, dict):
+        return None
+    if draft_id is not None and raw.get("id") != draft_id:
         return None
     title, due = raw.get("title"), raw.get("due_date")
     if not isinstance(title, str) or not isinstance(due, str):
@@ -91,9 +107,10 @@ async def me(
         effective = start_param
     user_id = launch_user_id(launch)
     profile = draft = None
+    draft_id = draft_id_from(effective)
     if user_id is not None:
         profile = profile_out(await session.get(Profile, user_id), reference)
-        draft = task_draft(await session.get(DialogState, user_id))
+        draft = task_draft(await session.get(DialogState, user_id), draft_id)
     return MeResponse(
         user_id=user_id or 0,
         first_name=user.get("first_name") or user.get("name"),
@@ -102,6 +119,8 @@ async def me(
         has_profile=profile is not None,
         profile=profile,
         draft=draft,
+        # Кнопка черновика из старого сообщения: своего черновика нет — форма 17 пустая (#96).
+        draft_stale=draft_id is not None and draft is None,
     )
 
 

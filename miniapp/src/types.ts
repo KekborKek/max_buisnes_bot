@@ -85,8 +85,10 @@ export interface Me {
   start_param?: string | null;
   has_profile: boolean;
   profile: Profile | null;
-  /** Черновик из бота; есть, только если открыли с `start_param=task_draft` и он ещё жив. */
+  /** Черновик из бота; есть, только если открыли с `start_param=task_draft[_<id>]` и он ещё жив. */
   draft?: TaskDraft | null;
+  /** Открыли кнопкой черновика из старого сообщения: `draft` — null, форма 17 пустая (#96). */
+  draft_stale?: boolean;
 }
 
 /** Смещение напоминания своей задачи в днях (D11). */

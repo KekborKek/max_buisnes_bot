@@ -47,10 +47,16 @@ export type StartTarget =
   | null;
 
 const ITEM_PARAM = /^item_(obligation|task)_(\d+)$/;
+/**
+ * «Изменить» (экран 9) и «Выбрать дату» (экран 10): `task_draft_<id>` (#96). Свой ли это черновик,
+ * решает бэкенд (`/api/me` → `draft` / `draft_stale`); голый `task_draft` — кнопки до #96.
+ * Тот же формат, что `_DRAFT_ID_PARAM` в backend/app/api/routes.py.
+ */
+const DRAFT_PARAM = /^task_draft(_[0-9a-z]{1,32})?$/;
 
 export function parseStartParam(raw: string | null): StartTarget {
   if (!raw) return null;
-  if (raw === "task_draft") return { kind: "task_draft" };
+  if (DRAFT_PARAM.test(raw)) return { kind: "task_draft" };
   if (raw === "settings") return { kind: "settings" };
   const m = ITEM_PARAM.exec(raw);
   if (!m) return null;

@@ -266,6 +266,87 @@ async def test_me_draft_from_dialog_state(miniapp_api, data, expected):
     assert body["draft"] == expected
 
 
+# --- #96: черновик по start_param кнопки «Изменить» / «Выбрать дату» ----------------------------
+
+DRAFT = {"title": "Заплатить налог", "due_date": "2026-11-05", "id": "ab12cd34"}
+DRAFT_OUT = {"title": "Заплатить налог", "due_date": "2026-11-05"}
+
+
+@pytest.mark.parametrize(
+    ("data", "start_param", "expected", "stale"),
+    [
+        ({"task_draft": DRAFT}, "task_draft_ab12cd34", DRAFT_OUT, False),  # свой черновик
+        ({"task_draft": DRAFT}, "task_draft_00ff00ff", None, True),  # кнопка старого сообщения
+        ({}, "task_draft_ab12cd34", None, True),  # черновик уже сохранён или отменён
+        ({"task_draft": {**DRAFT, "id": None}}, "task_draft_ab12cd34", None, True),
+        ({"task_draft": DRAFT}, "task_draft", DRAFT_OUT, False),  # кнопка до #96 — как раньше
+        ({"task_draft": DRAFT}, None, DRAFT_OUT, False),  # без start_param — как раньше
+        ({"task_draft": DRAFT}, "item_task_7", DRAFT_OUT, False),  # другой вход — как раньше
+        ({"task_draft": DRAFT}, "task_draft_", DRAFT_OUT, False),  # не наш формат — не сверяем
+        ({"task_draft": DRAFT}, "task_draft_AB12", DRAFT_OUT, False),
+        ({}, "task_draft", None, False),
+    ],
+)
+async def test_me_draft_checks_id_from_signed_start_param(
+    miniapp_api, data, start_param, expected, stale
+):
+    await add_user(OWNER)
+    async with SessionLocal() as s:
+        s.add(DialogState(user_id=OWNER, state="task_confirm", data=data))
+        await s.commit()
+    r = await miniapp_api.request("GET", "/api/me", OWNER, start_param=start_param)
+    body = r.json()
+    assert body["start_param"] == start_param
+    assert (body["draft"], body["draft_stale"]) == (expected, stale)
+
+
+async def test_me_draft_query_start_param_ignored_for_signed_init_data(miniapp_api):
+    """Подмена start_param запросом не открывает чужой черновик при настоящей подписи."""
+    await add_user(OWNER)
+    async with SessionLocal() as s:
+        s.add(DialogState(user_id=OWNER, state="task_confirm", data={"task_draft": DRAFT}))
+        await s.commit()
+    r = await miniapp_api.request(
+        "GET",
+        "/api/me",
+        OWNER,
+        start_param="task_draft_00ff00ff",
+        params={"start_param": "task_draft_ab12cd34"},
+    )
+    body = r.json()
+    assert (body["draft"], body["draft_stale"]) == (None, True)
+
+
+@pytest.mark.parametrize(
+    ("start_param", "expected", "stale"),
+    [
+        ("task_draft_ab12cd34", DRAFT_OUT, False),
+        ("task_draft_00ff00ff", None, True),
+        ("task_draft", DRAFT_OUT, False),
+    ],
+)
+async def test_me_draft_dev_query_start_param(
+    miniapp_api, monkeypatch, start_param, expected, stale
+):
+    """Вне MAX (ALLOW_DEV_INITDATA) start_param из запроса сверяется так же, как подписанный."""
+    from app.api import deps
+    from app.core.config import Settings
+
+    dev = Settings(_env_file=None, app_env="dev", allow_dev_initdata=True, max_bot_token="t")
+    monkeypatch.setattr(deps, "get_settings", lambda: dev)
+    dev_user = 1  # фиктивный пользователь dev-режима (api/deps.current_launch)
+    await add_user(dev_user)
+    async with SessionLocal() as s:
+        s.add(DialogState(user_id=dev_user, state="task_confirm", data={"task_draft": DRAFT}))
+        await s.commit()
+    r = await miniapp_api.client.get(
+        "/api/me", params={"start_param": start_param}, headers={"X-Max-Init-Data": "dev"}
+    )
+    body = r.json()
+    assert body["is_dev"] is True
+    assert (body["draft"], body["draft_stale"]) == (expected, stale)
+
+
 # --- GET /api/calendar ------------------------------------------------------------------------
 
 

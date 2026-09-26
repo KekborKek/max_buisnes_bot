@@ -58,11 +58,13 @@ function mockMe(profile: Profile | null, startParam: string | null): Me {
     start_param: startParam,
     has_profile: profile !== null,
     profile,
-    // Черновик из чата (экран 9, «Изменить») — только при start_param=task_draft.
+    // Черновик из чата (экран 9, «Изменить») — при start_param=task_draft[_<id>] (#96);
+    // task_draft_stale0 — кнопка из старого сообщения: черновика нет, форма пустая.
     draft:
-      startParam === "task_draft"
+      /^task_draft(_[0-9a-z]+)?$/.test(startParam ?? "") && startParam !== "task_draft_stale0"
         ? { title: "Оплатить аренду (ТЕСТОВЫЕ ДАННЫЕ)", due_date: addDays(mockToday(), 5) }
         : null,
+    draft_stale: startParam === "task_draft_stale0",
   };
 }
 

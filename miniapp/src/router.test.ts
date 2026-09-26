@@ -15,11 +15,25 @@ test("parseStartParam разбирает значения из спеки", () =
   });
   expect(parseStartParam("item_task_42")).toEqual({ kind: "item", itemType: "task", id: 42 });
   expect(parseStartParam("task_draft")).toEqual({ kind: "task_draft" });
+  // #96: «Изменить» / «Выбрать дату» несут id своего черновика
+  expect(parseStartParam("task_draft_ab12cd34")).toEqual({ kind: "task_draft" });
   expect(parseStartParam("settings")).toEqual({ kind: "settings" });
 });
 
 test("parseStartParam игнорирует мусор и чужие диплинки", () => {
-  for (const raw of [null, "", "item_event_1", "item_obligation_", "item_task_0", "qr_partner"]) {
+  for (const raw of [
+    null,
+    "",
+    "item_event_1",
+    "item_obligation_",
+    "item_task_0",
+    "qr_partner",
+    "task_draft_",
+    "task_draft_AB12",
+    "task_draft_ab-12",
+    "task_draftab12",
+    `task_draft_${"a".repeat(33)}`,
+  ]) {
     expect(parseStartParam(raw)).toBeNull();
   }
 });
@@ -30,6 +44,10 @@ test("start_param из бота: 16, 17 или 13 поверх списка 14, 
     { name: "card", itemType: "obligation", id: 1, source: "bot" },
   ]);
   expect(initialStack({ kind: "task_draft" }, "month")).toEqual([
+    { name: "list" },
+    { name: "task", draft: true },
+  ]);
+  expect(initialStack(parseStartParam("task_draft_ab12cd34"), "month")).toEqual([
     { name: "list" },
     { name: "task", draft: true },
   ]);
