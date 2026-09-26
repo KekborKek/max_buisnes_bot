@@ -96,7 +96,7 @@ class MiniappApi:
         self.token = token
         self.now = now  # «сейчас» для API; тест может переставить
 
-    def headers(self, user_id: int) -> dict[str, str]:
+    def headers(self, user_id: int, start_param: str | None = None) -> dict[str, str]:
         import hashlib
         import hmac
         import time
@@ -106,13 +106,23 @@ class MiniappApi:
             "auth_date": str(int(time.time())),
             "user": json.dumps({"user_id": user_id, "first_name": "Тест"}),
         }
+        if start_param is not None:  # payload кнопки open_app / диплинка — в подписи (#96)
+            params["start_param"] = start_param
         dcs = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
         secret = hmac.new(b"WebAppData", self.token.encode(), hashlib.sha256).digest()
         params["hash"] = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
         return {"X-Max-Init-Data": urlencode(params)}
 
-    async def request(self, method: str, path: str, user_id: int | None, **kwargs):
-        headers = self.headers(user_id) if user_id is not None else {}
+    async def request(
+        self,
+        method: str,
+        path: str,
+        user_id: int | None,
+        *,
+        start_param: str | None = None,
+        **kwargs,
+    ):
+        headers = self.headers(user_id, start_param) if user_id is not None else {}
         return await self.client.request(method, path, headers=headers, **kwargs)
 
 

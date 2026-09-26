@@ -154,16 +154,30 @@ async def test_no_date_keeps_title_and_offers_dates(fake_max, bot_name, miniapp_
         [t("fallback.btn_tomorrow"), t("fallback.btn_week")],
         [t("fallback.btn_pick")],
     ]
+    draft_id = (await state_data())["task_draft"]["id"]
     pick = buttons(msg)[1][0]
-    assert (pick["type"], pick["payload"], pick["web_app"]) == ("open_app", "task_draft", BOT_NAME)
+    assert (pick["type"], pick["payload"], pick["web_app"]) == (
+        "open_app",
+        f"task_draft_{draft_id}",
+        BOT_NAME,
+    )
+    # «Завтра» / «Через неделю» несут id черновика (#96); payload — до 1024 символов
+    tomorrow, week = buttons(msg)[0]
+    assert (tomorrow["payload"], week["payload"]) == (
+        f"{fallback.TOMORROW}:{draft_id}",
+        f"{fallback.WEEK}:{draft_id}",
+    )
+    assert max(len(tomorrow["payload"]), len(week["payload"])) <= 1024
 
     names = [name for name, _ in await events()]
     assert names == ["date_not_parsed", "fallback_shown"]
     assert fallback_cases(await events()) == ["no_date"]
 
     # «Выбрать дату»: форма 17 получает название (дата — завтра, её выбирают в форме)
-    body = (await miniapp_api.request("GET", "/api/me", USER_ID)).json()
+    r = await miniapp_api.request("GET", "/api/me", USER_ID, start_param=pick["payload"])
+    body = r.json()
     assert body["draft"] == {"title": "Оплатить аренду", "due_date": "2026-09-24"}
+    assert body["draft_stale"] is False
 
 
 async def test_pick_date_hidden_without_bot_username(fake_max, no_bot_name):
@@ -174,17 +188,17 @@ async def test_pick_date_hidden_without_bot_username(fake_max, no_bot_name):
 
 
 @pytest.mark.parametrize(
-    ("payload", "day", "due", "remind"),
+    ("button", "day", "due", "remind"),
     [
         # сейчас 12:00: напоминание «за день в 10:00» для завтра уже прошло (#87)
-        (fallback.TOMORROW, "24 сентября", date(2026, 9, 24), False),
-        (fallback.WEEK, "30 сентября", date(2026, 9, 30), True),
+        ("fallback.btn_tomorrow", "24 сентября", date(2026, 9, 24), False),
+        ("fallback.btn_week", "30 сентября", date(2026, 9, 30), True),
     ],
 )
-async def test_tomorrow_and_week_go_to_confirm(fake_max, no_bot_name, payload, day, due, remind):
+async def test_tomorrow_and_week_go_to_confirm(fake_max, no_bot_name, button, day, due, remind):
     await onboarded()
     await process_update(write("оплатить аренду"), fake_max)
-    await process_update(press(payload), fake_max)
+    await process_update(tap(fake_max.sent[-1], button), fake_max)
 
     expected = (confirm_text if remind else no_remind_text)("Оплатить аренду", day)
     assert fake_max.sent[-1]["text"] == expected
@@ -199,10 +213,17 @@ async def test_save_button_does_not_save_no_date_draft(fake_max, no_bot_name):
     """Пока висит «не нашёл дату», черновик с завтрашним днём — только для формы 17."""
     await onboarded()
     await process_update(write("оплатить аренду"), fake_max)
-    await process_update(press(task_chat.SAVE), fake_max)
+    draft_id = (await state_data())["task_draft"]["id"]
+    # «Сохранить» с id черновика «не нашёл дату» (у его сообщения такой кнопки нет)
+    await process_update(press(task_chat.payload(task_chat.SAVE, draft_id)), fake_max)
 
     assert await tasks() == []
     assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+
+    # Кнопка до #87 без id: у черновика экрана 10 теперь есть id (#96) — «устарел»
+    await process_update(press(task_chat.SAVE), fake_max)
+    assert await tasks() == []
+    assert fake_max.sent[-1]["text"] == t("task.draft_stale")
 
 
 async def test_stale_tomorrow_button_is_unknown(fake_max, no_bot_name):
@@ -210,6 +231,101 @@ async def test_stale_tomorrow_button_is_unknown(fake_max, no_bot_name):
     await process_update(press(fallback.TOMORROW), fake_max)
 
     assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+
+
+# --- #96: «Завтра» / «Через неделю» / «Выбрать дату» из старого сообщения -------------------
+
+
+async def two_no_date(fake_max) -> tuple[dict, dict]:
+    """«Не нашёл дату» A («аренда»), затем B («налог»)."""
+    await onboarded()
+    await process_update(write("оплатить аренду"), fake_max)
+    first = fake_max.sent[-1]
+    await process_update(write("заплатить налог"), fake_max)
+    return first, fake_max.sent[-1]
+
+
+@pytest.mark.parametrize(
+    ("button", "action"), [("fallback.btn_tomorrow", "tomorrow"), ("fallback.btn_week", "week")]
+)
+async def test_old_no_date_button_does_not_take_new_title(fake_max, no_bot_name, button, action):
+    first, second = await two_no_date(fake_max)
+
+    await process_update(tap(first, button), fake_max)
+    assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert ("task_draft_stale", {"action": action}) in await events()
+    data = await state_data()
+    assert data["task_title"] == "Заплатить налог"  # текущий черновик не тронут
+
+    # Та же кнопка под B предлагает именно B
+    await process_update(tap(second, button), fake_max)
+    assert "Заплатить налог" in fake_max.sent[-1]["text"]
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
+    assert [x.title for x in await tasks()] == ["Заплатить налог"]
+
+
+async def test_old_no_date_button_after_confirm_is_stale(fake_max, no_bot_name):
+    """«Завтра» под сообщением, которое уже дало confirm: черновик другой — `draft_stale`."""
+    await onboarded()
+    await process_update(write("оплатить аренду"), fake_max)
+    no_date = fake_max.sent[-1]
+    await process_update(tap(no_date, "fallback.btn_tomorrow"), fake_max)
+    await process_update(tap(no_date, "fallback.btn_tomorrow"), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert draft_fields(await state_data())["title"] == "Оплатить аренду"
+
+
+async def test_pick_date_under_old_message_opens_empty_form(fake_max, bot_name, miniapp_api):
+    """«Выбрать дату» под A после B: форма 17 без названия B, `draft_stale` (#96)."""
+    first, second = await two_no_date(fake_max)
+
+    old = await miniapp_api.request(
+        "GET", "/api/me", USER_ID, start_param=payload_of(first, "fallback.btn_pick")
+    )
+    assert (old.json()["draft"], old.json()["draft_stale"]) == (None, True)
+    new = await miniapp_api.request(
+        "GET", "/api/me", USER_ID, start_param=payload_of(second, "fallback.btn_pick")
+    )
+    assert new.json()["draft"] == {"title": "Заплатить налог", "due_date": "2026-09-24"}
+
+
+@pytest.mark.parametrize("payload", [fallback.TOMORROW, fallback.WEEK])
+async def test_legacy_no_date_button_works_with_legacy_draft(fake_max, no_bot_name, payload):
+    """Кнопка до #96 (без id) и черновик до #96 (без id) — как раньше."""
+    await onboarded()
+    async with SessionLocal() as s:
+        data = {
+            "task_title": "Оплатить аренду",
+            "task_draft": {"title": "Оплатить аренду", "due_date": "2026-09-24"},
+        }
+        s.add(DialogState(user_id=USER_ID, state=None, data=data))
+        await s.commit()
+    await process_update(press(payload), fake_max)
+
+    assert "Оплатить аренду" in fake_max.sent[-1]["text"]
+    assert "task_title" not in await state_data()
+
+
+@pytest.mark.parametrize("payload", [fallback.TOMORROW, fallback.WEEK])
+async def test_legacy_no_date_button_with_new_draft_is_stale(fake_max, no_bot_name, payload):
+    """Кнопка до #96 (без id) с новым черновиком (с id) — не берёт его, `draft_stale`."""
+    await onboarded()
+    await process_update(write("оплатить аренду"), fake_max)
+    await process_update(press(payload), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("task.draft_stale")
+    assert (await state_data())["task_title"] == "Оплатить аренду"
+
+
+@pytest.mark.parametrize("suffix", ["X", ":", "x:ab12cd34"])
+async def test_malformed_no_date_payload_is_unknown(fake_max, no_bot_name, suffix):
+    await onboarded()
+    await process_update(write("оплатить аренду"), fake_max)
+    await process_update(press(f"{fallback.TOMORROW}{suffix}"), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+    assert (await state_data())["task_title"] == "Оплатить аренду"
 
 
 # --- сервис не ответил ---------------------------------------------------------------------

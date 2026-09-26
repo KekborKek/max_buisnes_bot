@@ -7,24 +7,24 @@
     ни даты, ни задачи, пустое название, непонятная кнопка → экран 10, «не понял».
 
 Черновик — `DialogState.data["task_draft"] = {"title", "due_date", "id"}` (`/api/me` читает
-title и due_date): его показывает `confirm`, сохраняет «Сохранить», в форму 17 уносит «Изменить»
-(open_app, D27). После сохранения или отмены черновик стирается; кнопка из старого сообщения
-без черновика — случай «не понял».
+title и due_date и сверяет id): его показывает `confirm`, сохраняет «Сохранить», в форму 17
+уносит «Изменить» (open_app `task_draft_<id>`, D27, #96). После сохранения или отмены черновик
+стирается; кнопка из старого сообщения без черновика — случай «не понял».
 
 Черновик один, а сообщений с кнопками может быть несколько (#87). Каждый новый черновик получает
 короткий `id`, и кнопки confirm / duplicate / past_date несут его в payload. Кнопка не текущего
 черновика ничего не сохраняет: `task.draft_stale` («Отмена» — просто `cancelled`, текущий черновик
 живёт дальше) и событие `task_draft_stale`. Кнопки, отправленные до #87 (payload без id), работают
 только с черновиком без id. Payload другого вида («task:saveX», «task:save:») — «не понял».
+«Завтра» / «Через неделю» экрана 10 устроены так же: `fb:tomorrow:<id>` (#96).
 
 Payload кнопок (`<id>` — id черновика):
     task:save:<id> — «Сохранить»   task:anyway:<id> — «Добавить всё равно»
     task:yes:<id> — «Да» на past_date   task:cancel:<id> — «Отмена»
-    fb:tomorrow / fb:week — «Завтра» / «Через неделю» экрана 10
+    fb:tomorrow:<id> / fb:week:<id> — «Завтра» / «Через неделю» экрана 10
 """
 
 import logging
-import secrets
 from datetime import date, datetime, timedelta
 from enum import Enum
 
@@ -113,7 +113,9 @@ def _draft_id(data: dict) -> str | None:
 
 
 async def _track_stale(ctx: Ctx, action: str) -> None:
-    await ctx.track("task_draft_stale", {"action": action.removeprefix("task:")})
+    """`action`: save / anyway / yes / cancel (экран 9), tomorrow / week (экран 10)."""
+    name = action.removeprefix("task:").removeprefix("fb:")
+    await ctx.track("task_draft_stale", {"action": name})
 
 
 async def _reply_stale(ctx: Ctx, action: str) -> None:
@@ -166,7 +168,7 @@ def payload(action: str, draft_id: str | None) -> str:
 def confirm_keyboard(draft_id: str) -> dict:
     """«Сохранить» / «Изменить» «Отмена»; «Изменить» — только с MAX_BOT_USERNAME."""
     second = [kb.callback(t("task.btn_cancel"), payload(CANCEL, draft_id))]
-    edit = fallback.open_calendar_button("task.btn_edit", fallback.DRAFT_START_PARAM)
+    edit = fallback.open_calendar_button("task.btn_edit", fallback.draft_start_param(draft_id))
     if edit is not None:
         second.insert(0, edit)
     return kb.inline_keyboard([kb.callback(t("task.btn_save"), payload(SAVE, draft_id))], second)
@@ -214,7 +216,7 @@ async def _has_duplicate(ctx: Ctx, title: str, due_date: date) -> bool:
 
 async def _put_draft(ctx: Ctx, title: str, due_date: date) -> str:
     """Новый черновик с новым id; кнопки прежних сообщений становятся устаревшими."""
-    draft_id = secrets.token_hex(4)
+    draft_id = fallback.new_draft_id()
     state, data = await ctx.get_state()
     data.pop(fallback.TASK_TITLE_KEY, None)
     data[fallback.TASK_DRAFT_KEY] = fallback.draft(title, due_date, draft_id)
@@ -442,13 +444,21 @@ async def on_cancel(ctx: Ctx) -> None:
     await ctx.reply(t("task.cancelled"))
 
 
-async def _with_date(ctx: Ctx, days: int) -> None:
-    """«Завтра» / «Через неделю» экрана 10: название из `task_title`, дата подставлена."""
+async def _with_date(ctx: Ctx, action: str, days: int) -> None:
+    """«Завтра» / «Через неделю» экрана 10: название из `task_title`, дата подставлена.
+
+    Кнопка несёт id черновика «не нашёл дату» (#96): из старого сообщения она не берёт чужое
+    название — `draft_stale`, как кнопки экрана 9.
+    """
     if ctx.user_id is None:
         return
     _, today, tz, now = await _load_today(ctx)
     _, data = await ctx.get_state()
-    title = data.get(fallback.TASK_TITLE_KEY)
+    press = _press(ctx, action, data)
+    if press is Press.STALE:
+        await _reply_stale(ctx, action)
+        return
+    title = data.get(fallback.TASK_TITLE_KEY) if press is Press.OWN else None
     if not isinstance(title, str) or not title:
         await fallback.show_unknown(ctx)
         return
@@ -457,9 +467,9 @@ async def _with_date(ctx: Ctx, days: int) -> None:
 
 @router.on_callback(fallback.TOMORROW)
 async def on_tomorrow(ctx: Ctx) -> None:
-    await _with_date(ctx, 1)
+    await _with_date(ctx, fallback.TOMORROW, 1)
 
 
 @router.on_callback(fallback.WEEK)
 async def on_week(ctx: Ctx) -> None:
-    await _with_date(ctx, 7)
+    await _with_date(ctx, fallback.WEEK, 7)

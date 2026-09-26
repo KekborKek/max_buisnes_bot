@@ -11,13 +11,16 @@
     last_action — {update_type, text, payload} упавшего действия, его повторяет «Повторить»;
     task_title  — название задачи без даты, ждёт «Завтра» / «Через неделю» (экран 9);
     task_draft  — {title, due_date[, id]}: черновик для формы 17 («Выбрать дату», D27);
-                  `id` есть только у черновика с кнопками экрана 9 (task_chat, #87).
+                  `id` — у каждого нового черновика (экраны 9 и 10, #87, #96), его несут кнопки.
 Счётчики сбрасывает любое успешное действие (`after_handler`, зовёт диспетчер до коммита).
 
-Payload кнопок: fb:retry — «Повторить»; fb:tomorrow и fb:week обрабатывает task_chat.
+Payload кнопок: fb:retry — «Повторить»; fb:tomorrow:<id> и fb:week:<id> обрабатывает task_chat
+(`<id>` — id черновика «не нашёл дату», #96). «Выбрать дату» — open_app с `task_draft_<id>`:
+`/api/me` отдаст черновик, только если id совпал с текущим, иначе форма 17 пустая (#96).
 """
 
 import logging
+import secrets
 from datetime import date, timedelta
 
 from app.bot import keyboards as kb
@@ -33,7 +36,9 @@ log = logging.getLogger(__name__)
 RETRY = "fb:retry"
 TOMORROW = "fb:tomorrow"
 WEEK = "fb:week"
-DRAFT_START_PARAM = "task_draft"  # start_param мини-аппа: форма 17 с черновиком (D27)
+# start_param мини-аппа: форма 17 с черновиком (D27). С id черновика — «task_draft_<id>» (#96);
+# голый «task_draft» — кнопки, отправленные до #96. Формат читают api/routes и miniapp/router.
+DRAFT_START_PARAM = "task_draft"
 
 UNKNOWN_KEY = "fb_unknown"
 SERVICE_KEY = "fb_service"
@@ -50,11 +55,26 @@ _USER_ACTIONS = frozenset({"message_created", "message_callback", "bot_started"}
 _KEEP = "fb_keep_counter"
 
 
+def new_draft_id() -> str:
+    """Короткий id черновика (8 символов 0-9a-f): его несут кнопки сообщения (#87, #96)."""
+    return secrets.token_hex(4)
+
+
+def draft_start_param(draft_id: str | None) -> str:
+    """start_param «Изменить» / «Выбрать дату»: «task_draft_<id>»; черновик без id — «task_draft».
+
+    Ограничений длины и алфавита payload `open_app` схема MAX не задаёт (docs/max-api-notes.md);
+    держимся латиницы, цифр и `_`, как `item_<type>_<id>`.
+    """
+    return f"{DRAFT_START_PARAM}_{draft_id}" if draft_id else DRAFT_START_PARAM
+
+
 def draft(title: str, due_date: date, draft_id: str | None = None) -> dict:
     """`task_draft` в том виде, что читает `/api/me` (api/routes.task_draft): title, due_date.
 
-    `id` — новое поле (#87): его несут кнопки экрана 9, чтобы старая кнопка не сохранила
-    чужой черновик. `/api/me` его не читает; переименовывать title и due_date нельзя.
+    `id` — новое поле (#87): его несут кнопки экранов 9 и 10, чтобы старая кнопка не взяла
+    чужой черновик. `/api/me` сверяет его с id из start_param (#96); title и due_date
+    переименовывать нельзя.
     """
     value = {"title": title, "due_date": due_date.isoformat()}
     if draft_id is not None:
@@ -107,15 +127,15 @@ async def show_unknown(ctx: Ctx, *, text_key: str = "fallback.unknown") -> None:
 # --- не нашёл дату -------------------------------------------------------------------------
 
 
-def no_date_keyboard() -> dict:
-    """«Завтра» «Через неделю» / «Выбрать дату» (форма 17 с названием)."""
+def no_date_keyboard(draft_id: str) -> dict:
+    """«Завтра» «Через неделю» / «Выбрать дату» (форма 17 с названием); все несут id черновика."""
     rows = [
         [
-            kb.callback(t("fallback.btn_tomorrow"), TOMORROW),
-            kb.callback(t("fallback.btn_week"), WEEK),
+            kb.callback(t("fallback.btn_tomorrow"), f"{TOMORROW}:{draft_id}"),
+            kb.callback(t("fallback.btn_week"), f"{WEEK}:{draft_id}"),
         ]
     ]
-    pick = open_calendar_button("fallback.btn_pick", DRAFT_START_PARAM)
+    pick = open_calendar_button("fallback.btn_pick", draft_start_param(draft_id))
     if pick is not None:
         rows.append([pick])
     return kb.inline_keyboard(*rows)
@@ -125,15 +145,17 @@ async def show_no_date(ctx: Ctx, title: str, today: date) -> None:
     """Случай «не нашёл дату»: название ждёт даты в `task_title`, текст не теряется.
 
     «Выбрать дату» — open_app, нажатие до бота не доходит, поэтому черновик формы 17 пишем
-    сразу: название и завтрашний день (форма всё равно даст выбрать дату).
+    сразу: название и завтрашний день (форма всё равно даст выбрать дату). Новый id черновика
+    делает кнопки прежних сообщений устаревшими (#96).
     """
+    draft_id = new_draft_id()
     state, data = await ctx.get_state()
     data[TASK_TITLE_KEY] = title
-    data[TASK_DRAFT_KEY] = draft(title, today + timedelta(days=1))
+    data[TASK_DRAFT_KEY] = draft(title, today + timedelta(days=1), draft_id)
     await ctx.set_state(state, data)
     await ctx.track("date_not_parsed", {})
     await ctx.track("fallback_shown", {"case": "no_date"})
-    await ctx.reply(t("fallback.no_date", title=title), attachments=[no_date_keyboard()])
+    await ctx.reply(t("fallback.no_date", title=title), attachments=[no_date_keyboard(draft_id)])
 
 
 # --- сервис не ответил ---------------------------------------------------------------------
