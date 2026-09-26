@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.bot.dispatcher import process_update
 from app.bot.handlers import common
 from app.calendar import digest
-from app.calendar.reminders import tick
+from app.calendar.reminders import resync_user_notifications, sync_obligation_notifications, tick
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.models import Event, Notification, Profile, Task, User, UserObligation
@@ -435,6 +435,101 @@ async def test_regular_reminders_still_sent_with_digest(fake_max, no_bot_name):
     assert fake_max.sent[1]["text"].startswith("Неделя 26 октября – 1 ноября. Три срока: ")
     kinds = [e["kind"] for e in await _events("reminder_sent")]
     assert kinds == ["d1", "digest", "digest", "digest"]
+
+
+async def test_future_digest_row_not_claimed_with_regular_reminders(fake_max, no_bot_name):
+    """Отложенная (будущая) строка `kind=digest` не попадает под обычную раздачу — даже
+    в момент, когда в этот же тик уходят обычные напоминания (#88, LEAD-13)."""
+    await _user()
+    tuesday_id = await _uo(date(2026, 10, 27), ob="test_quarterly")
+    future_send_at = MSK_10 + 7 * DAY
+    async with SessionLocal() as s:
+        s.add(
+            Notification(
+                user_id=USER,
+                item_type="obligation",
+                item_id=tuesday_id,
+                kind="d1",
+                send_at=MSK_10,
+                status="pending",
+                attempts=0,
+            )
+        )
+        future = Notification(
+            user_id=USER,
+            item_type="week",
+            item_id=20261102,  # следующий понедельник — сводка ещё не должна была наступить
+            kind="digest",
+            send_at=future_send_at,
+            status="pending",
+            attempts=0,
+        )
+        s.add(future)
+        await s.commit()
+        future_id = future.id
+
+    await tick(MSK_10, fake_max)  # текущая неделя пуста — только d1 и (пустая) сводка недели
+
+    assert "d1" in [e["kind"] for e in await _events("reminder_sent")]
+    async with SessionLocal() as s:
+        row = await s.get(Notification, future_id)
+    assert (row.status, row.send_at.replace(tzinfo=UTC), row.attempts) == (
+        "pending",
+        future_send_at,
+        0,
+    )
+
+
+async def test_digest_row_untouched_by_resync(fixture_reference):
+    """Пересчёт напоминаний обязательства и пользователя (смена пояса, часа, выключение
+    `d30` — экраны 13, 19) не трогает отметку «сводка за неделю» (#88, LEAD-13)."""
+    await _user(reminders={"d30": True, "d7": True, "hour": 10})
+    uo_id = await _uo(date(2026, 10, 28))  # test_yearly, needs_prep=True
+    digest_send_at = MSK_10
+    async with SessionLocal() as s:
+        row = Notification(
+            user_id=USER,
+            item_type="week",
+            item_id=20261026,
+            kind="digest",
+            send_at=digest_send_at,
+            status="pending",
+            attempts=0,
+        )
+        s.add(row)
+        await s.commit()
+        digest_id = row.id
+
+    new_settings = {"d30": False, "d7": True, "hour": 12}  # d30 выключен, час и пояс сменились
+
+    async def _digest_row() -> Notification:
+        async with SessionLocal() as s:
+            return await s.get(Notification, digest_id)
+
+    async with SessionLocal() as s:
+        uo = await s.get(UserObligation, uo_id)
+        await sync_obligation_notifications(
+            s, uo, needs_prep=True, tz=YEKT, settings=new_settings, now=MSK_10 - DAY
+        )
+        await s.commit()
+    after_sync = await _digest_row()
+    assert (after_sync.status, after_sync.send_at.replace(tzinfo=UTC), after_sync.attempts) == (
+        "pending",
+        digest_send_at,
+        0,
+    )
+
+    async with SessionLocal() as s:
+        await resync_user_notifications(
+            s, USER, tz=YEKT, settings=new_settings, reference=fixture_reference, now=MSK_10 - DAY
+        )
+        await s.commit()
+    after_resync = await _digest_row()
+    assert (
+        after_resync.status,
+        after_resync.send_at.replace(tzinfo=UTC),
+        after_resync.attempts,
+    ) == ("pending", digest_send_at, 0)
 
 
 # --- «Без сводки» -----------------------------------------------------------------------------

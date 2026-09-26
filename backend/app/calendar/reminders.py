@@ -366,7 +366,7 @@ _NOT_GROUPED = frozenset({"overdue"})
 # Сводка в понедельник (экран 12, app/calendar/digest.py): её записи в Notification — отметка
 # «за эту неделю отправлялась», их создаёт и закрывает digest.tick. Обычная отправка их
 # не забирает, иначе упавшая на полпути сводка ушла бы вторым сообщением.
-DIGEST_KIND = "digest"
+DIGEST_KIND: NotificationKind = "digest"
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,7 +414,7 @@ def _open_button(start_param: str | None) -> dict | None:
 
 
 def reminder_keyboard(
-    kind: str, item_type: str, item_id: int, *, with_snooze: bool = True
+    kind: NotificationKind, item_type: str, item_id: int, *, with_snooze: bool = True
 ) -> list[dict] | None:
     """Кнопки одиночного напоминания по таблице экрана 6. None — кнопок нет.
 

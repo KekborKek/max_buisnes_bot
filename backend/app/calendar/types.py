@@ -15,7 +15,7 @@ Shift = Literal["next_workday", "none"]
 IncomeBand = Literal["lt10", "10_20", "20_60", "gt60", "unknown"]
 Regime = Literal["usn6", "usn15", "patent", "ausn", "unknown"]
 ItemType = Literal["obligation", "task"]
-NotificationKind = Literal["d30", "d7", "d1", "overdue", "snooze", "task"]
+NotificationKind = Literal["d30", "d7", "d1", "overdue", "snooze", "task", "digest"]
 NotificationStatus = Literal["pending", "sent", "cancelled", "failed"]
 ItemStatus = Literal["done", "overdue", "today", "upcoming"]
 
