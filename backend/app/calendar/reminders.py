@@ -176,8 +176,8 @@ async def sync_obligation_notifications(
     - отмечено (`done_at`) → все pending отменяются, новых нет;
     - вид из плана уже pending → остаётся одно, `send_at` поправлен (смена пояса), лишние
       копии → cancelled; уже sent/failed → заново не создаётся;
-    - pending выключенного вида (d30/d7 выключены в настройках, d30 без needs_prep) с send_at
-      в будущем → cancelled; с send_at в прошлом — не трогаем, его отправит планировщик;
+    - pending выключенного вида (d30/d7 выключены в настройках, d30 без needs_prep) → cancelled,
+      и с send_at в прошлом, и «в аренде» у планировщика (#97);
     - pending включённого вида, которого нет в плане, потому что новое время уже прошло
       (сменили пояс или час в день d1), — остаётся одна копия со старым send_at: не теряем
       последнее напоминание (решение по #85); если вид уже sent/failed — будущие копии
@@ -238,7 +238,15 @@ async def sync_obligation_notifications(
             )
 
     for kind, rows in pending.items():
-        if kind in enabled and kind not in finished:
+        if kind not in enabled:
+            # Вид выключен (d30/d7 в настройках, d30 без needs_prep) — человек отказался от него
+            # явно: отменяем всё pending, и с send_at в прошлом (иначе после простоя сервера оно
+            # ушло бы), и «аренду» (повтора после ошибки не будет; если сообщение как раз ушло,
+            # отправка всё равно запишет `sent` — см. `_record`). #97
+            for n in rows:
+                n.status = "cancelled"
+            continue
+        if kind not in finished:
             # Включён, но новое время уже прошло: pending остаётся как было (одна копия).
             # Уже sent/failed — будущие копии отменяются ниже, иначе ушли бы вторым сообщением.
             rows = rows[1:]
@@ -308,6 +316,9 @@ async def resync_user_notifications(
       по новому поясу (у задачи свои remind_offset_days и remind_hour). Новое время уже
       прошло — остаётся старое: это единственное напоминание по задаче (D11). В прошлом,
       в отправке или на повторе (`attempts > 0`, см. `_claim`) — не трогаем;
+    - задача без `task`-уведомления (по старому поясу время уже прошло) получает его, если по
+      новому поясу оно впереди — правилом `sync_task_notification`. Если по задаче уже было
+      sent/failed — не создаём: напоминание уже приходило (#97);
     - snooze и digest не трогаем: сводка считается сама каждую неделю.
     Повторный вызов с теми же данными ничего не меняет. Пишет в сессию, не коммитит.
     """
@@ -351,6 +362,36 @@ async def resync_user_notifications(
         )
         if planned is not None and as_utc(n.send_at) != planned.send_at:
             n.send_at = planned.send_at
+
+    # Недостающее: по старому поясу время уже прошло и строку не создали, а по новому оно
+    # впереди. Задачи с pending (любым) и уже напомненные (sent/failed) пропускаем — иначе
+    # после смены пояса в тот же день напоминание пришло бы второй раз. Раньше сегодняшнего
+    # дня по новому поясу срок — время напоминания точно в прошлом. #97
+    today = as_utc(now).astimezone(ZoneInfo(tz)).date()
+    covered = set(
+        await session.scalars(
+            select(Notification.item_id).where(
+                Notification.user_id == user_id,
+                Notification.item_type == "task",
+                Notification.kind == "task",
+                Notification.status.in_(("pending", *_FINISHED_STATUSES)),
+            )
+        )
+    )
+    tasks = await session.scalars(
+        select(Task)
+        .where(
+            Task.user_id == user_id,
+            Task.done_at.is_(None),
+            Task.deleted_at.is_(None),
+            Task.due_date >= today,
+        )
+        .order_by(Task.id)
+    )
+    for task in list(tasks):
+        if task.id not in covered:
+            # То же правило, что при создании задачи: одно `task`, только в будущем.
+            await sync_task_notification(session, task, tz=tz, now=now)
 
 
 # --- Отправка (T6) ------------------------------------------------------------------------------
@@ -647,16 +688,22 @@ async def _record(reminder: OutgoingReminder, *, ok: bool, now: datetime) -> Non
     """Короткая транзакция «записать» после отправки одного сообщения.
 
     Успех → `sent`, `send_at` = момент тика (аренду убираем, история честная), `reminder_sent`
-    на каждое событие. Ошибка → при `attempts < MAX_ATTEMPTS` строка остаётся pending
-    с арендой = повтор через час, иначе `failed`. `status == 'pending'` в условии: если
-    событие отметили, пока сообщение летело, отмена (`cancelled`) остаётся.
+    на каждое событие. `cancelled` тоже становится `sent`: `_claim` забирает только pending,
+    значит строку отменили, пока сообщение летело (выключили вид, отметили, удалили), а оно
+    всё равно ушло — история честная, и пересчёт не пришлёт этот вид второй раз (#97).
+    Ошибка → при `attempts < MAX_ATTEMPTS` строка остаётся pending с арендой = повтор через
+    час, иначе `failed`. `status == 'pending'` в условии: отменённое за время полёта
+    остаётся `cancelled` и повторно не уходит.
     """
     ids = reminder.notification_ids
     async with SessionLocal() as session:
         if ok:
             await session.execute(
                 update(Notification)
-                .where(Notification.id.in_(ids), Notification.status == "pending")
+                .where(
+                    Notification.id.in_(ids),
+                    Notification.status.in_(("pending", "cancelled")),
+                )
                 .values(status="sent", send_at=now)
                 .execution_options(synchronize_session=False)
             )

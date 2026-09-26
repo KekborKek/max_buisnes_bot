@@ -14,7 +14,13 @@ from sqlalchemy import func, select
 
 from app.bot.dispatcher import process_update
 from app.bot.handlers import common
-from app.calendar.reminders import sync_obligation_notifications, tick
+from app.calendar import loader
+from app.calendar.reminders import (
+    cancel_pending,
+    resync_user_notifications,
+    sync_obligation_notifications,
+    tick,
+)
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.models import Event, Notification, Profile, Task, User, UserObligation
@@ -700,3 +706,132 @@ async def test_snooze_is_sent_next_day_without_snooze_button(fake_max, clock):
         "item_type": "obligation",
         "grouped": False,
     }
+
+
+# --- #97: вид выключили или событие отметили, пока напоминание «в пути» ------------------------
+
+
+async def _save_settings(now: datetime, user_id: int = USER, **changes) -> None:
+    """Как `PUT /api/profile/settings`: Profile.reminders и пересчёт — одной транзакцией."""
+    async with SessionLocal() as session:
+        profile = await session.get(Profile, user_id)
+        profile.reminders = {**(profile.reminders or {}), **changes}
+        await resync_user_notifications(
+            session,
+            user_id,
+            tz=profile.timezone,
+            settings=profile.reminders,
+            reference=loader.get_reference(),
+            now=now,
+        )
+        await session.commit()
+
+
+async def _mark_done(uo_id: int, now: datetime) -> None:
+    """Как отметка (marks.py): done_at и отмена всех pending события."""
+    async with SessionLocal() as session:
+        uo = await session.get(UserObligation, uo_id)
+        uo.done_at = now
+        await cancel_pending(session, "obligation", uo_id)
+        await session.commit()
+
+
+class InFlightMax(FailingMax):
+    """Пока сообщение «в пути» (после «забрать», до «записать»), выполняет `action`
+    отдельной транзакцией — как сохранение настроек или отметка из мини-аппа."""
+
+    def __init__(self, action, fails: int = 0) -> None:
+        super().__init__(fails=fails)
+        self.action = action
+
+    async def send_message(self, text, **kwargs):
+        if self.action is not None:
+            action, self.action = self.action, None
+            await action()
+        return await super().send_message(text, **kwargs)
+
+
+async def test_turned_off_in_flight_sent_is_recorded():
+    """Сообщение ушло, хотя пересчёт отменил строку: `sent` и `reminder_sent`, повторов нет."""
+    uo_id, nid = await _one_d7()
+    max_client = InFlightMax(lambda: _save_settings(D7_AT, d7=False))
+
+    await tick(D7_AT, max_client)
+
+    n = await _get(nid)
+    assert (n.status, n.attempts) == ("sent", 1)
+    assert n.send_at.replace(tzinfo=UTC) == D7_AT
+    assert await _events("reminder_sent") == [
+        {"kind": "d7", "item_id": uo_id, "item_type": "obligation", "grouped": False}
+    ]
+    for hours in (1, 2, 5):
+        await tick(D7_AT + timedelta(hours=hours), max_client)
+    assert len(max_client.sent) == 1
+
+
+async def test_turned_off_in_flight_send_failed_no_retry():
+    _, nid = await _one_d7()
+    max_client = InFlightMax(lambda: _save_settings(D7_AT, d7=False), fails=1)
+
+    await tick(D7_AT, max_client)
+    assert (await _get(nid)).status == "cancelled"
+
+    for hours in (1, 2, 5):
+        await tick(D7_AT + timedelta(hours=hours), max_client)
+    assert max_client.calls == 1  # повтора по выключенному виду нет
+    assert (await _get(nid)).status == "cancelled"
+    assert await _events("reminder_sent") == []
+
+
+async def test_marked_in_flight_sent_is_recorded():
+    uo_id, nid = await _one_d7()
+    max_client = InFlightMax(lambda: _mark_done(uo_id, D7_AT))
+
+    await tick(D7_AT, max_client)
+
+    assert (await _get(nid)).status == "sent"
+    assert len(await _events("reminder_sent")) == 1
+    assert len(max_client.sent) == 1
+
+
+async def test_failed_then_turned_off_no_retry():
+    """Первая попытка упала (строка ждёт повтора), потом вид выключили — повтора нет."""
+    _, nid = await _one_d7()
+    max_client = FailingMax(fails=1)
+
+    await tick(D7_AT, max_client)
+    assert ((await _get(nid)).status, (await _get(nid)).attempts) == ("pending", 1)
+
+    await _save_settings(D7_AT + timedelta(minutes=10), d7=False)
+    await tick(D7_AT + timedelta(hours=1), max_client)
+
+    assert max_client.calls == 1
+    assert (await _get(nid)).status == "cancelled"
+
+
+async def test_past_pending_of_turned_off_kind_is_not_sent(fake_max):
+    """Сервер стоял: d7 на 10:00 ещё не забрано, в 10:30 d7 выключили — тик его не шлёт."""
+    _, nid = await _one_d7()
+
+    await _save_settings(D7_AT + timedelta(minutes=30), d7=False)
+    await tick(D7_AT + timedelta(minutes=31), fake_max)
+
+    assert fake_max.sent == []
+    assert (await _get(nid)).status == "cancelled"
+
+
+async def test_past_d1_still_sent_after_hour_change(fake_max):
+    """d1 не выключается: смена часа, когда его время уже прошло, его не отменяет (#85)."""
+    d1_at = utc(2026, 10, 27, 7)  # 10:00 МСК
+    async with SessionLocal() as session:
+        uo = await _uo(session)
+        nid = (await _notify(session, "obligation", uo.id, "d1", d1_at)).id
+        await session.commit()
+
+    await _save_settings(d1_at + timedelta(minutes=30), hour=9)  # 9:00 МСК уже прошло
+    await tick(d1_at + timedelta(minutes=31), fake_max)
+
+    assert [m["text"] for m in fake_max.sent] == [
+        f"Завтра, 28 октября — {YEARLY}. Это последний день срока."
+    ]
+    assert (await _get(nid)).status == "sent"

@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.api import deps
+from app.calendar.reminders import sync_task_notification
 from app.core.db import SessionLocal
 from app.core.models import Event, Notification, Profile, Task, User
 from app.main import app
@@ -465,3 +466,109 @@ async def test_digest_only_change_works_without_reference(miniapp_api):
     assert r.status_code == 200
     assert r.json()["reminders"]["digest"] is False
     assert r.json()["reference_checked_at"] is None
+
+
+# --- #97: смена пояса досоздаёт недостающее напоминание задачи ---------------------------------
+
+KALT = "Europe/Kaliningrad"
+YEKT = "Asia/Yekaterinburg"
+API_NOW = utc(2026, 9, 23, 7)  # «сейчас» фикстуры miniapp_api
+
+
+async def add_task_in(
+    tz: str, due: date, *, offset: int = 1, hour: int = 12, now: datetime = API_NOW
+) -> int:
+    """Задача, созданная при поясе `tz` в момент `now` — тем же правилом, что в API задач."""
+    async with SessionLocal() as s:
+        task = Task(
+            user_id=OWNER,
+            title="Позвонить бухгалтеру",
+            due_date=due,
+            remind_offset_days=offset,
+            remind_hour=hour,
+        )
+        s.add(task)
+        await s.flush()
+        await sync_task_notification(s, task, tz=tz, now=now)
+        await s.commit()
+        return task.id
+
+
+@pytest.mark.parametrize(
+    ("tz", "expected"),
+    [
+        (MSK, {"task": utc(2026, 9, 23, 9)}),  # 12:00 МСК — впереди
+        (KALT, {"task": utc(2026, 9, 23, 10)}),  # 12:00 в Калининграде — впереди
+        (YEKT, {}),  # 12:00 в Екатеринбурге = 07:00 UTC = сейчас — не создаём
+    ],
+)
+async def test_timezone_change_creates_missing_task_reminder(miniapp_api, tz, expected):
+    """Во Владивостоке 12:00 23.09 уже прошло — при создании напоминания не было."""
+    await add_profile(tz=VLAT)
+    task = await add_task_in(VLAT, date(2026, 9, 24))
+    assert await statuses("task", task) == {}
+    digest = await add_notification("week", 20260921, "digest", utc(2026, 9, 21, 7))
+
+    r = await miniapp_api.request("PUT", PATH, OWNER, json=body(timezone=tz))
+    assert r.status_code == 200
+    assert await pending("task", task) == expected
+
+    # повторный пересчёт (сменили час) дублей не создаёт; сводку пересчёт не трогает
+    r = await miniapp_api.request("PUT", PATH, OWNER, json=body(timezone=tz, hour=18))
+    assert r.status_code == 200
+    assert await pending("task", task) == expected
+    assert await statuses("task", task) == ({"task": ["pending"]} if expected else {})
+    async with SessionLocal() as s:
+        row = await s.get(Notification, digest)
+        assert (row.status, row.send_at.replace(tzinfo=UTC), row.attempts) == (
+            "pending",
+            utc(2026, 9, 21, 7),
+            0,
+        )
+
+
+async def test_timezone_change_across_midnight(miniapp_api):
+    """Во Владивостоке уже 24.09 10:00, в Калининграде ещё 24.09 02:00 — срок «сегодня» в обоих.
+
+    Напоминание в день срока в 9:00: во Владивостоке это 23.09 23:00 UTC (прошло), в
+    Калининграде — 24.09 07:00 UTC (впереди). Задача со сроком вчера — ничего.
+    """
+    now = utc(2026, 9, 24, 0)
+    miniapp_api.now = now
+    await add_profile(tz=VLAT)
+    today = await add_task_in(VLAT, date(2026, 9, 24), offset=0, hour=9, now=now)
+    yesterday = await add_task_in(VLAT, date(2026, 9, 23), offset=0, hour=9, now=now)
+
+    r = await miniapp_api.request("PUT", PATH, OWNER, json=body(timezone=KALT))
+    assert r.status_code == 200
+
+    assert await pending("task", today) == {"task": utc(2026, 9, 24, 7)}
+    assert await statuses("task", yesterday) == {}
+
+
+@pytest.mark.parametrize("status", ["sent", "failed"])
+async def test_already_reminded_task_is_not_reminded_again(miniapp_api, status):
+    """Напоминание ушло в 10:00 по Владивостоку; в Калининграде 10:00 ещё впереди — дубля нет."""
+    await add_profile(tz=VLAT)
+    task = await add_task_in(VLAT, date(2026, 9, 24), hour=10)
+    await add_notification("task", task, "task", utc(2026, 9, 23, 0), status=status, attempts=1)
+
+    r = await miniapp_api.request("PUT", PATH, OWNER, json=body(timezone=KALT))
+    assert r.status_code == 200
+
+    assert await statuses("task", task) == {"task": [status]}
+
+
+async def test_done_and_deleted_tasks_get_no_missing_reminder(miniapp_api):
+    await add_profile(tz=VLAT)
+    done = await add_task_in(VLAT, date(2026, 9, 24))
+    deleted = await add_task_in(VLAT, date(2026, 9, 24))
+    async with SessionLocal() as s:
+        (await s.get(Task, done)).done_at = utc(2026, 9, 22, 7)
+        (await s.get(Task, deleted)).deleted_at = utc(2026, 9, 22, 7)
+        await s.commit()
+
+    await miniapp_api.request("PUT", PATH, OWNER, json=body(timezone=KALT))
+
+    assert await statuses("task", done) == {}
+    assert await statuses("task", deleted) == {}
