@@ -233,7 +233,7 @@ regime_limit:
 
     Основание: {norm}. Сверено {last_checked}. {not_advice}
   step: "{number}. {text}"
-  # Дословно disclaimer.not_advice из docs/spec/product.md (в texts.yaml отдельного ключа нет).
-  not_advice: "Это не налоговая консультация. Суммы не считаем."
+  # Смысл disclaimer.not_advice, формулировка — как в howto.body экрана 7.
+  not_advice: "Суммы не считаем, это не налоговая консультация."
   btn_law: "Закон"
   btn_fns: "Разъяснения ФНС"

@@ -7,21 +7,34 @@ conftest.fixture_regime_limits): патент 20 млн ₽ за 2025, 15 млн
 
 import itertools
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from app.bot.handlers import common, nds_answer
 from app.calendar import loader
 from app.calendar.regime_limits import check, limit_for
 from app.calendar.types import INCOME_BANDS, REGIMES, ReferenceFileError
+from app.core.config import get_settings
 from app.core.texts import t
-from tests.test_nds_answer import clock, events, onboard, payloads, press, run  # noqa: F401
+from tests.test_nds_answer import (  # noqa: F401 — clock: autouse-фикстура «сейчас» = 29.09.2026
+    clock,
+    events,
+    get_profile,
+    onboard,
+    payloads,
+    press,
+    run,
+)
 
 pytestmark = pytest.mark.usefixtures("fixture_reference")
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).parent / "fixtures" / "regime_limits.yaml"
 HOWTO = "reglim:howto:"
+# Настоящая функция до подмены в conftest.fixture_regime_limits (модуль импортируется раньше).
+REAL_GET_REGIME_LIMITS = loader.get_regime_limits
 
 VALID = """
 last_checked_at: "2026-01-01"
@@ -73,6 +86,20 @@ def test_real_file_loads_with_sources_and_checked_facts():
         assert rules.fns_url.startswith("https://")
         assert 3 <= len(rules.steps) <= 5
         assert all(step.norm for step in rules.steps)
+
+
+def test_real_path_and_loader_read_content_dir():
+    settings = get_settings()
+    path = loader.regime_limits_path(settings)
+    assert path == Path(settings.content_dir) / "regime_limits.yaml"
+    assert path.resolve() == (ROOT / "content" / "regime_limits.yaml").resolve()
+
+    REAL_GET_REGIME_LIMITS.cache_clear()
+    try:
+        config = REAL_GET_REGIME_LIMITS()
+    finally:
+        REAL_GET_REGIME_LIMITS.cache_clear()
+    assert config == loader.load_regime_limits(path)
 
 
 @pytest.mark.parametrize(
@@ -141,11 +168,11 @@ def test_check_band_crossing_limit_or_no_limit_is_unknown(fixture_regime_limits)
 # --- бот, экран 3 --------------------------------------------------------------------------------
 
 
-def warning_text(income: str, regime: str, limit: str) -> str:
+def warning_text(income: str, regime: str, limit: str, income_year: int = 2025) -> str:
     income_label = t(f"onboarding.q1_{income}")
     return t(
         "regime_limit.warning",
-        income_year=2025,
+        income_year=income_year,
         income=income_label[0].lower() + income_label[1:],
         regime_name=t(f"onboarding.q2_{regime}"),
         limit=t("start.nds_limit", value=limit),
@@ -211,14 +238,31 @@ async def test_howto_button_shows_steps_source_and_links(fake_max, fixture_regim
     assert await events("regime_limit_howto_opened") == [{"regime": "patent"}]
 
 
-async def test_howto_for_unknown_regime_is_error_with_retry(fake_max):
+async def test_howto_for_regime_missing_in_reference_is_silent(fake_max, caplog):
+    """Справочник загружен, режима в нём нет (старая кнопка) — лог, без ответа и без error."""
     await onboard(fake_max, "lt10", "usn6")
+    sent_before = len(fake_max.sent)
 
-    msg = await run(fake_max, press(HOWTO + "usn6"))
+    with caplog.at_level(logging.WARNING):
+        await run(fake_max, press(HOWTO + "usn6"))
+
+    assert len(fake_max.sent) == sent_before
+    assert "usn6" in caplog.text
+    assert await events("regime_limit_howto_opened") == []
+    assert await events("error") == []
+
+
+async def test_howto_with_broken_reference_is_error_with_retry(fake_max, monkeypatch, tmp_path):
+    await onboard(fake_max, "gt60", "patent")
+    broken = write(tmp_path, "regimes: [\n")
+    monkeypatch.setattr(loader, "get_regime_limits", lambda: loader.load_regime_limits(broken))
+
+    msg = await run(fake_max, press(HOWTO + "patent"))
 
     assert msg["text"] == t("common.error")
-    assert payloads(msg) == [[HOWTO + "usn6"]]
+    assert payloads(msg) == [[HOWTO + "patent"]]
     assert await events("regime_limit_howto_opened") == []
+    assert [e["where"] for e in await events("error")] == ["regime_limit_howto"]
 
 
 async def test_broken_regime_limits_file_does_not_break_screen_3(
@@ -240,3 +284,59 @@ async def test_broken_regime_limits_file_does_not_break_screen_3(
 def test_buttons_fit_20_chars():
     for key in ("btn_howto", "btn_law", "btn_fns"):
         assert len(t(f"regime_limit.{key}")) <= 20
+
+
+async def test_warning_failure_keeps_screen_3_and_profile(fake_max, monkeypatch, caplog):
+    """Сбой предупреждения (опечатка в подстановке) не откатывает экран 3 и профиль."""
+    real_t = nds_answer.t
+
+    def broken_t(key: str, **kwargs) -> str:
+        if key == "regime_limit.warning":
+            raise KeyError("income_yaer")
+        return real_t(key, **kwargs)
+
+    monkeypatch.setattr(nds_answer, "t", broken_t)
+
+    with caplog.at_level(logging.ERROR):
+        screen3 = await onboard(fake_max, "gt60", "patent")
+
+    assert screen3["text"].startswith(real_t("nds.special_regime", regime_name="Патент"))
+    assert fake_max.sent[-1] is screen3
+    assert "предупреждение о лимите режима не показано" in caplog.text
+    assert await events("regime_limit_warned") == []
+    assert [e["regime"] for e in await events("nds_result_shown")] == ["patent"]
+    profile = await get_profile()
+    assert profile is not None
+    assert profile.regime == "patent"
+    assert profile.nds_payer is True
+
+
+# --- 2027 год: доход за 2026, лимит патента 15 млн ₽ (фикстура) -----------------------------
+
+JAN_15_2027 = datetime(2027, 1, 15, 9, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("income", "regime", "limit"),
+    [("20_60", "patent", "15"), ("gt60", "patent", "15"), ("gt60", "ausn", "60")],
+)
+async def test_2027_warning_uses_limit_for_2026_income(
+    fake_max, monkeypatch, income, regime, limit
+):
+    monkeypatch.setattr(common, "now", lambda: JAN_15_2027)
+
+    screen3 = await onboard(fake_max, income, regime)
+
+    warning = fake_max.sent[-1]
+    assert warning is not screen3
+    assert warning["text"] == warning_text(income, regime, limit, income_year=2026)
+    assert await events("regime_limit_warned") == [{"regime": regime, "income_band": income}]
+
+
+async def test_2027_patent_10_20_crosses_15_mln_limit_no_warning(fake_max, monkeypatch):
+    monkeypatch.setattr(common, "now", lambda: JAN_15_2027)
+
+    screen3 = await onboard(fake_max, "10_20", "patent")
+
+    assert fake_max.sent[-1] is screen3
+    assert await events("regime_limit_warned") == []

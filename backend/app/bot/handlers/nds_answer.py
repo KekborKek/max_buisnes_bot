@@ -308,52 +308,54 @@ def regime_howto_keyboard(rules: regime_limits.RegimeRules) -> dict:
     )
 
 
-def _regime_limits() -> regime_limits.RegimeLimitsConfig | None:
-    try:
-        return loader.get_regime_limits()
-    except ReferenceFileError:
-        log.exception("regime_limits.yaml не загружен — предупреждение о лимите режима не показано")
-        return None
-
-
 async def send_regime_limit_warning(ctx: Ctx, profile: Profile) -> None:
-    """Предупреждение о лимите режима, только если лимит по ответам точно превышен."""
-    config = _regime_limits()
-    if config is None:
-        return
-    year = common.income_year(profile)
-    if regime_limits.check(profile.regime, profile.income_band, year, config) != "exceeded":
-        return
-    rules = config.regimes[profile.regime or ""]
-    await ctx.track(
-        "regime_limit_warned", {"regime": profile.regime, "income_band": profile.income_band}
-    )
-    await ctx.reply(
-        regime_limit_warning_text(profile, rules),
-        attachments=[
-            kb.inline_keyboard(
-                [kb.callback(t("regime_limit.btn_howto"), REGIME_HOWTO + rules.regime)]
-            )
-        ],
-    )
+    """Предупреждение о лимите режима, только если лимит по ответам точно превышен.
+
+    Дополнение к экрану 3: любой сбой здесь (битый справочник, опечатка в подстановке текста)
+    уходит в лог и не откатывает уже показанный ответ про НДС и сохранённый профиль.
+    """
+    try:
+        config = loader.get_regime_limits()
+        year = common.income_year(profile)
+        if regime_limits.check(profile.regime, profile.income_band, year, config) != "exceeded":
+            return
+        rules = config.regimes[profile.regime or ""]
+        text = regime_limit_warning_text(profile, rules)
+        keyboard = kb.inline_keyboard(
+            [kb.callback(t("regime_limit.btn_howto"), REGIME_HOWTO + rules.regime)]
+        )
+        await ctx.track(
+            "regime_limit_warned", {"regime": profile.regime, "income_band": profile.income_band}
+        )
+        await ctx.reply(text, attachments=[keyboard])
+    except Exception:
+        log.exception("предупреждение о лимите режима не показано")
 
 
 @router.on_callback(REGIME_HOWTO)
 async def on_regime_howto(ctx: Ctx) -> None:
-    """«Что делать»: шаги режима из payload, основание, ссылки на закон и ФНС."""
+    """«Что делать»: шаги режима из payload, основание, ссылки на закон и ФНС.
+
+    Справочник не загрузился — common.error + «Повторить». Режима в справочнике нет
+    (старая кнопка, правка файла) — только предупреждение в лог, без ответа.
+    """
     if ctx.user_id is None:
         return
     regime = (ctx.payload or "").removeprefix(REGIME_HOWTO)
-    config = _regime_limits()
-    rules = config.regimes.get(regime) if config is not None else None
-    if config is None or rules is None:
+    try:
+        config = loader.get_regime_limits()
+    except ReferenceFileError as exc:
         await reply_error(
             ctx,
-            ReferenceFileError(f"нет правил лимита для режима {regime!r}"),
+            exc,
             where="regime_limit_howto",
-            kind="reference_missing",
+            kind=error_kind(exc),
             retry_payload=REGIME_HOWTO + regime,
         )
+        return
+    rules = config.regimes.get(regime)
+    if rules is None:
+        log.warning("«Что делать» по лимиту: режима %r нет в regime_limits.yaml", regime)
         return
     await ctx.track("regime_limit_howto_opened", {"regime": regime})
     await ctx.reply(
