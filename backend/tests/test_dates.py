@@ -552,7 +552,10 @@ NDS = _nds(
         (2029, LIMIT_15M),
         (2030, LIMIT_10M),
         (2024, None),
-        (2031, None),
+        # #106: год позже последней записи справочника наследует её порог, а не None —
+        # закон называет годы только по 2030-й, дальше порог по логике нормы не меняется.
+        (2031, LIMIT_10M),
+        (2050, LIMIT_10M),
     ],
 )
 def test_nds_limit_for(income_year, expected):
@@ -567,6 +570,7 @@ def test_nds_limit_for_first_match_wins():
 
 def test_nds_limit_for_empty_thresholds():
     assert nds_limit_for(2026, _nds()) is None
+    assert nds_limit_for(2031, _nds()) is None  # пустой справочник — не за что цепляться
 
 
 BANDS = ["lt10", "10_20", "20_60", "gt60", "unknown", None]
@@ -576,7 +580,7 @@ NDS_PAYER_TABLE = {
     2028: [False, False, True, True, None, None],  # порог 20 млн
     2029: [False, None, True, True, None, None],  # порог 15 млн — 10_20 пересекает
     2030: [False, True, True, True, None, None],  # порог 10 млн
-    2031: [None, None, None, None, None, None],  # порога нет
+    2031: [False, True, True, True, None, None],  # порог наследуется от 2030-го (#106)
 }
 
 
