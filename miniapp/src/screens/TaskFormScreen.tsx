@@ -1,5 +1,7 @@
 // Экран 17. Форма своей задачи (docs/screens/17-task-form.md): четыре поля (D9),
 // дата и время напоминания — нативные input type="date"/"time" (D8, TIME-FE #104).
+// Дата в прошлом разрешена (D32, #108): «Напомнить» и «Время» скрыты, вместо них подсказка,
+// а у новой задачи — переключатель «Уже выполнено».
 // Событие task_created пишет бэкенд в POST /api/tasks.
 import {
   Button,
@@ -10,6 +12,7 @@ import {
   Counter,
   Input,
   Radio,
+  Switch,
   Typography,
 } from "@maxhub/max-ui";
 import { useEffect, useRef, useState } from "react";
@@ -49,7 +52,12 @@ interface Values {
   offset: RemindOffset;
   /** "HH:MM" или "" — поле очищено (input type="time"). */
   time: string;
+  /** «Уже выполнено» — уходит в запрос, только если дата в прошлом (D32). */
+  done: boolean;
 }
+
+/** Дата раньше сегодняшней: напоминаний нет (D32, #108). */
+export const isPast = (date: string, today: string) => date !== "" && date < today;
 
 export interface FieldErrors {
   title: string | null;
@@ -57,20 +65,18 @@ export interface FieldErrors {
   time: string | null;
 }
 
-/** Валидация из спеки: название обязательно, дата — не раньше сегодняшней, время — обязательно. */
+/**
+ * Валидация из спеки: название и дата обязательны, дата может быть в прошлом (D32);
+ * время обязательно, только пока поле видно — у даты в прошлом его нет.
+ */
 export function validate(
   values: Pick<Values, "title" | "date" | "time">,
   today: string,
 ): FieldErrors {
   return {
     title: values.title.trim() === "" ? texts.form.nameRequired : null,
-    date:
-      values.date === ""
-        ? texts.form.dateRequired
-        : values.date < today
-          ? texts.form.datePast
-          : null,
-    time: values.time === "" ? texts.form.timeRequired : null,
+    date: values.date === "" ? texts.form.dateRequired : null,
+    time: values.time === "" && !isPast(values.date, today) ? texts.form.timeRequired : null,
   };
 }
 
@@ -111,6 +117,7 @@ export function TaskFormScreen({
         date: editing.due_date,
         offset: editing.remind_offset_days,
         time: timeValue(editing.remind_hour, editing.remind_minute),
+        done: false,
       };
     }
     // Черновик из чата со временем (например «15:30») — подставляем его и «в день срока»;
@@ -121,6 +128,7 @@ export function TaskFormScreen({
       date: draft?.due_date ?? initialDate ?? addDays(today, 1),
       offset: draftTime ? 0 : 1,
       time: draftTime ? timeValue(draft!.remind_hour!, draft?.remind_minute ?? 0) : DEFAULT_TIME,
+      done: false,
     };
   });
   const [values, setValues] = useState<Values>(initial);
@@ -154,18 +162,23 @@ export function TaskFormScreen({
     );
   }
 
+  const isNew = taskId === undefined;
+  const past = isPast(values.date, today);
   const errors = validate(values, today);
   const canSave = !errors.title && !errors.date && !errors.time && !saving;
   const dirty =
     values.title !== initial.title ||
     values.date !== initial.date ||
     values.offset !== initial.offset ||
-    values.time !== initial.time;
+    values.time !== initial.time ||
+    values.done !== initial.done;
   const set = (patch: Partial<Values>) => setValues((v) => ({ ...v, ...patch }));
 
   const save = () => {
     if (!canSave) return;
-    const [hour, minute] = values.time.split(":").map(Number);
+    // У даты в прошлом поле времени скрыто и может быть пустым — тогда шлём время по умолчанию:
+    // напоминания всё равно не будет (D32).
+    const [hour, minute] = (values.time || DEFAULT_TIME).split(":").map(Number);
     const input: TaskInput = {
       title: values.title.trim(),
       due_date: values.date,
@@ -173,15 +186,16 @@ export function TaskFormScreen({
       remind_hour: hour,
       remind_minute: minute,
     };
+    // «Уже выполнено» — только новая задача в прошлом; правка отмечается из карточки.
+    if (isNew && past && values.done) input.done = true;
     setSaving(true);
     setError(null);
-    const request =
-      taskId !== undefined ? source.updateTask(taskId, input) : source.createTask(input);
+    const request = isNew ? source.createTask(input) : source.updateTask(taskId, input);
     request.then(
       (card) => {
         upsert(card);
         if (!mounted.current) return;
-        if (taskId !== undefined) {
+        if (!isNew) {
           nav.back();
           toast(texts.form.updated);
         } else {
@@ -220,7 +234,7 @@ export function TaskFormScreen({
     <div className="screen">
       {error && <ErrorBanner kind={error} onRetry={save} retrying={saving} />}
       <Typography.Headline className="form-title">
-        {taskId !== undefined ? texts.form.titleEdit : texts.form.titleNew}
+        {isNew ? texts.form.titleNew : texts.form.titleEdit}
       </Typography.Headline>
 
       <CellList
@@ -261,7 +275,6 @@ export function TaskFormScreen({
             aria-label={texts.form.date}
             aria-invalid={errors.date ? true : undefined}
             aria-describedby={errors.date ? "task-date-error" : undefined}
-            min={today}
             value={values.date}
             disabled={saving}
             onChange={(e) => set({ date: e.target.value })}
@@ -274,46 +287,72 @@ export function TaskFormScreen({
         </Typography.Label>
       )}
 
-      <CellList
-        mode="island"
-        role="radiogroup"
-        aria-label={texts.form.remind}
-        header={<CellHeader>{texts.form.remind}</CellHeader>}
-      >
-        {REMIND_OFFSETS.map((offset) => (
-          <CellSimple
-            key={offset}
-            as="label"
-            before={
-              <Radio
-                name="remind-offset"
-                checked={values.offset === offset}
-                disabled={saving}
-                onChange={() => set({ offset })}
+      {past ? (
+        <>
+          {/* Та же подпись, что под полями профиля: отступ и вторичный цвет (app.css). */}
+          <Typography.Body className="profile-note">{texts.form.pastNoRemind}</Typography.Body>
+          {isNew && (
+            <CellList mode="island">
+              <CellSimple
+                as="label"
+                title={texts.form.alreadyDone}
+                after={
+                  <Switch
+                    checked={values.done}
+                    aria-disabled={saving || undefined}
+                    onChange={(e) => {
+                      if (!saving) set({ done: e.target.checked });
+                    }}
+                  />
+                }
               />
-            }
-            title={OFFSET_LABEL[offset]}
-          />
-        ))}
-      </CellList>
+            </CellList>
+          )}
+        </>
+      ) : (
+        <>
+          <CellList
+            mode="island"
+            role="radiogroup"
+            aria-label={texts.form.remind}
+            header={<CellHeader>{texts.form.remind}</CellHeader>}
+          >
+            {REMIND_OFFSETS.map((offset) => (
+              <CellSimple
+                key={offset}
+                as="label"
+                before={
+                  <Radio
+                    name="remind-offset"
+                    checked={values.offset === offset}
+                    disabled={saving}
+                    onChange={() => set({ offset })}
+                  />
+                }
+                title={OFFSET_LABEL[offset]}
+              />
+            ))}
+          </CellList>
 
-      <CellList mode="island" header={<CellHeader>{texts.form.time}</CellHeader>}>
-        <div className="form-field">
-          <Input
-            type="time"
-            aria-label={texts.form.time}
-            aria-invalid={errors.time ? true : undefined}
-            aria-describedby={errors.time ? "task-time-error" : undefined}
-            value={values.time}
-            disabled={saving}
-            onChange={(e) => set({ time: e.target.value })}
-          />
-        </div>
-      </CellList>
-      {errors.time && (
-        <Typography.Label id="task-time-error" className="field-error">
-          {errors.time}
-        </Typography.Label>
+          <CellList mode="island" header={<CellHeader>{texts.form.time}</CellHeader>}>
+            <div className="form-field">
+              <Input
+                type="time"
+                aria-label={texts.form.time}
+                aria-invalid={errors.time ? true : undefined}
+                aria-describedby={errors.time ? "task-time-error" : undefined}
+                value={values.time}
+                disabled={saving}
+                onChange={(e) => set({ time: e.target.value })}
+              />
+            </div>
+          </CellList>
+          {errors.time && (
+            <Typography.Label id="task-time-error" className="field-error">
+              {errors.time}
+            </Typography.Label>
+          )}
+        </>
       )}
 
       <div className="card-actions">

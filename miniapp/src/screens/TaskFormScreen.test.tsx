@@ -1,4 +1,5 @@
-// Экран 17: валидация у поля, создание, правка, черновик из бота, ошибка сохранения, «Отмена».
+// Экран 17: валидация у поля, создание, правка, черновик из бота, ошибка сохранения, «Отмена»,
+// задачи задним числом (D32, #108).
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -61,8 +62,9 @@ const nameField = () => screen.getByLabelText(texts.form.name);
 const dateField = () => screen.getByLabelText(texts.form.date);
 const timeField = () => screen.getByLabelText(texts.form.time);
 const saveButton = () => screen.getByRole("button", { name: texts.form.save });
+const doneSwitch = () => screen.queryByRole("switch", { name: texts.form.alreadyDone });
 
-test("validate: название обязательно, дата — не раньше сегодняшней, время — обязательно", () => {
+test("validate: название и дата обязательны, дата в прошлом — можно, время — пока поле видно", () => {
   expect(validate({ title: "Аренда", date: TODAY, time: "10:00" }, TODAY)).toEqual({
     title: null,
     date: null,
@@ -71,9 +73,12 @@ test("validate: название обязательно, дата — не ра�
   expect(validate({ title: "   ", date: "2026-09-24", time: "10:00" }, TODAY).title).toBe(
     texts.form.nameRequired,
   );
-  expect(validate({ title: "Аренда", date: "2026-09-22", time: "10:00" }, TODAY).date).toBe(
-    texts.form.datePast,
-  );
+  // Дата в прошлом (D32): ошибки нет, а время не проверяется — поле скрыто.
+  expect(validate({ title: "Аренда", date: "2026-09-22", time: "" }, TODAY)).toEqual({
+    title: null,
+    date: null,
+    time: null,
+  });
   expect(validate({ title: "Аренда", date: "", time: "10:00" }, TODAY).date).toBe(
     texts.form.dateRequired,
   );
@@ -88,7 +93,10 @@ test("новая задача: по умолчанию завтра, «За 1 д
   expect(nameField()).toHaveValue("");
   expect(nameField()).toHaveAttribute("placeholder", texts.form.namePlaceholder);
   expect(dateField()).toHaveValue("2026-09-24");
-  expect(dateField()).toHaveAttribute("min", TODAY);
+  // Ограничения снизу нет: задачу можно внести задним числом (D32).
+  expect(dateField()).not.toHaveAttribute("min");
+  expect(screen.queryByText(texts.form.pastNoRemind)).not.toBeInTheDocument();
+  expect(doneSwitch()).not.toBeInTheDocument();
   expect(screen.getByRole("radio", { name: texts.form.remind1 })).toBeChecked();
   expect(timeField()).toHaveValue("10:00");
   expect(screen.getAllByRole("radio")).toHaveLength(4);
@@ -120,14 +128,82 @@ test("пустое название: подсказка у поля, «Сохр�
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-test("дата в прошлом: datePast у поля, «Сохранить» неактивна", async () => {
+test("дата в прошлом: «Напомнить» и «Время» скрыты, подсказка и «Уже выполнено» (выкл.)", async () => {
   renderForm();
   await userEvent.type(nameField(), "Аренда");
   await userEvent.clear(dateField());
   await userEvent.type(dateField(), "2026-09-01");
-  const hint = screen.getByText(texts.form.datePast);
-  expect(dateField()).toHaveAttribute("aria-describedby", hint.id);
-  expect(saveButton()).toBeDisabled();
+  expect(screen.getByText(texts.form.pastNoRemind)).toBeInTheDocument();
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  expect(screen.queryByLabelText(texts.form.time)).not.toBeInTheDocument();
+  expect(doneSwitch()).not.toBeChecked();
+  expect(saveButton()).toBeEnabled();
+
+  // Вернули будущую дату — блоки на месте, переключателя нет.
+  await userEvent.clear(dateField());
+  await userEvent.type(dateField(), "2026-09-30");
+  expect(screen.queryByText(texts.form.pastNoRemind)).not.toBeInTheDocument();
+  expect(screen.getAllByRole("radio")).toHaveLength(4);
+  expect(doneSwitch()).not.toBeInTheDocument();
+});
+
+test("дата в прошлом без «Уже выполнено»: POST без done", async () => {
+  const { source } = renderForm({ initialDate: "2026-09-20" });
+  await userEvent.type(nameField(), "Аренда");
+  await userEvent.click(saveButton());
+  expect(source.createTask).toHaveBeenCalledWith({
+    title: "Аренда",
+    due_date: "2026-09-20",
+    remind_offset_days: 1,
+    remind_hour: 10,
+    remind_minute: 0,
+  });
+});
+
+test("«Уже выполнено» уходит в запрос: done=true", async () => {
+  const { source, last, nav } = renderForm({ initialDate: "2026-09-20" });
+  await userEvent.type(nameField(), "Аренда");
+  await userEvent.click(doneSwitch()!);
+  expect(doneSwitch()).toBeChecked();
+  await userEvent.click(saveButton());
+  expect(source.createTask).toHaveBeenCalledWith(
+    expect.objectContaining({ due_date: "2026-09-20", done: true }),
+  );
+  await act(async () =>
+    last("createTask").resolve(makeTaskCard({ id: 5, due_date: "2026-09-20", status: "done" })),
+  );
+  expect(nav.home).toHaveBeenCalledOnce();
+});
+
+test("«Уже выполнено» включили, потом дату вернули в будущее — done не уходит", async () => {
+  const { source } = renderForm({ initialDate: "2026-09-20" });
+  await userEvent.type(nameField(), "Аренда");
+  await userEvent.click(doneSwitch()!);
+  await userEvent.clear(dateField());
+  await userEvent.type(dateField(), "2026-09-30");
+  await userEvent.click(saveButton());
+  expect(source.createTask).toHaveBeenCalledWith(
+    expect.not.objectContaining({ done: expect.anything() }),
+  );
+});
+
+test("правка задачи в прошлом: подсказка есть, переключателя нет, PATCH без done", async () => {
+  const task = makeTaskCard({ id: 3, title: "Аренда", due_date: "2026-09-10", status: "overdue" });
+  const { source } = renderForm({ taskId: 3, cards: { [itemKey("task", 3)]: task } });
+  expect(screen.getByText(texts.form.pastNoRemind)).toBeInTheDocument();
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  expect(doneSwitch()).not.toBeInTheDocument();
+  await userEvent.clear(dateField());
+  await userEvent.type(dateField(), "2026-09-12");
+  await userEvent.click(saveButton());
+  expect(source.updateTask).toHaveBeenCalledWith(
+    3,
+    expect.not.objectContaining({ done: expect.anything() }),
+  );
+  expect(source.updateTask).toHaveBeenCalledWith(
+    3,
+    expect.objectContaining({ due_date: "2026-09-12" }),
+  );
 });
 
 test("название до 60 символов, счётчик — после 50", async () => {

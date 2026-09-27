@@ -246,7 +246,8 @@ export function createMockSource(scenario: MockScenario): DataSource {
       }),
     createTask: (input) =>
       write(() => {
-        const created = taskFrom(nextTaskId++, input, null);
+        // «Уже выполнено» (D32): задача сразу с отметкой.
+        const created = taskFrom(nextTaskId++, input, input.done ? new Date().toISOString() : null);
         cards = [...cards, created];
         return created;
       }),
