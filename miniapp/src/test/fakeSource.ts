@@ -68,6 +68,7 @@ export function makeTaskCard(overrides: Partial<TaskCard> = {}): TaskCard {
     category: "custom",
     remind_offset_days: 1,
     remind_hour: 10,
+    remind_minute: 0,
     ...overrides,
   };
 }

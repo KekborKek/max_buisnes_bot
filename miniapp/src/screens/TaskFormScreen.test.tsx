@@ -59,13 +59,27 @@ function renderForm(
 
 const nameField = () => screen.getByLabelText(texts.form.name);
 const dateField = () => screen.getByLabelText(texts.form.date);
+const timeField = () => screen.getByLabelText(texts.form.time);
 const saveButton = () => screen.getByRole("button", { name: texts.form.save });
 
-test("validate: название обязательно, дата — не раньше сегодняшней", () => {
-  expect(validate({ title: "Аренда", date: TODAY }, TODAY)).toEqual({ title: null, date: null });
-  expect(validate({ title: "   ", date: "2026-09-24" }, TODAY).title).toBe(texts.form.nameRequired);
-  expect(validate({ title: "Аренда", date: "2026-09-22" }, TODAY).date).toBe(texts.form.datePast);
-  expect(validate({ title: "Аренда", date: "" }, TODAY).date).toBe(texts.form.dateRequired);
+test("validate: название обязательно, дата — не раньше сегодняшней, время — обязательно", () => {
+  expect(validate({ title: "Аренда", date: TODAY, time: "10:00" }, TODAY)).toEqual({
+    title: null,
+    date: null,
+    time: null,
+  });
+  expect(validate({ title: "   ", date: "2026-09-24", time: "10:00" }, TODAY).title).toBe(
+    texts.form.nameRequired,
+  );
+  expect(validate({ title: "Аренда", date: "2026-09-22", time: "10:00" }, TODAY).date).toBe(
+    texts.form.datePast,
+  );
+  expect(validate({ title: "Аренда", date: "", time: "10:00" }, TODAY).date).toBe(
+    texts.form.dateRequired,
+  );
+  expect(validate({ title: "Аренда", date: "2026-09-24", time: "" }, TODAY).time).toBe(
+    texts.form.timeRequired,
+  );
 });
 
 test("новая задача: по умолчанию завтра, «За 1 день», 10:00; «Сохранить» неактивна", () => {
@@ -76,11 +90,22 @@ test("новая задача: по умолчанию завтра, «За 1 д
   expect(dateField()).toHaveValue("2026-09-24");
   expect(dateField()).toHaveAttribute("min", TODAY);
   expect(screen.getByRole("radio", { name: texts.form.remind1 })).toBeChecked();
-  expect(screen.getByRole("radio", { name: texts.form.hour(10) })).toBeChecked();
-  expect(screen.getAllByRole("radio")).toHaveLength(7);
+  expect(timeField()).toHaveValue("10:00");
+  expect(screen.getAllByRole("radio")).toHaveLength(4);
   expect(saveButton()).toBeDisabled();
   // Подсказка не пугает сразу — только после ввода.
   expect(screen.queryByText(texts.form.nameRequired)).not.toBeInTheDocument();
+});
+
+test("пустое время: timeRequired у поля, «Сохранить» неактивна", async () => {
+  renderForm();
+  await userEvent.type(nameField(), "Аренда");
+  expect(saveButton()).toBeEnabled();
+  await userEvent.clear(timeField());
+  const hint = screen.getByText(texts.form.timeRequired);
+  expect(timeField()).toHaveAttribute("aria-describedby", hint.id);
+  expect(timeField()).toHaveAttribute("aria-invalid", "true");
+  expect(saveButton()).toBeDisabled();
 });
 
 test("пустое название: подсказка у поля, «Сохранить» неактивна", async () => {
@@ -123,6 +148,7 @@ test("создание за два нажатия и одно поле: POST, п
     due_date: "2026-09-24",
     remind_offset_days: 1,
     remind_hour: 10,
+    remind_minute: 0,
   });
   expect(nameField()).toBeDisabled();
   expect(dateField()).toBeDisabled();
@@ -137,14 +163,15 @@ test("создание за два нажатия и одно поле: POST, п
   expect(source.track).not.toHaveBeenCalledWith("task_created", expect.anything());
 });
 
-test("выбранные напоминание и время уходят в запрос", async () => {
+test("выбранные напоминание и время уходят в запрос: 07:45 → remind_hour=7, remind_minute=45", async () => {
   const { source } = renderForm();
   await userEvent.type(nameField(), "Аренда");
   await userEvent.click(screen.getByRole("radio", { name: texts.form.remind7 }));
-  await userEvent.click(screen.getByRole("radio", { name: texts.form.hour(18) }));
+  await userEvent.clear(timeField());
+  await userEvent.type(timeField(), "07:45");
   await userEvent.click(saveButton());
   expect(source.createTask).toHaveBeenCalledWith(
-    expect.objectContaining({ remind_offset_days: 7, remind_hour: 18 }),
+    expect.objectContaining({ remind_offset_days: 7, remind_hour: 7, remind_minute: 45 }),
   );
 });
 
@@ -190,10 +217,12 @@ test("сохранение из «Месяца» (onCreatedFromMonth): наза�
   expect(screen.getByText(texts.form.created)).toBeInTheDocument();
 });
 
-test("черновик из чата подставляется в поля", () => {
+test("черновик из чата подставляется в поля; без времени — 10:00 и «за 1 день»", () => {
   renderForm({ draft: { title: "Оплатить аренду", due_date: "2026-11-05" } });
   expect(nameField()).toHaveValue("Оплатить аренду");
   expect(dateField()).toHaveValue("2026-11-05");
+  expect(timeField()).toHaveValue("10:00");
+  expect(screen.getByRole("radio", { name: texts.form.remind1 })).toBeChecked();
   expect(saveButton()).toBeEnabled();
 });
 
@@ -203,8 +232,22 @@ test("черновик без даты («Выбрать дату»): назва
   expect(dateField()).toHaveValue("2026-09-24");
 });
 
-test("правка: поля из карточки, PATCH, назад на 16 + «Задача изменена»", async () => {
-  const task = makeTaskCard({ id: 3, title: "Аренда", remind_offset_days: 3, remind_hour: 18 });
+test("черновик из чата со временем (15:30): время подставлено, «в день срока» (контракт TIME-BE)", () => {
+  renderForm({
+    draft: { title: "Сдать отчёт", due_date: "2026-11-05", remind_hour: 15, remind_minute: 30 },
+  });
+  expect(timeField()).toHaveValue("15:30");
+  expect(screen.getByRole("radio", { name: texts.form.remind0 })).toBeChecked();
+});
+
+test("правка: поля из карточки (в том числе время), PATCH, назад на 16 + «Задача изменена»", async () => {
+  const task = makeTaskCard({
+    id: 3,
+    title: "Аренда",
+    remind_offset_days: 3,
+    remind_hour: 18,
+    remind_minute: 45,
+  });
   const { source, last, nav, store } = renderForm({
     taskId: 3,
     cards: { [itemKey("task", 3)]: task },
@@ -213,7 +256,7 @@ test("правка: поля из карточки, PATCH, назад на 16 + 
   expect(nameField()).toHaveValue("Аренда");
   expect(dateField()).toHaveValue("2026-11-05");
   expect(screen.getByRole("radio", { name: texts.form.remind3 })).toBeChecked();
-  expect(screen.getByRole("radio", { name: texts.form.hour(18) })).toBeChecked();
+  expect(timeField()).toHaveValue("18:45");
 
   await userEvent.clear(dateField());
   await userEvent.type(dateField(), "2026-11-10");
@@ -223,6 +266,7 @@ test("правка: поля из карточки, PATCH, назад на 16 + 
     due_date: "2026-11-10",
     remind_offset_days: 3,
     remind_hour: 18,
+    remind_minute: 45,
   });
   const updated = { ...task, due_date: "2026-11-10" };
   await act(async () => last("updateTask").resolve(updated));

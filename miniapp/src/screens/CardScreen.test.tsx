@@ -149,13 +149,23 @@ test("своя задача: напоминание, «Перенести» и �
   expect(screen.getByText(/5 ноября, четверг · Предстоит ·/)).toHaveTextContent(
     texts.category.custom,
   );
-  expect(screen.getByText(texts.card.remindAt(texts.card.remindWhen[1], 10))).toBeInTheDocument();
+  expect(
+    screen.getByText(texts.card.remindAt(texts.card.remindWhen[1], 10, 0)),
+  ).toBeInTheDocument();
   expect(screen.queryByText(texts.card.sectionHowto)).not.toBeInTheDocument();
   expect(screen.queryByText(texts.card.sectionBasis)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: texts.card.wrongDate })).not.toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: texts.card.reschedule }));
   expect(nav.push).toHaveBeenCalledWith({ name: "task", draft: false, taskId: 3 });
+});
+
+test("своя задача с любым временем: «в 7:45» — минуты в формате ЧЧ:ММ (TIME-FE, #104)", async () => {
+  await loaded(makeTaskCard({ title: "Аренда", remind_hour: 7, remind_minute: 45 }));
+  expect(
+    screen.getByText(texts.card.remindAt(texts.card.remindWhen[1], 7, 45)),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/в 7:45/)).toBeInTheDocument();
 });
 
 test("выполненная задача — без дисклеймера про обязательство", async () => {

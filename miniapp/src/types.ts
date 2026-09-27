@@ -75,6 +75,10 @@ export interface TaskDraft {
   title: string;
   /** YYYY-MM-DD или null («Выбрать дату» на экране 10). */
   due_date: string | null;
+  /** 0-23 или null — времени в сообщении не было (контракт TIME-BE, #103/#104). */
+  remind_hour?: number | null;
+  /** 0-59 или null — вместе с remind_hour; время есть → в форме offset «в день срока». */
+  remind_minute?: number | null;
 }
 
 /** Ответ GET /api/me. */
@@ -94,8 +98,6 @@ export interface Me {
 /** Смещение напоминания своей задачи в днях (D11). */
 export type RemindOffset = 0 | 1 | 3 | 7;
 export const REMIND_OFFSETS: readonly RemindOffset[] = [0, 1, 3, 7];
-/** Час напоминания своей задачи (экран 17). */
-export const REMIND_HOURS: readonly number[] = [9, 10, 18];
 
 export interface HowtoLink {
   label: string;
@@ -120,7 +122,10 @@ export interface TaskCard extends CalendarItem {
   type: "task";
   category: "custom";
   remind_offset_days: RemindOffset;
+  /** 0-23. */
   remind_hour: number;
+  /** 0-59 (контракт TIME-BE, #103/#104). */
+  remind_minute: number;
 }
 
 /**
@@ -136,7 +141,10 @@ export interface TaskInput {
   /** YYYY-MM-DD, не раньше сегодняшнего в поясе пользователя. */
   due_date: string;
   remind_offset_days: RemindOffset;
+  /** 0-23. */
   remind_hour: number;
+  /** 0-59 (контракт TIME-BE, #103/#104). */
+  remind_minute: number;
 }
 
 /** Строка списка из карточки: лишние поля в список не тащим. */

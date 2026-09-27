@@ -105,7 +105,15 @@ function obligation(
   };
 }
 
-function task(id: number, title: string, due: string, today: string, done = false): TaskCard {
+function task(
+  id: number,
+  title: string,
+  due: string,
+  today: string,
+  done = false,
+  remindHour = 10,
+  remindMinute = 0,
+): TaskCard {
   const doneAt = done ? `${today}T07:00:00Z` : null;
   return {
     type: "task",
@@ -117,7 +125,8 @@ function task(id: number, title: string, due: string, today: string, done = fals
     status: statusOf(due, doneAt, today),
     done_at: doneAt,
     remind_offset_days: 1,
-    remind_hour: 10,
+    remind_hour: remindHour,
+    remind_minute: remindMinute,
   };
 }
 
@@ -136,7 +145,8 @@ export function mockCards(today: string): ItemCard[] {
       d(20),
       today,
     ),
-    task(6, "Сверить выписку банка", d(45), today),
+    // Ненулевые минуты — чтобы формат «в 9:15» было видно в моке без ручного ввода.
+    task(6, "Сверить выписку банка", d(45), today, false, 9, 15),
     obligation(7, "reports", "Тестовый отчёт за квартал", d(80), today),
   ];
 }
@@ -215,6 +225,7 @@ export function createMockSource(scenario: MockScenario): DataSource {
     done_at: doneAt,
     remind_offset_days: input.remind_offset_days,
     remind_hour: input.remind_hour,
+    remind_minute: input.remind_minute,
   });
 
   return {
