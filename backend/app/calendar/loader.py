@@ -21,6 +21,12 @@ from typing import Any
 
 import yaml
 
+from app.calendar.regime_limits import (
+    RegimeLimit,
+    RegimeLimitsConfig,
+    RegimeLimitStep,
+    RegimeRules,
+)
 from app.calendar.types import (
     CATEGORIES,
     INCOME_BANDS,
@@ -41,12 +47,6 @@ from app.calendar.types import (
     WorkdayCalendar,
     YearlyRule,
     YearWorkdays,
-)
-from app.calendar.regime_limits import (
-    RegimeLimit,
-    RegimeLimitsConfig,
-    RegimeLimitStep,
-    RegimeRules,
 )
 from app.core.config import Settings, get_settings
 

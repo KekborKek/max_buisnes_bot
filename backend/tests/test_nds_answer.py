@@ -81,17 +81,23 @@ async def run(fake_max, *updates: dict) -> dict:
 async def onboard(
     fake_max, income: str = "lt10", regime: str = "usn6", employees: str = "no", tz: str = ""
 ) -> dict:
-    """/start → «Проверить НДС» → четыре ответа; возвращает экран 3."""
+    """/start → «Проверить НДС» → четыре ответа; возвращает экран 3.
+
+    Экран 3 — первое сообщение на последний ответ: за ним может прийти предупреждение
+    о лимите режима (#107).
+    """
     tz = tz or "Europe/Moscow"
-    return await run(
+    await run(
         fake_max,
         started(),
         press("start:check"),
         press(f"onb:1:{income}"),
         press(f"onb:2:{regime}"),
         press(f"onb:3:{employees}"),
-        press(f"onb:4:{tz}"),
     )
+    before = len(fake_max.sent)
+    await run(fake_max, press(f"onb:4:{tz}"))
+    return fake_max.sent[before]
 
 
 async def events(name: str) -> list[dict]:
