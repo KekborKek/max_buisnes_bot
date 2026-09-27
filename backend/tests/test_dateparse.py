@@ -177,6 +177,40 @@ def test_month_word_year_separated_by_preposition_is_ignored() -> None:
     assert result.explicit_year is False
 
 
+def test_month_word_four_digits_followed_by_amount_word_is_not_a_year() -> None:
+    """Регрессия по ревью PR #115: «2000 рублей» — сумма, а не год 2000 (не 2000-11-05)."""
+    result = parse_task_from_text("Заплатить 5 ноября 2000 рублей", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)  # как без года, ближайшее 5 ноября
+    assert result.explicit_year is False
+    assert result.title == "Заплатить 2000 рублей"
+
+
+def test_month_word_four_digits_followed_by_arbitrary_word_is_not_a_year() -> None:
+    """Регрессия по ревью PR #115: «1984 Оруэлла» — не год (после числа не разрешённый хвост)."""
+    result = parse_task_from_text("Прочитать 5 ноября 1984 Оруэлла", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)
+    assert result.explicit_year is False
+    assert result.title == "Прочитать 1984 Оруэлла"
+
+
+def test_month_word_year_out_of_range_is_not_a_year() -> None:
+    """Год далеко за пределами today.year − 5 … today.year + 10 — не год (по ревью PR #115)."""
+    result = parse_task_from_text("Основано 5 ноября 1900 года назад", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)
+    assert result.explicit_year is False
+
+
+def test_month_word_year_before_trailing_comment_is_still_a_year() -> None:
+    """«5 ноября 2025, срочно» — запятая сразу за годом, это всё ещё год (по ревью PR #115)."""
+    result = parse_task_from_text("Отчёт 5 ноября 2025, срочно", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+
+
 # --- Несуществующие даты: похоже на дату, но она невозможна → NO_DATE, без исключений ----
 
 
