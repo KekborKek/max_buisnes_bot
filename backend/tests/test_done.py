@@ -1,4 +1,4 @@
-"""Экран 8: «Отметить выполненным» и «Отменить отметку» из бота (T7).
+"""Экран 8: «Отметить выполненным» и «Отменить выполнение» из бота (T7).
 
 Справочник — фикстура backend/tests/fixtures/obligations.yaml (ТЕСТОВЫЕ ДАННЫЕ).
 Апдейты — фикстура callback_start_check.json с подменённым payload.
@@ -191,7 +191,7 @@ async def test_done_from_reminder(fake_max, clock, bot_username):
     ]
     attachments = fake_max.sent[0]["attachments"]
     assert payloads(attachments) == [["open:None", f"d:undo:obligation:{uo_id}"]]
-    assert texts(attachments) == [["Открыть календарь", "Отменить отметку"]]
+    assert texts(attachments) == [["Открыть календарь", "Отменить выполнение"]]
     assert await done_at(uo_id) is not None
     assert await done_at(next_id) is None
     assert await events("reminder_clicked") == [{"kind": "d7", "action": "done"}]
@@ -372,7 +372,7 @@ async def test_after_mark_no_reminder_arrives_and_undo_returns_them(fake_max, cl
     assert sent_texts(fake_max)[-1] == f"Завтра, 28 октября — {YEARLY}. Это последний день срока."
 
 
-# --- «Отменить отметку» ----------------------------------------------------------------------
+# --- «Отменить выполнение» -------------------------------------------------------------------
 
 
 async def test_undo_edits_message_and_unmarks(fake_max, clock):
@@ -380,7 +380,7 @@ async def test_undo_edits_message_and_unmarks(fake_max, clock):
 
     await process_update(callback(f"d:undo:obligation:{uo_id}", mid="mid-8"), fake_max)
 
-    undone = "Отменил отметку. Напомню, как планировал."
+    undone = "Отменил выполнение. Напомню, как планировал."
     assert fake_max.edited == [{"message_id": "mid-8", "text": undone, "attachments": []}]
     assert fake_max.sent == []
     assert await done_at(uo_id) is None
@@ -405,7 +405,7 @@ async def test_undo_without_mid_replies(fake_max, clock):
     await process_update(callback(f"d:undo:obligation:{uo_id}", mid=None), fake_max)
 
     assert fake_max.edited == []
-    assert sent_texts(fake_max) == ["Отменил отметку. Напомню, как планировал."]
+    assert sent_texts(fake_max) == ["Отменил выполнение. Напомню, как планировал."]
     assert await done_at(uo_id) is None
 
 
