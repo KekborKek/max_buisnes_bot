@@ -1,5 +1,6 @@
 // Экран 17. Форма своей задачи (docs/screens/17-task-form.md): четыре поля (D9),
-// дата — нативный input type="date" (D8). Событие task_created пишет бэкенд в POST /api/tasks.
+// дата и время напоминания — нативные input type="date"/"time" (D8, TIME-FE #104).
+// Событие task_created пишет бэкенд в POST /api/tasks.
 import {
   Button,
   CellHeader,
@@ -22,17 +23,14 @@ import { useToast } from "../shell/Toast";
 import { useConfirmPress } from "../shell/useConfirmPress";
 import { itemKey, useCalendarStore } from "../store";
 import { texts } from "../texts";
-import {
-  REMIND_HOURS,
-  REMIND_OFFSETS,
-  type RemindOffset,
-  type TaskDraft,
-  type TaskInput,
-} from "../types";
+import { REMIND_OFFSETS, type RemindOffset, type TaskDraft, type TaskInput } from "../types";
 
 export const TITLE_MAX = 60;
 /** Счётчик символов появляется, когда название длиннее 50. */
 export const TITLE_COUNTER_FROM = 50;
+
+/** Время по умолчанию (D11 / контракт TIME-BE, #103, #104). */
+const DEFAULT_TIME = "10:00";
 
 const OFFSET_LABEL: Record<RemindOffset, string> = {
   0: texts.form.remind0,
@@ -41,20 +39,29 @@ const OFFSET_LABEL: Record<RemindOffset, string> = {
   7: texts.form.remind7,
 };
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+/** "HH:MM" для value input type="time" — в отличие от текста карточки, час тоже с нулём. */
+const timeValue = (hour: number, minute: number) => `${pad2(hour)}:${pad2(minute)}`;
+
 interface Values {
   title: string;
   date: string;
   offset: RemindOffset;
-  hour: number;
+  /** "HH:MM" или "" — поле очищено (input type="time"). */
+  time: string;
 }
 
 export interface FieldErrors {
   title: string | null;
   date: string | null;
+  time: string | null;
 }
 
-/** Валидация из спеки: название обязательно, дата — не раньше сегодняшней. */
-export function validate(values: Pick<Values, "title" | "date">, today: string): FieldErrors {
+/** Валидация из спеки: название обязательно, дата — не раньше сегодняшней, время — обязательно. */
+export function validate(
+  values: Pick<Values, "title" | "date" | "time">,
+  today: string,
+): FieldErrors {
   return {
     title: values.title.trim() === "" ? texts.form.nameRequired : null,
     date:
@@ -63,6 +70,7 @@ export function validate(values: Pick<Values, "title" | "date">, today: string):
         : values.date < today
           ? texts.form.datePast
           : null,
+    time: values.time === "" ? texts.form.timeRequired : null,
   };
 }
 
@@ -102,14 +110,17 @@ export function TaskFormScreen({
         title: editing.title,
         date: editing.due_date,
         offset: editing.remind_offset_days,
-        hour: editing.remind_hour,
+        time: timeValue(editing.remind_hour, editing.remind_minute),
       };
     }
+    // Черновик из чата со временем (например «15:30») — подставляем его и «в день срока»;
+    // без времени — как раньше, за 1 день, 10:00 (контракт TIME-BE, #103/#104).
+    const draftTime = draft?.remind_hour != null;
     return {
       title: (draft?.title ?? "").slice(0, TITLE_MAX),
       date: draft?.due_date ?? initialDate ?? addDays(today, 1),
-      offset: 1,
-      hour: 10,
+      offset: draftTime ? 0 : 1,
+      time: draftTime ? timeValue(draft!.remind_hour!, draft?.remind_minute ?? 0) : DEFAULT_TIME,
     };
   });
   const [values, setValues] = useState<Values>(initial);
@@ -144,21 +155,23 @@ export function TaskFormScreen({
   }
 
   const errors = validate(values, today);
-  const canSave = !errors.title && !errors.date && !saving;
+  const canSave = !errors.title && !errors.date && !errors.time && !saving;
   const dirty =
     values.title !== initial.title ||
     values.date !== initial.date ||
     values.offset !== initial.offset ||
-    values.hour !== initial.hour;
+    values.time !== initial.time;
   const set = (patch: Partial<Values>) => setValues((v) => ({ ...v, ...patch }));
 
   const save = () => {
     if (!canSave) return;
+    const [hour, minute] = values.time.split(":").map(Number);
     const input: TaskInput = {
       title: values.title.trim(),
       due_date: values.date,
       remind_offset_days: values.offset,
-      remind_hour: values.hour,
+      remind_hour: hour,
+      remind_minute: minute,
     };
     setSaving(true);
     setError(null);
@@ -284,28 +297,24 @@ export function TaskFormScreen({
         ))}
       </CellList>
 
-      <CellList
-        mode="island"
-        role="radiogroup"
-        aria-label={texts.form.time}
-        header={<CellHeader>{texts.form.time}</CellHeader>}
-      >
-        {REMIND_HOURS.map((hour) => (
-          <CellSimple
-            key={hour}
-            as="label"
-            before={
-              <Radio
-                name="remind-hour"
-                checked={values.hour === hour}
-                disabled={saving}
-                onChange={() => set({ hour })}
-              />
-            }
-            title={texts.form.hour(hour)}
+      <CellList mode="island" header={<CellHeader>{texts.form.time}</CellHeader>}>
+        <div className="form-field">
+          <Input
+            type="time"
+            aria-label={texts.form.time}
+            aria-invalid={errors.time ? true : undefined}
+            aria-describedby={errors.time ? "task-time-error" : undefined}
+            value={values.time}
+            disabled={saving}
+            onChange={(e) => set({ time: e.target.value })}
           />
-        ))}
+        </div>
       </CellList>
+      {errors.time && (
+        <Typography.Label id="task-time-error" className="field-error">
+          {errors.time}
+        </Typography.Label>
+      )}
 
       <div className="card-actions">
         <Button size="large" stretched loading={saving} disabled={!canSave} onClick={save}>

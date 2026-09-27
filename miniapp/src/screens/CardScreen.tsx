@@ -251,6 +251,7 @@ export function CardScreen({ source, route, today, timezone }: Props) {
               {texts.card.remindAt(
                 texts.card.remindWhen[card.remind_offset_days],
                 card.remind_hour,
+                card.remind_minute,
               )}
             </Typography.Label>
           )}
