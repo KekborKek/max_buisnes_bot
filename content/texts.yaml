@@ -64,15 +64,19 @@ nds:
   shift_note: " ({original_date} — выходной)"
   btn_build: "Собрать календарь"
   btn_why: "Почему так?"
-  why: "Порог освобождения от НДС на УСН: {thresholds}. Основание — {law}."
+  # Текст #106 (человек, дословно): «Порог дохода для освобождения от НДС на УСН:
+  # 20 млн ₽ — за 2025–2028 годы; 15 млн ₽ — за 2029 год; 10 млн ₽ — за 2030 год и
+  # последующие годы. Основание: Федеральный закон от 04.07.2026 № 228-ФЗ.»
+  # {thresholds} собирается в nds_answer.thresholds_text() из threshold_first/_range/
+  # _single (разделитель «; ») с threshold_last_suffix у последнего порога.
+  why: "Порог дохода для освобождения от НДС на УСН: {thresholds}. Основание: {law}."
   btn_law: "Закон"
   btn_fns: "Разъяснения ФНС"
-  # Части {thresholds} и {years} — собраны из примера в спеке экрана 3, UX может поправить:
-  # «20 млн ₽ — доходы за 2025–2028 годы, 15 млн ₽ — за 2029-й, 10 млн ₽ — за 2030-й».
   years_range: "{first}–{last}"
-  threshold_first: "{limit} — доходы за {years} годы"
+  threshold_first: "{limit} — за {years} годы"
   threshold_range: "{limit} — за {years} годы"
-  threshold_single: "{limit} — за {year}-й"
+  threshold_single: "{limit} — за {year} год"
+  threshold_last_suffix: " и последующие годы"
 
 # Экран 5 «Календарь готов» (docs/screens/05-calendar-ready.md).
 calendar_ready:
@@ -206,9 +210,9 @@ done:
   last_in_year: "Отметил: {title} — выполнено.\n{disclaimer}\nЭто было последнее обязательное событие в {year} году. Следующее — {next_date}: {next_title}."
   nothing_next: "Отметил: {title} — выполнено.\n{disclaimer}\nБольше сроков в календаре нет."
   already: "Это событие уже отмечено {done_date}."
-  undone: "Отменил отметку. Напомню, как планировал."
+  undone: "Отменил выполнение. Напомню, как планировал."
   btn_open: "Открыть календарь"
-  btn_undo: "Отменить отметку"
+  btn_undo: "Отменить выполнение"
 
 # Служебная команда /demo_remind для админов (docs/spec/reminders.md, «Демо»; T13b, #72).
 # Эти тексты видят только user_id из ADMIN_IDS, не обычные пользователи.

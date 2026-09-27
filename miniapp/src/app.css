@@ -155,9 +155,15 @@ body {
 }
 
 .row-date {
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
   width: 56px;
   white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* Год другого срока — второй строкой мелким шрифтом, колонка не расширяется (#105). */
+.row-date__year {
   color: var(--text-secondary);
 }
 
