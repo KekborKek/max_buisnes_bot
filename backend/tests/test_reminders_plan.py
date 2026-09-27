@@ -9,11 +9,13 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy import select
 
+from app.calendar import loader
 from app.calendar.reminders import (
     PlannedNotification,
     cancel_pending,
     plan_obligation_notifications,
     plan_task_notification,
+    resync_user_notifications,
     send_at_utc,
     sync_obligation_notifications,
     sync_task_notification,
@@ -46,6 +48,18 @@ def test_send_at_utc_is_10_local(tz, expected):
     at = send_at_utc(date(2026, 10, 21), 10, tz)
     assert at == expected
     assert at.utcoffset().total_seconds() == 0
+
+
+@pytest.mark.parametrize(
+    ("tz", "expected"),
+    [
+        ("Europe/Moscow", utc(2026, 10, 21, 4, 45)),
+        ("Asia/Vladivostok", utc(2026, 10, 20, 21, 45)),
+    ],
+)
+def test_send_at_utc_with_minutes(tz, expected):
+    """#103: своя задача — любое время ЧЧ:ММ; 07:45 по поясу пользователя."""
+    assert send_at_utc(date(2026, 10, 21), 7, tz, minute=45) == expected
 
 
 def test_vladivostok_and_kaliningrad_differ():
@@ -119,6 +133,14 @@ def test_task_single_notification_with_form_offset(offset, expected):
         DUE, remind_offset_days=offset, remind_hour=9, tz=MSK, now=LONG_AGO
     )
     assert planned == PlannedNotification("task", expected)
+
+
+def test_task_notification_with_minutes_on_due_day():
+    """#103: время из чата — в день срока (offset 0) в 15:30 по Москве = 12:30 UTC."""
+    planned = plan_task_notification(
+        DUE, remind_offset_days=0, remind_hour=15, remind_minute=30, tz=MSK, now=LONG_AGO
+    )
+    assert planned == PlannedNotification("task", utc(2026, 10, 28, 12, 30))
 
 
 def test_task_notification_in_past_is_none():
@@ -381,7 +403,7 @@ async def test_future_copy_of_sent_kind_is_cancelled():
 # --- задачи ------------------------------------------------------------------------------------
 
 
-async def _task(session, *, offset=1, hour=10) -> Task:
+async def _task(session, *, offset=1, hour=10, minute=None) -> Task:
     session.add(User(user_id=USER_ID))
     await session.flush()  # связей в ORM нет — порядок вставки задаём сами
     task = Task(
@@ -391,6 +413,8 @@ async def _task(session, *, offset=1, hour=10) -> Task:
         remind_offset_days=offset,
         remind_hour=hour,
     )
+    if minute is not None:
+        task.remind_minute = minute
     session.add(task)
     await session.flush()
     return task
@@ -433,3 +457,44 @@ async def test_task_in_past_gets_no_notification():
         await sync_task_notification(session, task, tz=MSK, now=utc(2026, 10, 22))
         await session.flush()
         assert await _notifications(session, "task", task.id) == []
+
+
+async def test_task_without_minute_gets_zero():
+    """#103: задача без remind_minute (как из старого кода) — :00, в базе 0."""
+    async with SessionLocal() as session:
+        task = await _task(session)
+        assert task.remind_minute == 0
+        await sync_task_notification(session, task, tz=MSK, now=LONG_AGO)
+        await session.flush()
+        [row] = await _notifications(session, "task", task.id)
+        assert row.send_at.replace(tzinfo=UTC) == utc(2026, 10, 27, 7)
+
+
+async def test_task_minute_change_replans(fixture_reference):
+    """#103: смена минут пересоздаёт напоминание; смена пояса сохраняет минуты."""
+    async with SessionLocal() as session:
+        task = await _task(session, offset=0, hour=15, minute=30)
+        await sync_task_notification(session, task, tz=MSK, now=LONG_AGO)
+        await session.flush()
+        task.remind_minute = 45
+        await sync_task_notification(session, task, tz=MSK, now=LONG_AGO)
+        await session.flush()
+        rows = await _notifications(session, "task", task.id)
+        assert [(n.status, n.send_at.replace(tzinfo=UTC)) for n in rows] == [
+            ("cancelled", utc(2026, 10, 28, 12, 30)),
+            ("pending", utc(2026, 10, 28, 12, 45)),
+        ]
+
+        await resync_user_notifications(
+            session,
+            USER_ID,
+            tz="Asia/Vladivostok",
+            settings=None,
+            reference=loader.get_reference(),
+            now=LONG_AGO,
+        )
+        await session.flush()
+        rows = await _notifications(session, "task", task.id)
+        pending = [n for n in rows if n.status == "pending"]
+        # 15:45 во Владивостоке (UTC+10) = 05:45 UTC
+        assert [n.send_at.replace(tzinfo=UTC) for n in pending] == [utc(2026, 10, 28, 5, 45)]
