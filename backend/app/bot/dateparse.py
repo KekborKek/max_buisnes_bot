@@ -119,16 +119,12 @@ _WEEKDAY_PATTERN = re.compile(
 )
 
 _RELATIVE_OFFSETS = {"сегодня": 0, "завтра": 1, "послезавтра": 2, "через неделю": 7}
-_RELATIVE_PATTERN = re.compile(
-    r"\b(сегодня|завтра|послезавтра|через\s+неделю)\b", re.IGNORECASE
-)
+_RELATIVE_PATTERN = re.compile(r"\b(сегодня|завтра|послезавтра|через\s+неделю)\b", re.IGNORECASE)
 
 _NUMERIC_DATE_PATTERN = re.compile(r"\b(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b")
 _MONTH_WORD_PATTERN = re.compile(r"\b(\d{1,2})\s+([а-яёА-ЯЁ]+\.?)\b")
 # Год словами после «число + месяц»: «5 ноября 2025», «5 ноября 2025 года», «5 ноября 2025 г.».
-_YEAR_AFTER_MONTH_PATTERN = re.compile(
-    r"\s+(\d{4})(?:\s*(?:года|г\.|г))?\b", re.IGNORECASE
-)
+_YEAR_AFTER_MONTH_PATTERN = re.compile(r"\s+(\d{4})(?:\s*(?:года|г\.|г))?\b", re.IGNORECASE)
 
 # Слова-маркеры сумм/количеств: «1.5 млн» синтаксически похоже на ДД.ММ, но датой не является.
 _STOP_WORDS_AFTER = {
