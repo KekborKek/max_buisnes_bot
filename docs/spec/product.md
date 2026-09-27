@@ -161,7 +161,7 @@ disclaimer:
 | `wrong_date_reported` | `item_id`, `item_type`, `source` | 7, 16 |
 | `item_done` | `item_id`, `item_type`, `source`, `days_before_deadline` | 8, 16 |
 | `item_undone` | `item_id`, `item_type`, `source` | 8, 16 |
-| `task_created` | `source` (`chat`/`form`), `remind_offset` | 9, 17 |
+| `task_created` | `source` (`chat`/`form`), `remind_offset`; у `form` ещё `backdated` (дата раньше сегодняшней, D32) и `done_at_create` (создана с «Уже выполнено») | 9, 17 |
 | `task_draft_stale` | `action` (`save`/`anyway`/`yes`/`cancel`/`tomorrow`/`week`/`edit`) — нажата кнопка прежнего черновика (`edit` — «Изменить» / «Выбрать дату», шлёт мини-апп) | 9, 10, 17 |
 | `date_not_parsed` | — | 10 |
 | `fallback_shown` | `case` (`unknown`/`no_date`/`service`) | 10 |

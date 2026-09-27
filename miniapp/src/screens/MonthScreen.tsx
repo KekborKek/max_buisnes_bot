@@ -5,7 +5,6 @@ import { Button, CellList, IconButton, Typography } from "@maxhub/max-ui";
 import { useEffect } from "react";
 
 import {
-  addDays,
   addMonths,
   dayCategories,
   formatDate,
@@ -74,9 +73,9 @@ export function MonthScreen({
   const next = addMonths(month, 1);
   const dayItems = byDay.get(day) ?? [];
   const monthEmpty = items !== null && byDay.size === 0;
-  // «+ Задача» (#93): дата выбранного дня, если он не раньше сегодняшнего, иначе — завтра (D9).
-  const addTaskDate = day >= today ? day : addDays(today, 1);
-  const addTask = () => push({ name: "task", draft: false, date: addTaskDate, from: "month" });
+  // «+ Задача» (#93): дата выбранного дня, в том числе прошедшего — задача задним числом,
+  // без напоминания (D32, #108).
+  const addTask = () => push({ name: "task", draft: false, date: day, from: "month" });
 
   return (
     <div className="screen screen--with-bar">

@@ -1,4 +1,4 @@
-"""T10 (#51): свои задачи из мини-аппа — экраны 16 и 17, D11.
+"""T10 (#51): свои задачи из мини-аппа — экраны 16 и 17, D11; задачи задним числом — D32 (#108).
 
 «Сейчас» — 23.09.2026 10:00 по Москве (фикстура miniapp_api), если тест не переставил часы.
 """
@@ -86,7 +86,10 @@ async def test_create_task_with_defaults(miniapp_api):
     ]
     created = await events("task_created")
     assert [(e.user_id, e.props) for e in created] == [
-        (OWNER, {"source": "form", "remind_offset": 1})
+        (
+            OWNER,
+            {"source": "form", "remind_offset": 1, "backdated": False, "done_at_create": False},
+        )
     ]
 
 
@@ -98,17 +101,25 @@ async def test_create_task_reminder_in_user_timezone(miniapp_api):
     assert await task_notifications(r.json()["id"]) == [
         ("task", "pending", datetime(2026, 10, 29, 8, tzinfo=UTC))
     ]
-    assert (await events("task_created"))[0].props == {"source": "form", "remind_offset": 7}
+    assert (await events("task_created"))[0].props == {
+        "source": "form",
+        "remind_offset": 7,
+        "backdated": False,
+        "done_at_create": False,
+    }
 
 
 async def test_create_task_today_uses_user_timezone(miniapp_api):
-    """23.09 20:00 UTC: во Владивостоке уже 24-е — 23-е в прошлом, 24-е можно."""
+    """23.09 20:00 UTC: во Владивостоке уже 24-е — 23-е в прошлом (D32), 24-е — сегодня."""
     await add_user(OWNER, tz="Asia/Vladivostok")
     miniapp_api.now = datetime(2026, 9, 23, 20, tzinfo=UTC)
-    assert (await create(miniapp_api, due_date="2026-09-23")).status_code == 422
+    past = await create(miniapp_api, due_date="2026-09-23")
+    assert past.status_code == 200
+    assert past.json()["status"] == "overdue"
     r = await create(miniapp_api, due_date="2026-09-24", remind_offset_days=0)
     assert r.status_code == 200
     assert r.json()["status"] == "today"
+    assert [e.props["backdated"] for e in await events("task_created")] == [True, False]
 
 
 async def test_create_task_for_today_without_future_reminder(miniapp_api):
@@ -139,7 +150,6 @@ async def test_create_task_creates_user_row(miniapp_api):
         ({"title": ""}, "title"),
         ({"title": "   "}, "title"),
         ({"title": "я" * 61}, "title"),
-        ({"due_date": "2026-09-22"}, "due_date"),
         ({"due_date": "5 ноября"}, "due_date"),
         ({"remind_offset_days": 2}, "remind_offset_days"),
         ({"remind_hour": 24}, "remind_hour"),
@@ -199,6 +209,93 @@ async def test_create_task_reminder_at_any_minute(miniapp_api):
     assert (card["remind_hour"], card["remind_minute"]) == (7, 45)
 
 
+# --- Задачи задним числом (D32, #108) ----------------------------------------------------
+
+
+async def all_notifications() -> int:
+    async with SessionLocal() as s:
+        return len(list(await s.scalars(select(Notification))))
+
+
+@pytest.mark.parametrize("offset", [0, 1, 3, 7])
+@pytest.mark.parametrize(("hour", "minute"), [(0, 0), (10, 0), (23, 59)])
+async def test_backdated_task_is_overdue_without_notifications(miniapp_api, offset, hour, minute):
+    """Вчерашняя дата: задача создаётся просроченной, ни одной строки Notification."""
+    await add_user(OWNER)
+    r = await create(
+        miniapp_api,
+        due_date="2026-09-22",
+        remind_offset_days=offset,
+        remind_hour=hour,
+        remind_minute=minute,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["status"], body["done_at"]) == ("overdue", None)
+    assert await all_notifications() == 0
+    assert [e.props for e in await events("task_created")] == [
+        {"source": "form", "remind_offset": offset, "backdated": True, "done_at_create": False}
+    ]
+
+
+async def test_backdated_task_created_done(miniapp_api):
+    """«Уже выполнено»: done_at = сейчас, статус done, уведомлений нет — и после снятия отметки."""
+    await add_user(OWNER)
+    r = await create(miniapp_api, due_date="2026-09-01", done=True)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "done"
+    assert body["done_at"].startswith("2026-09-23T07:00")
+    assert await all_notifications() == 0
+    assert [e.props for e in await events("task_created")] == [
+        {"source": "form", "remind_offset": 1, "backdated": True, "done_at_create": True}
+    ]
+    # в календаре выполненной
+    items = (
+        await miniapp_api.request("GET", "/api/calendar?from=2026-09-01&to=2026-09-30", OWNER)
+    ).json()
+    assert [(i["id"], i["status"]) for i in items if i["type"] == "task"] == [(body["id"], "done")]
+
+    r = await miniapp_api.request("DELETE", f"/api/items/task/{body['id']}/done", OWNER)
+    assert r.status_code == 200
+    assert r.json()["status"] == "overdue"
+    assert await all_notifications() == 0
+
+
+async def test_backdated_task_can_be_marked_from_card(miniapp_api):
+    """Без «Уже выполнено» — просроченная; «Отметить выполненным» из карточки работает."""
+    await add_user(OWNER)
+    task_id = (await create(miniapp_api, due_date="2026-09-20")).json()["id"]
+    r = await miniapp_api.request("POST", f"/api/items/task/{task_id}/done", OWNER)
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+    assert await all_notifications() == 0
+
+
+async def test_done_flag_accepted_for_future_date(miniapp_api):
+    """done принимается на любую дату (решение по #108): отметка сразу, напоминания нет."""
+    await add_user(OWNER)
+    r = await create(miniapp_api, done=True)
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+    assert await task_notifications(r.json()["id"]) == []
+    assert (await events("task_created"))[0].props["done_at_create"] is True
+
+
+async def test_patch_to_past_date_cancels_notification(miniapp_api):
+    """Перенос на прошедший день: прежнее напоминание cancelled, нового нет."""
+    await add_user(OWNER)
+    task_id = (await create(miniapp_api)).json()["id"]
+    r = await miniapp_api.request(
+        "PATCH", f"/api/tasks/{task_id}", OWNER, json={"due_date": "2026-09-21"}
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "overdue"
+    assert await task_notifications(task_id) == [
+        ("task", "cancelled", datetime(2026, 10, 4, 7, tzinfo=UTC))
+    ]
+
+
 # --- PATCH /api/tasks/{id} ----------------------------------------------------------------
 
 
@@ -254,7 +351,7 @@ async def test_patch_title_only_keeps_notification(miniapp_api):
 
 
 async def test_patch_overdue_task_title_keeps_past_date(miniapp_api):
-    """Прежнюю дату в прошлом оставить можно, новую в прошлом — нет."""
+    """Прежнюю дату в прошлом оставить можно, новую в прошлом — тоже (D32), без напоминания."""
     await add_user(OWNER)
     task_id = (await create(miniapp_api, due_date="2026-09-25")).json()["id"]
     miniapp_api.now = datetime(2026, 9, 28, 7, tzinfo=UTC)
@@ -267,8 +364,8 @@ async def test_patch_overdue_task_title_keeps_past_date(miniapp_api):
     assert r.json()["status"] == "overdue"
 
     r = await miniapp_api.request("PATCH", url, OWNER, json={"due_date": "2026-09-27"})
-    assert r.status_code == 422
-    assert r.json()["detail"][0]["loc"] == ["body", "due_date"]
+    assert r.status_code == 200
+    assert r.json()["status"] == "overdue"
 
     r = await miniapp_api.request("PATCH", url, OWNER, json={"due_date": "2026-09-30"})
     assert r.status_code == 200

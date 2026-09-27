@@ -138,13 +138,15 @@ export type ItemCard = ObligationCard | TaskCard;
 /** Тело POST /api/tasks и PATCH /api/tasks/{id}. Категория всегда `custom`, её не передаём. */
 export interface TaskInput {
   title: string;
-  /** YYYY-MM-DD, не раньше сегодняшнего в поясе пользователя. */
+  /** YYYY-MM-DD; можно в прошлом — тогда напоминания нет (D32, #108). */
   due_date: string;
   remind_offset_days: RemindOffset;
   /** 0-23. */
   remind_hour: number;
   /** 0-59 (контракт TIME-BE, #103/#104). */
   remind_minute: number;
+  /** «Уже выполнено» — только при создании задачи в прошлом (D32, #108); PATCH его не шлёт. */
+  done?: boolean;
 }
 
 /** Строка списка из карточки: лишние поля в список не тащим. */
