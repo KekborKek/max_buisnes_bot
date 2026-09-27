@@ -42,6 +42,12 @@ from app.calendar.types import (
     YearlyRule,
     YearWorkdays,
 )
+from app.calendar.regime_limits import (
+    RegimeLimit,
+    RegimeLimitsConfig,
+    RegimeLimitStep,
+    RegimeRules,
+)
 from app.core.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
@@ -464,3 +470,137 @@ def get_reference() -> Reference:
     из backend/tests/fixtures/, а не читают реальные файлы аналитика.
     """
     return load_reference(get_settings())
+
+
+# --- regime_limits.yaml (#107) ------------------------------------------------------------------
+
+# Имени файла в Settings нет (core — зона техлида): лежит рядом с остальными справочниками.
+REGIME_LIMITS_FILE = "regime_limits.yaml"
+_STEPS_MIN, _STEPS_MAX = 3, 5
+
+
+def regime_limits_path(settings: Settings) -> Path:
+    return Path(settings.content_dir) / REGIME_LIMITS_FILE
+
+
+def _nonempty_str(raw: Mapping[str, Any], key: str, where: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ReferenceFileError(f"{where}: поле {key} должно быть непустой строкой")
+    return value
+
+
+def _verified(raw: Mapping[str, Any], where: str) -> bool:
+    value = raw.get("verified")
+    if not isinstance(value, bool):
+        raise ReferenceFileError(f"{where}: поле verified обязательно и должно быть true или false")
+    return value
+
+
+def _parse_regime_limit(raw: Any, where: str) -> RegimeLimit:
+    if not isinstance(raw, Mapping):
+        raise ReferenceFileError(f"{where}: запись лимита должна быть словарём")
+    years_raw = raw.get("income_years")
+    from_raw = raw.get("income_years_from")
+    if (years_raw is None) == (from_raw is None):
+        raise ReferenceFileError(f"{where}: нужно ровно одно из income_years и income_years_from")
+    income_years: tuple[int, ...] = ()
+    income_years_from: int | None = None
+    if years_raw is not None:
+        if not isinstance(years_raw, list) or not years_raw:
+            raise ReferenceFileError(f"{where}: income_years должен быть непустым списком")
+        if any(isinstance(y, bool) or not isinstance(y, int) for y in years_raw):
+            raise ReferenceFileError(f"{where}: income_years должен состоять из чисел")
+        income_years = tuple(int(y) for y in years_raw)
+    else:
+        if isinstance(from_raw, bool) or not isinstance(from_raw, int):
+            raise ReferenceFileError(f"{where}: income_years_from должен быть годом")
+        income_years_from = from_raw
+    limit_rub = raw.get("limit_rub")
+    if isinstance(limit_rub, bool) or not isinstance(limit_rub, int) or limit_rub <= 0:
+        raise ReferenceFileError(f"{where}: limit_rub должен быть целым числом больше нуля")
+    return RegimeLimit(
+        income_years=income_years,
+        income_years_from=income_years_from,
+        limit_rub=limit_rub,
+        verified=_verified(raw, where),
+    )
+
+
+def _check_limit_years(limits: list[RegimeLimit], where: str) -> None:
+    """Каждый год дохода — не больше чем в одном лимите."""
+    seen: set[int] = set()
+    open_from: int | None = None
+    for limit in limits:
+        if limit.income_years_from is not None:
+            if open_from is not None:
+                raise ReferenceFileError(f"{where}: income_years_from задан дважды")
+            open_from = limit.income_years_from
+        for year in limit.income_years:
+            if year in seen:
+                raise ReferenceFileError(f"{where}: год {year} встречается в двух лимитах")
+            seen.add(year)
+    if open_from is not None and any(year >= open_from for year in seen):
+        raise ReferenceFileError(f"{where}: income_years пересекаются с income_years_from")
+
+
+def _parse_regime_rules(regime: str, raw: Any, path: Path) -> RegimeRules:
+    where = f"{path}: regimes.{regime}"
+    if not isinstance(raw, Mapping):
+        raise ReferenceFileError(f"{where}: должен быть словарём")
+    limits_raw = raw.get("limits")
+    if not isinstance(limits_raw, list) or not limits_raw:
+        raise ReferenceFileError(f"{where}: limits должен быть непустым списком")
+    limits = [_parse_regime_limit(item, f"{where}.limits") for item in limits_raw]
+    _check_limit_years(limits, f"{where}.limits")
+
+    steps_raw = raw.get("steps")
+    if not isinstance(steps_raw, list) or not (_STEPS_MIN <= len(steps_raw) <= _STEPS_MAX):
+        raise ReferenceFileError(f"{where}: steps — список из {_STEPS_MIN}–{_STEPS_MAX} шагов")
+    steps: list[RegimeLimitStep] = []
+    for item in steps_raw:
+        if not isinstance(item, Mapping):
+            raise ReferenceFileError(f"{where}.steps: шаг должен быть словарём")
+        steps.append(
+            RegimeLimitStep(
+                text=_nonempty_str(item, "text", f"{where}.steps"),
+                norm=_nonempty_str(item, "norm", f"{where}.steps"),
+                verified=_verified(item, f"{where}.steps"),
+            )
+        )
+    return RegimeRules(
+        regime=regime,
+        norm=_nonempty_str(raw, "norm", where),
+        norm_url=_nonempty_str(raw, "norm_url", where),
+        fns_url=_nonempty_str(raw, "fns_url", where),
+        limits=tuple(limits),
+        steps=tuple(steps),
+    )
+
+
+def load_regime_limits(path: Path) -> RegimeLimitsConfig:
+    """regime_limits.yaml → RegimeLimitsConfig. Любая ошибка формата — ReferenceFileError."""
+    data = _load_yaml(path)
+    if not isinstance(data, Mapping):
+        raise ReferenceFileError(f"{path}: regime_limits.yaml должен быть словарём")
+    regimes_raw = data.get("regimes")
+    if not isinstance(regimes_raw, Mapping) or not regimes_raw:
+        raise ReferenceFileError(f"{path}: поле regimes должно быть непустым словарём")
+    regimes: dict[str, RegimeRules] = {}
+    for regime, raw in regimes_raw.items():
+        if regime not in REGIMES or regime == "unknown":
+            raise ReferenceFileError(f"{path}: regimes: неизвестный режим {regime!r}")
+        regimes[regime] = _parse_regime_rules(regime, raw, path)
+    last_checked_at = _coerce_date(data.get("last_checked_at"))
+    if last_checked_at is None:
+        raise ReferenceFileError(
+            f"{path}: поле last_checked_at обязательно и должно быть датой YYYY-MM-DD"
+        )
+    return RegimeLimitsConfig(regimes=regimes, last_checked_at=last_checked_at)
+
+
+@cache
+def get_regime_limits() -> RegimeLimitsConfig:
+    """Лимиты режимов текущего процесса, отдельно от `get_reference`: битый файл не мешает
+    сборке и НДС — бот просто не показывает предупреждение. Ошибка не кешируется."""
+    return load_regime_limits(regime_limits_path(get_settings()))
