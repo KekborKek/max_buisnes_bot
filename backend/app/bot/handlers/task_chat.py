@@ -6,8 +6,10 @@
     похоже на задачу, даты нет     → экран 10, «не нашёл дату»;
     ни даты, ни задачи, пустое название, непонятная кнопка → экран 10, «не понял».
 
-Черновик — `DialogState.data["task_draft"] = {"title", "due_date", "id"}` (`/api/me` читает
-title и due_date и сверяет id): его показывает `confirm`, сохраняет «Сохранить», в форму 17
+Черновик — `DialogState.data["task_draft"] = {"title", "due_date", "id"[, "remind_hour",
+"remind_minute"]}` (`/api/me` читает title, due_date и время и сверяет id). Время — только если
+оно было в сообщении (#103): тогда напоминание в день срока в это время, иначе за день в 10:00.
+Черновик его показывает `confirm`, сохраняет «Сохранить», в форму 17
 уносит «Изменить» (open_app `task_draft_<id>`, D27, #96). После сохранения или отмены черновик
 стирается; кнопка из старого сообщения без черновика — случай «не понял».
 
@@ -25,7 +27,7 @@ Payload кнопок (`<id>` — id черновика):
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 
 from sqlalchemy import func, select
@@ -51,8 +53,34 @@ CANCEL = "task:cancel"
 # Данные экрана 9: одно напоминание за день в 10:00 (D11). Не налоговые данные.
 REMIND_OFFSET_DAYS = 1
 REMIND_HOUR = 10
+# Время в сообщении (#103, решение планировщика): напоминание в день срока в это время.
+REMIND_OFFSET_WITH_TIME = 0
 # «Да» на past_date: ближайший не прошедший год с тем же днём и месяцем (29 февраля — до 8 лет).
 _YEARS_AHEAD = 8
+
+
+def remind_plan(remind_time: time | None) -> tuple[int, time]:
+    """(`remind_offset_days`, время напоминания): время из сообщения — в день срока (#103)."""
+    if remind_time is None:
+        return REMIND_OFFSET_DAYS, time(REMIND_HOUR)
+    return REMIND_OFFSET_WITH_TIME, remind_time
+
+
+def format_time(value: time) -> str:
+    """`{time}` в confirm: «10:00», «9:05», «15:30» — час без ведущего нуля (#103)."""
+    return f"{value.hour}:{value.minute:02d}"
+
+
+def draft_time(raw: object) -> time | None:
+    """Время из черновика: оба ключа целые и в диапазоне; иначе (нет, до #103, битое) — None."""
+    if not isinstance(raw, dict):
+        return None
+    hour, minute = raw.get("remind_hour"), raw.get("remind_minute")
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in (hour, minute)):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return time(hour, minute)
 
 
 def is_onboarded(profile: Profile | None) -> bool:
@@ -123,8 +151,11 @@ async def _reply_stale(ctx: Ctx, action: str) -> None:
     await ctx.reply(t("task.draft_stale"))
 
 
-def _draft_from(data: dict) -> tuple[str, date] | None:
-    """Черновик, ждущий подтверждения. Пока висит «не нашёл дату» (`task_title`) — его нет."""
+def _draft_from(data: dict) -> tuple[str, date, time | None] | None:
+    """Черновик, ждущий подтверждения: название, дата, время (#103; None — времени не было).
+
+    Пока висит «не нашёл дату» (`task_title`) — его нет.
+    """
     raw = data.get(fallback.TASK_DRAFT_KEY)
     if fallback.TASK_TITLE_KEY in data or not isinstance(raw, dict):
         return None
@@ -132,7 +163,7 @@ def _draft_from(data: dict) -> tuple[str, date] | None:
     if not isinstance(title, str) or not title or not isinstance(due, str):
         return None
     try:
-        return title, date.fromisoformat(due)
+        return title, date.fromisoformat(due), draft_time(raw)
     except ValueError:
         log.warning("task_draft с неразборчивой датой %r", due)
         return None
@@ -214,35 +245,39 @@ async def _has_duplicate(ctx: Ctx, title: str, due_date: date) -> bool:
     return found is not None
 
 
-async def _put_draft(ctx: Ctx, title: str, due_date: date) -> str:
+async def _put_draft(ctx: Ctx, title: str, due_date: date, remind_time: time | None) -> str:
     """Новый черновик с новым id; кнопки прежних сообщений становятся устаревшими."""
     draft_id = fallback.new_draft_id()
     state, data = await ctx.get_state()
     data.pop(fallback.TASK_TITLE_KEY, None)
-    data[fallback.TASK_DRAFT_KEY] = fallback.draft(title, due_date, draft_id)
+    data[fallback.TASK_DRAFT_KEY] = fallback.draft(title, due_date, draft_id, remind_time)
     await ctx.set_state(state, data)
     return draft_id
 
 
-def will_remind(due_date: date, tz: str, now: datetime) -> bool:
-    """Будет ли напоминание, если сохранить сейчас: тот же расчёт, что в `_save` (D11)."""
+def will_remind(due_date: date, tz: str, now: datetime, remind_time: time | None = None) -> bool:
+    """Будет ли напоминание, если сохранить сейчас: тот же расчёт, что в `_save` (D11, #103)."""
+    offset, at = remind_plan(remind_time)
     planned = rem.plan_task_notification(
         due_date,
-        remind_offset_days=REMIND_OFFSET_DAYS,
-        remind_hour=REMIND_HOUR,
+        remind_offset_days=offset,
+        remind_hour=at.hour,
+        remind_minute=at.minute,
         tz=tz,
         now=now,
     )
     return planned is not None
 
 
-async def show_past_date(ctx: Ctx, title: str, due_date: date, today: date) -> None:
+async def show_past_date(
+    ctx: Ctx, title: str, due_date: date, today: date, remind_time: time | None = None
+) -> None:
     """Год указан явно и дата прошла. «Да» — тот же день ближайшего не прошедшего года."""
     next_date = next_same_day(due_date, today)
     if next_date is None:  # не бывает: 29 февраля встречается раз в 4–8 лет
         await fallback.show_unknown(ctx)
         return
-    draft_id = await _put_draft(ctx, title, due_date)
+    draft_id = await _put_draft(ctx, title, due_date, remind_time)
     await ctx.reply(
         t(
             "task.past_date",
@@ -254,14 +289,21 @@ async def show_past_date(ctx: Ctx, title: str, due_date: date, today: date) -> N
 
 
 async def propose(
-    ctx: Ctx, title: str, due_date: date, today: date, tz: str, now: datetime
+    ctx: Ctx,
+    title: str,
+    due_date: date,
+    today: date,
+    tz: str,
+    now: datetime,
+    remind_time: time | None = None,
 ) -> None:
     """`confirm` с черновиком; такая же задача на эту дату уже есть — `duplicate`.
 
     Напоминание обещаем, только если оно будет создано (#87): на сегодня и на завтра после
-    10:00 в поясе пользователя его нет — тогда `confirm_no_remind`.
+    10:00 в поясе пользователя его нет — тогда `confirm_no_remind`. Время из сообщения (#103):
+    «напомню в день срока в 15:30»; если оно сегодня уже прошло — тоже `confirm_no_remind`.
     """
-    draft_id = await _put_draft(ctx, title, due_date)
+    draft_id = await _put_draft(ctx, title, due_date, remind_time)
     if await _has_duplicate(ctx, title, due_date):
         await ctx.reply(
             t("task.duplicate", date=format_date(due_date, today)),
@@ -269,13 +311,15 @@ async def propose(
         )
         return
     day = format_date(due_date, today)
-    if will_remind(due_date, tz, now):
+    if will_remind(due_date, tz, now, remind_time):
+        offset, at = remind_plan(remind_time)
+        when_key = "task.remind_same_day" if offset == 0 else "task.remind_day"
         text = t(
             "task.confirm",
             title=title,
             date=day,
-            remind_when=t("task.remind_day"),
-            hour=REMIND_HOUR,
+            remind_when=t(when_key),
+            time=format_time(at),
         )
     else:
         text = t("task.confirm_no_remind", title=title, date=day)
@@ -329,9 +373,9 @@ async def _save(ctx: Ctx, action: str, *, check_duplicate: bool) -> None:
     if profile is None or pending is None:
         await fallback.show_unknown(ctx)
         return
-    title, due_date = pending
+    title, due_date, remind_time = pending
     if due_date < today:  # черновик пролежал до следующего дня
-        await show_past_date(ctx, title, due_date, today)
+        await show_past_date(ctx, title, due_date, today, remind_time)
         return
     if check_duplicate and await _has_duplicate(ctx, title, due_date):
         # Черновик тот же: кнопки исходного confirm продолжают работать.
@@ -341,17 +385,19 @@ async def _save(ctx: Ctx, action: str, *, check_duplicate: bool) -> None:
         )
         return
 
+    offset, at = remind_plan(remind_time)
     task = Task(
         user_id=ctx.user_id,
         title=title,
         due_date=due_date,
-        remind_offset_days=REMIND_OFFSET_DAYS,
-        remind_hour=REMIND_HOUR,
+        remind_offset_days=offset,
+        remind_hour=at.hour,
+        remind_minute=at.minute,
     )
     ctx.session.add(task)
     await ctx.session.flush()
     await rem.sync_task_notification(ctx.session, task, tz=tz, now=now)
-    await ctx.track("task_created", {"source": "chat", "remind_offset": REMIND_OFFSET_DAYS})
+    await ctx.track("task_created", {"source": "chat", "remind_offset": offset})
     await _forget_draft(ctx)
     count = await _calendar_count(ctx, today)
     await ctx.reply(
@@ -385,7 +431,7 @@ async def on_free_text(ctx: Ctx) -> None:
         await fallback.show_unknown(ctx)
         return
     if parsed.status is ParseStatus.NO_DATE:
-        await fallback.show_no_date(ctx, parsed.title or "", today)
+        await fallback.show_no_date(ctx, parsed.title or "", today, parsed.remind_time)
         return
     assert parsed.due_date is not None
     if not parsed.title:
@@ -393,9 +439,9 @@ async def on_free_text(ctx: Ctx) -> None:
         await fallback.show_unknown(ctx, text_key="task.empty_title")
         return
     if parsed.explicit_year and parsed.due_date < today:
-        await show_past_date(ctx, parsed.title, parsed.due_date, today)
+        await show_past_date(ctx, parsed.title, parsed.due_date, today, parsed.remind_time)
         return
-    await propose(ctx, parsed.title, parsed.due_date, today, tz, now)
+    await propose(ctx, parsed.title, parsed.due_date, today, tz, now, parsed.remind_time)
 
 
 @router.on_callback(SAVE)
@@ -424,7 +470,7 @@ async def on_yes(ctx: Ctx) -> None:
     if pending is None or next_date is None:
         await fallback.show_unknown(ctx)
         return
-    await propose(ctx, pending[0], next_date, today, tz, now)
+    await propose(ctx, pending[0], next_date, today, tz, now, pending[2])
 
 
 @router.on_callback(CANCEL)
@@ -448,7 +494,8 @@ async def _with_date(ctx: Ctx, action: str, days: int) -> None:
     """«Завтра» / «Через неделю» экрана 10: название из `task_title`, дата подставлена.
 
     Кнопка несёт id черновика «не нашёл дату» (#96): из старого сообщения она не берёт чужое
-    название — `draft_stale`, как кнопки экрана 9.
+    название — `draft_stale`, как кнопки экрана 9. Время из сообщения (#103) — из того же
+    черновика: «Завтра» с «в 15:30» напомнит завтра в 15:30.
     """
     if ctx.user_id is None:
         return
@@ -462,7 +509,8 @@ async def _with_date(ctx: Ctx, action: str, days: int) -> None:
     if not isinstance(title, str) or not title:
         await fallback.show_unknown(ctx)
         return
-    await propose(ctx, title, today + timedelta(days=days), today, tz, now)
+    remind_time = draft_time(data.get(fallback.TASK_DRAFT_KEY))
+    await propose(ctx, title, today + timedelta(days=days), today, tz, now, remind_time)
 
 
 @router.on_callback(fallback.TOMORROW)

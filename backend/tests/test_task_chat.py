@@ -5,7 +5,7 @@
 
 import itertools
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 import pytest
 from sqlalchemy import select
@@ -110,7 +110,7 @@ def labels(message: dict) -> list[list[str]]:
 
 
 def confirm_text(title: str, day: str) -> str:
-    return t("task.confirm", title=title, date=day, remind_when=t("task.remind_day"), hour=10)
+    return t("task.confirm", title=title, date=day, remind_when=t("task.remind_day"), time="10:00")
 
 
 def no_remind_text(title: str, day: str) -> str:
@@ -672,3 +672,141 @@ async def test_confirm_promises_reminder_only_if_it_will_be_sent(
             .all()
         )
     assert len(pending) == (1 if remind else 0)
+
+
+# --- #103: время в сообщении --------------------------------------------------------------------
+
+
+def time_confirm_text(title: str, day: str, at: str) -> str:
+    return t("task.confirm", title=title, date=day, remind_when=t("task.remind_same_day"), time=at)
+
+
+async def task_notifications(task_id: int) -> list[tuple[str, datetime]]:
+    async with SessionLocal() as s:
+        rows = await s.scalars(
+            select(Notification).where(
+                Notification.item_type == "task", Notification.item_id == task_id
+            )
+        )
+        return [(n.status, n.send_at.replace(tzinfo=UTC)) for n in rows]
+
+
+async def test_time_in_message_reminds_on_due_day_at_that_time(fake_max, bot_name, miniapp_api):
+    """«Оплатить аренду 5 ноября в 15:30» → в день срока в 15:30; «Изменить» несёт время."""
+    await onboarded()
+    await process_update(write("Оплатить аренду 5 ноября в 15:30"), fake_max)
+
+    confirm = fake_max.sent[-1]
+    assert confirm["text"] == time_confirm_text("Оплатить аренду", "5 ноября", "15:30")
+    assert "в день срока в 15:30" in confirm["text"]
+    assert draft_fields(await state_data()) == {
+        "title": "Оплатить аренду",
+        "due_date": "2026-11-05",
+        "remind_hour": 15,
+        "remind_minute": 30,
+    }
+    # «Изменить» → форма 17 получает и время
+    edit = payload_of(confirm, "task.btn_edit")
+    body = (await miniapp_api.request("GET", "/api/me", USER_ID, start_param=edit)).json()
+    assert body["draft"] == {
+        "title": "Оплатить аренду",
+        "due_date": "2026-11-05",
+        "remind_hour": 15,
+        "remind_minute": 30,
+    }
+
+    await process_update(tap(confirm, "task.btn_save"), fake_max)
+    [task] = await tasks()
+    assert (task.remind_offset_days, task.remind_hour, task.remind_minute) == (0, 15, 30)
+    # 05.11 15:30 по Москве = 12:30 UTC
+    assert await task_notifications(task.id) == [
+        ("pending", datetime(2026, 11, 5, 12, 30, tzinfo=UTC))
+    ]
+    assert ("task_created", {"source": "chat", "remind_offset": 0}) in await events()
+
+
+async def test_time_in_message_uses_user_timezone(fake_max, no_bot_name):
+    await onboarded(timezone="Asia/Vladivostok")
+    await process_update(write("позвонить бухгалтеру 5 ноября в 9:05"), fake_max)
+    assert fake_max.sent[-1]["text"] == time_confirm_text(
+        "Позвонить бухгалтеру", "5 ноября", "9:05"
+    )
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
+    [task] = await tasks()
+    # 05.11 09:05 во Владивостоке (UTC+10) = 04.11 23:05 UTC
+    assert await task_notifications(task.id) == [
+        ("pending", datetime(2026, 11, 4, 23, 5, tzinfo=UTC))
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "remind"),
+    [
+        ("позвонить сегодня в 9:00", False),  # сейчас 12:00 по Москве — время прошло
+        ("позвонить сегодня в 15:00", True),
+    ],
+)
+async def test_time_today_promises_reminder_only_if_ahead(fake_max, no_bot_name, text, remind):
+    await onboarded()
+    await process_update(write(text), fake_max)
+    at = "15:00" if remind else "9:00"
+    expected = (
+        time_confirm_text("Позвонить", "23 сентября", at)
+        if remind
+        else no_remind_text("Позвонить", "23 сентября")
+    )
+    assert fake_max.sent[-1]["text"] == expected
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
+    [task] = await tasks()
+    assert bool(await task_notifications(task.id)) is remind
+
+
+async def test_past_date_yes_keeps_time(fake_max, no_bot_name):
+    await onboarded()
+    await process_update(write("оплатить аренду 5.11.2025 в 18:45"), fake_max)
+    await process_update(tap(fake_max.sent[-1], "task.btn_yes"), fake_max)
+    assert fake_max.sent[-1]["text"] == time_confirm_text("Оплатить аренду", "5 ноября", "18:45")
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
+    [task] = await tasks()
+    assert (task.due_date, task.remind_hour, task.remind_minute) == (date(2026, 11, 5), 18, 45)
+
+
+async def test_time_without_date_keeps_time_for_buttons_and_form(fake_max, bot_name, miniapp_api):
+    """«позвонить бухгалтеру в 15:30» — экран 10; «Через неделю» и форма 17 получают время."""
+    await onboarded()
+    await process_update(write("позвонить бухгалтеру в 15:30"), fake_max)
+    no_date = fake_max.sent[-1]
+    assert no_date["text"] == t("fallback.no_date", title="Позвонить бухгалтеру")
+
+    pick = payload_of(no_date, "fallback.btn_pick")
+    body = (await miniapp_api.request("GET", "/api/me", USER_ID, start_param=pick)).json()
+    assert (body["draft"]["remind_hour"], body["draft"]["remind_minute"]) == (15, 30)
+
+    await process_update(tap(no_date, "fallback.btn_week"), fake_max)
+    assert fake_max.sent[-1]["text"] == time_confirm_text(
+        "Позвонить бухгалтеру", "30 сентября", "15:30"
+    )
+    await process_update(tap(fake_max.sent[-1], "task.btn_save"), fake_max)
+    [task] = await tasks()
+    assert (task.due_date, task.remind_offset_days, task.remind_hour, task.remind_minute) == (
+        date(2026, 9, 30),
+        0,
+        15,
+        30,
+    )
+
+
+def test_draft_with_time_and_old_draft_without_it():
+    """Время в черновике — оба ключа вместе; старый черновик без них читается как «без времени»."""
+    assert fallback.draft("Аренда", date(2026, 11, 5), "ab12cd34", time(9, 5)) == {
+        "title": "Аренда",
+        "due_date": "2026-11-05",
+        "id": "ab12cd34",
+        "remind_hour": 9,
+        "remind_minute": 5,
+    }
+    assert task_chat.draft_time({"title": "Аренда", "due_date": "2026-11-05"}) is None
+    assert task_chat.draft_time({"remind_hour": 24, "remind_minute": 0}) is None
+    assert task_chat.draft_time({"remind_hour": 7, "remind_minute": 45}) == time(7, 45)
+    assert task_chat.format_time(time(9, 5)) == "9:05"
+    assert task_chat.format_time(time(10, 0)) == "10:00"
