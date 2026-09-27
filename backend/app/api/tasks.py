@@ -1,10 +1,13 @@
-"""Свои задачи из мини-аппа (экраны 16, 17). Одно `task`-уведомление на задачу (D11)."""
+"""Свои задачи из мини-аппа (экраны 16, 17). Одно `task`-уведомление на задачу (D11).
 
-from datetime import date, datetime
+Задачи задним числом (D32, #108): дата в прошлом разрешена и при создании, и при правке.
+Напоминания у такой задачи нет — `sync_task_notification` не планирует `send_at` в прошлом.
+"""
+
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
-from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import service
@@ -24,27 +27,11 @@ Now = Annotated[datetime, Depends(current_time)]
 NOT_FOUND = {404: {"description": "Нет такой задачи у пользователя"}}
 
 
-def _date_in_past(due_date: date) -> RequestValidationError:
-    """Та же форма 422, что у ошибок pydantic: мини-апп показывает её у поля «Дата»."""
-    return RequestValidationError(
-        [
-            {
-                "type": "date_past",
-                "loc": ("body", "due_date"),
-                "msg": "due_date must not be earlier than today",
-                "input": due_date.isoformat(),
-            }
-        ]
-    )
-
-
 @router.post("/tasks", response_model=ItemCard, summary="Создать свою задачу")
 async def create_task(body: TaskInput, user_id: UserId, session: Session, now: Now) -> ItemCard:
     profile = await service.load_profile(session, user_id)
     tz = service.user_tz(profile)
     today = service.user_today(profile, now)
-    if body.due_date < today:
-        raise _date_in_past(body.due_date)
 
     await service.ensure_user(session, user_id)
     task = Task(
@@ -54,6 +41,8 @@ async def create_task(body: TaskInput, user_id: UserId, session: Session, now: N
         remind_offset_days=body.remind_offset_days,
         remind_hour=body.remind_hour,
         remind_minute=body.remind_minute,
+        # «Уже выполнено» (D32): отметка сразу, поэтому напоминание не планируется.
+        done_at=now if body.done else None,
     )
     session.add(task)
     await session.flush()
@@ -62,7 +51,12 @@ async def create_task(body: TaskInput, user_id: UserId, session: Session, now: N
         session,
         user_id,
         "task_created",
-        {"source": "form", "remind_offset": body.remind_offset_days},
+        {
+            "source": "form",
+            "remind_offset": body.remind_offset_days,
+            "backdated": body.due_date < today,
+            "done_at_create": body.done,
+        },
     )
     await session.commit()
     return service.task_card(task, today)
@@ -80,13 +74,10 @@ async def update_task(
     task = await service.own_task(session, user_id, task_id)
 
     changes = body.model_dump(exclude_unset=True, exclude_none=True)
-    new_date = changes.get("due_date")
-    # Прежнюю дату в прошлом оставить можно (правка названия просроченной задачи), новую — нет.
-    if new_date is not None and new_date != task.due_date and new_date < today:
-        raise _date_in_past(new_date)
     for field, value in changes.items():
         setattr(task, field, value)
-    # Старое уведомление → cancelled, новое по новым дате и времени (экран 17).
+    # Старое уведомление → cancelled, новое по новым дате и времени (экран 17);
+    # новая дата в прошлом (D32) — нового нет.
     await sync_task_notification(session, task, tz=tz, now=now)
     await session.commit()
     return service.task_card(task, today)

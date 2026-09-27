@@ -915,7 +915,8 @@ components:
           type: string
           format: date
           title: Due Date
-          description: Не раньше сегодняшнего дня пользователя
+          description: 'Можно в прошлом (D32): тогда напоминания нет, без `done` статус
+            overdue'
         remind_offset_days:
           type: integer
           title: Remind Offset Days
@@ -935,6 +936,12 @@ components:
           title: Remind Minute
           description: 'Минуты напоминания: 0–59'
           default: 0
+        done:
+          type: boolean
+          title: Done
+          description: '«Уже выполнено» (D32): задача создаётся с done_at = сейчас,
+            без напоминания'
+          default: false
       type: object
       required:
       - title
@@ -954,7 +961,7 @@ components:
             format: date
           - type: 'null'
           title: Due Date
-          description: Новая дата не раньше сегодняшней; прежнюю можно оставить
+          description: 'Можно в прошлом (D32): тогда напоминания нет'
         remind_offset_days:
           anyOf:
           - type: integer

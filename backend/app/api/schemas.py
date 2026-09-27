@@ -76,11 +76,17 @@ class TaskInput(BaseModel):
     """Создание своей задачи (экран 17)."""
 
     title: str = Field(description=f"1–{TITLE_MAX_LEN} символов после обрезки пробелов")
-    due_date: date = Field(description="Не раньше сегодняшнего дня пользователя")
+    due_date: date = Field(
+        description="Можно в прошлом (D32): тогда напоминания нет, без `done` статус overdue"
+    )
     remind_offset_days: int = Field(default=DEFAULT_REMIND_OFFSET, description="0 · 1 · 3 · 7")
     remind_hour: int = Field(default=DEFAULT_REMIND_HOUR, ge=0, le=23, description=HOUR_DESCRIPTION)
     remind_minute: int = Field(
         default=DEFAULT_REMIND_MINUTE, ge=0, le=59, description=MINUTE_DESCRIPTION
+    )
+    done: bool = Field(
+        default=False,
+        description="«Уже выполнено» (D32): задача создаётся с done_at = сейчас, без напоминания",
     )
 
     @field_validator("title")
@@ -99,7 +105,7 @@ class TaskPatch(BaseModel):
 
     title: str | None = None
     due_date: date | None = Field(
-        default=None, description="Новая дата не раньше сегодняшней; прежнюю можно оставить"
+        default=None, description="Можно в прошлом (D32): тогда напоминания нет"
     )
     remind_offset_days: int | None = None
     remind_hour: int | None = Field(default=None, ge=0, le=23, description=HOUR_DESCRIPTION)
