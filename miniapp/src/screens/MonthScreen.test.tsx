@@ -126,7 +126,7 @@ test("месяц с событиями: «+ Задача» в нижней па�
   });
 });
 
-test("выбран будущий день — дата в форме та же; выбран день в прошлом месяце — завтра", async () => {
+test("«+ Задача» открывает форму с выбранным днём — и будущим, и прошедшим (D32, #108)", async () => {
   const { nav, prev } = renderMonth(loaded(ITEMS));
   // Будущий день этого месяца.
   await userEvent.click(day("28 октября, Налоги, Отчётность"));
@@ -138,13 +138,23 @@ test("выбран будущий день — дата в форме та же;
     from: "month",
   });
 
+  // Прошедший день этого месяца — эта же дата, не завтра: задача задним числом.
+  await userEvent.click(day("3 октября"));
+  await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
+  expect(nav.push).toHaveBeenLastCalledWith({
+    name: "task",
+    draft: false,
+    date: "2026-10-03",
+    from: "month",
+  });
+
   // Ушли в прошлый месяц (сентябрь, весь он раньше «сегодня» 2026-10-14) — выбор 1-го числа.
   await userEvent.click(prev());
   await userEvent.click(screen.getByRole("button", { name: texts.month.addTask }));
   expect(nav.push).toHaveBeenLastCalledWith({
     name: "task",
     draft: false,
-    date: "2026-10-15",
+    date: "2026-09-01",
     from: "month",
   });
 });
