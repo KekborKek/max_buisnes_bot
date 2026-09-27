@@ -53,6 +53,7 @@ async def create_task(body: TaskInput, user_id: UserId, session: Session, now: N
         due_date=body.due_date,
         remind_offset_days=body.remind_offset_days,
         remind_hour=body.remind_hour,
+        remind_minute=body.remind_minute,
     )
     session.add(task)
     await session.flush()

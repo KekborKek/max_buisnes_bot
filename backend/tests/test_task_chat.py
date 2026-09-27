@@ -18,6 +18,9 @@ from app.core.models import DialogState, Event, Notification, Profile, Task, Use
 from app.core.texts import t
 from tests.conftest import load_update
 
+# Черновик без времени в /api/me (#103)
+NO_TIME = {"remind_hour": None, "remind_minute": None}
+
 pytestmark = pytest.mark.usefixtures("fixture_reference")
 
 USER_ID = 42
@@ -194,7 +197,7 @@ async def test_edit_draft_is_read_by_api_me(fake_max, bot_name, miniapp_api):
     await process_update(write("оплатить аренду 5 ноября"), fake_max)
 
     body = (await miniapp_api.request("GET", "/api/me", USER_ID)).json()
-    assert body["draft"] == {"title": "Оплатить аренду", "due_date": "2026-11-05"}
+    assert body["draft"] == {**NO_TIME, "title": "Оплатить аренду", "due_date": "2026-11-05"}
 
 
 # --- сохранение ----------------------------------------------------------------------------
@@ -478,7 +481,7 @@ async def test_edit_under_old_confirm_does_not_open_new_draft(fake_max, bot_name
     new = await miniapp_api.request(
         "GET", "/api/me", USER_ID, start_param=payload_of(second, "task.btn_edit")
     )
-    assert new.json()["draft"] == {"title": "Заплатить налог", "due_date": "2026-11-05"}
+    assert new.json()["draft"] == {**NO_TIME, "title": "Заплатить налог", "due_date": "2026-11-05"}
     assert new.json()["draft_stale"] is False
 
 
@@ -628,7 +631,7 @@ async def test_api_me_reads_draft_with_id(fake_max, bot_name, miniapp_api):
     assert "id" in (await state_data())["task_draft"]
 
     body = (await miniapp_api.request("GET", "/api/me", USER_ID)).json()
-    assert body["draft"] == {"title": "Заплатить налог", "due_date": "2026-11-05"}
+    assert body["draft"] == {**NO_TIME, "title": "Заплатить налог", "due_date": "2026-11-05"}
 
 
 # --- #87: confirm обещает напоминание, только если оно будет -------------------------------

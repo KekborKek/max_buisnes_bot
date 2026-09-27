@@ -36,6 +36,9 @@ from tests.test_task_chat import (
     write,
 )
 
+# Черновик без времени в /api/me (#103)
+NO_TIME = {"remind_hour": None, "remind_minute": None}
+
 pytestmark = pytest.mark.usefixtures("fixture_reference")
 
 SUPPORT = "https://max.ru/support"
@@ -176,7 +179,12 @@ async def test_no_date_keeps_title_and_offers_dates(fake_max, bot_name, miniapp_
     # «Выбрать дату»: форма 17 получает название (дата — завтра, её выбирают в форме)
     r = await miniapp_api.request("GET", "/api/me", USER_ID, start_param=pick["payload"])
     body = r.json()
-    assert body["draft"] == {"title": "Оплатить аренду", "due_date": "2026-09-24"}
+    assert body["draft"] == {
+        "title": "Оплатить аренду",
+        "due_date": "2026-09-24",
+        "remind_hour": None,  # времени в сообщении не было (#103)
+        "remind_minute": None,
+    }
     assert body["draft_stale"] is False
 
 
@@ -287,7 +295,7 @@ async def test_pick_date_under_old_message_opens_empty_form(fake_max, bot_name, 
     new = await miniapp_api.request(
         "GET", "/api/me", USER_ID, start_param=payload_of(second, "fallback.btn_pick")
     )
-    assert new.json()["draft"] == {"title": "Заплатить налог", "due_date": "2026-09-24"}
+    assert new.json()["draft"] == {**NO_TIME, "title": "Заплатить налог", "due_date": "2026-09-24"}
 
 
 @pytest.mark.parametrize("payload", [fallback.TOMORROW, fallback.WEEK])
