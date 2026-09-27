@@ -110,10 +110,21 @@ def obligation_dates(obligation: Obligation, year: int, cal: WorkdayCalendar) ->
 
 
 def nds_limit_for(income_year: int, nds: NdsConfig) -> int | None:
-    """Порог (руб.) для дохода за `income_year`; года нет ни в одном `income_years` — None."""
+    """Порог (руб.) для дохода за `income_year`.
+
+    Год встречается в `income_years` одного из порогов — берём его лимит. Год позже
+    последнего в справочнике (#106: закон называет годы только по 2030-й, дальше порог
+    не меняется по логике нормы) — берём лимит последней записи. Года раньше первой
+    записи справочника нет — None: данных для него действительно нет.
+    """
     for threshold in nds.thresholds:
         if income_year in threshold.income_years:
             return threshold.limit_rub
+    if not nds.thresholds:
+        return None
+    latest = max(nds.thresholds, key=lambda th: max(th.income_years))
+    if income_year > max(latest.income_years):
+        return latest.limit_rub
     return None
 
 

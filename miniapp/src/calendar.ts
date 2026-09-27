@@ -117,6 +117,24 @@ export function formatShortDate(iso: string, today: string): string {
   return `${d.getUTCDate()} ${month}${year}`;
 }
 
+/**
+ * То же, что `formatShortDate`, но день/месяц и год — отдельно: строка события (экраны 14, 15)
+ * кладёт год второй строкой в `.row-date`, чтобы не наезжать на название при ширине колонки
+ * 56px (#105). `year` — `null`, если он текущий; вёрстка строк без года не меняется.
+ */
+export function formatShortDateParts(
+  iso: string,
+  today: string,
+): { day: string; year: string | null } {
+  const d = parseIso(iso);
+  const month = (dayMonth.formatToParts(d).find((p) => p.type === "month")?.value ?? "").replace(
+    ".",
+    "",
+  );
+  const year = iso.slice(0, 4) === today.slice(0, 4) ? null : iso.slice(0, 4);
+  return { day: `${d.getUTCDate()} ${month}`, year };
+}
+
 // ——— Экран 15. Месяц сеткой ———
 
 /** Листать можно на 12 месяцев назад и вперёд от текущего (docs/screens/15-month.md). */

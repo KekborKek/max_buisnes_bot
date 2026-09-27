@@ -1,7 +1,7 @@
 // Экран 14. Список ближайших событий — главный экран (docs/screens/14-list.md).
 import { Button, CellHeader, CellList, CellSimple, Typography } from "@maxhub/max-ui";
 
-import { formatShortDate, groupSections, type SectionKey } from "../calendar";
+import { formatShortDate, formatShortDateParts, groupSections, type SectionKey } from "../calendar";
 import type { ErrorKind } from "../data/http";
 import { type CardSource, type Tab, useNavigation } from "../router";
 import { ErrorBanner } from "../shell/ErrorBanner";
@@ -53,6 +53,24 @@ export function CalendarHeader({ profile, tab }: { profile: Profile; tab: Tab })
         {tabButton("month", texts.list.tabMonth)}
       </div>
     </header>
+  );
+}
+
+/**
+ * Дата строки события (экраны 14, 15). Год — только если не текущий, второй строкой мелким
+ * шрифтом внутри `.row-date` (56px), чтобы не наезжать на название (#105). Строки без года —
+ * без изменений в разметке.
+ */
+function RowDate({ dueDate, today }: { dueDate: string; today: string }) {
+  const { day, year } = formatShortDateParts(dueDate, today);
+  if (!year) return <Typography.Label className="row-date">{day}</Typography.Label>;
+  return (
+    <Typography.Label className="row-date" aria-label={formatShortDate(dueDate, today)}>
+      {day}
+      <Typography.Label variant="small" className="row-date__year" aria-hidden="true">
+        {year}
+      </Typography.Label>
+    </Typography.Label>
   );
 }
 
@@ -110,11 +128,7 @@ export function ItemRow({
       }}
       className={item.status === "done" ? "row row--done" : "row"}
       innerClassNames={{ before: "row-before", title: "row-title" }}
-      before={
-        <Typography.Label className="row-date">
-          {formatShortDate(item.due_date, today)}
-        </Typography.Label>
-      }
+      before={<RowDate dueDate={item.due_date} today={today} />}
       title={item.title}
       subtitle={
         <span className="row-category">

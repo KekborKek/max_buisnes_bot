@@ -161,7 +161,7 @@ export const texts = {
       7: "TODO",
     },
     markDone: "Отметить выполненным",
-    undoDone: "Отменить отметку",
+    undoDone: "Отменить выполнение",
     wrongDate: "Неверный срок",
     wrongDateThanks: "Спасибо, проверим",
     reschedule: "Перенести",

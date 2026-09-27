@@ -9,6 +9,7 @@ import {
   formatDate,
   formatNumericDate,
   formatShortDate,
+  formatShortDateParts,
   groupSections,
   itemsByDay,
   monthDiff,
@@ -151,6 +152,15 @@ test("formatShortDate: «28 окт», год — только если не те
   expect(formatShortDate("2026-10-28", "2026-09-23")).toBe("28 окт");
   expect(formatShortDate("2026-05-05", "2026-09-23")).toBe("5 мая");
   expect(formatShortDate("2027-01-05", "2026-09-23")).toBe("5 янв 2027");
+});
+
+test("formatShortDateParts: год отдельно от дня — для второй строки в .row-date (#105)", () => {
+  expect(formatShortDateParts("2026-10-28", "2026-09-23")).toEqual({ day: "28 окт", year: null });
+  expect(formatShortDateParts("2026-05-05", "2026-09-23")).toEqual({ day: "5 мая", year: null });
+  expect(formatShortDateParts("2027-01-05", "2026-09-23")).toEqual({
+    day: "5 янв",
+    year: "2027",
+  });
 });
 
 test("formatCardDate: «28 октября, среда», год — только если не текущий", () => {
