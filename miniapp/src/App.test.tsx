@@ -295,6 +295,7 @@ test("новая задача из формы появляется в списк
     due_date: "2026-09-24",
     remind_offset_days: 1,
     remind_hour: 10,
+    remind_minute: 0,
   });
   await act(async () =>
     last("createTask").resolve(
