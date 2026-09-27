@@ -131,7 +131,7 @@ disclaimer:
 | Ключ | Где |
 |---|---|
 | `disclaimer.profile` | экраны 3, 11, 19 |
-| `disclaimer.not_advice` | экраны 7, 11, 16 |
+| `disclaimer.not_advice` | экраны 7, 11, 16; экран 3 — «Что делать» при превышении лимита режима (#107) |
 | `disclaimer.mark` | после любой отметки: экраны 8 и 16 |
 
 Рядом с любым обязательством всегда видны норма-основание и дата последней сверки справочника.
@@ -151,6 +151,8 @@ disclaimer:
 | `onboarding_completed` | `seconds_since_start` | 2 |
 | `nds_result_shown` | `income_band`, `regime`, `nds_payer` | 3 |
 | `nds_why_opened` | — | 3 |
+| `regime_limit_warned` | `regime`, `income_band` — лимит патента или АУСН превышен по ответам (#107) | 3 |
+| `regime_limit_howto_opened` | `regime` | 3 |
 | `calendar_built` | `items_count`, `seconds_since_start`, `rebuild` | 5 |
 | `reminder_sent` | `kind` (`d30`/`d7`/`d1`/`overdue`/`snooze`/`task`/`digest`), `item_id`, `item_type`, `grouped` | 6 |
 | `reminder_clicked` | `kind` (в том числе `digest`), `action` (`done`/`howto`/`snooze`/`open_app`/`off`) | 6 |
