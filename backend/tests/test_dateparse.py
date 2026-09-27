@@ -61,6 +61,21 @@ def test_relative_day_after_tomorrow() -> None:
     assert result.due_date == date(2026, 9, 25)
 
 
+def test_relative_next_week() -> None:
+    """«Через неделю» текстом — то же +7 дней, что даёт кнопка fb:week экрана 10 (DEBT-4)."""
+    result = parse_task_from_text("позвонить клиенту через неделю", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 9, 30)
+    assert result.title == "Позвонить клиенту"
+
+
+def test_relative_next_week_only() -> None:
+    result = parse_task_from_text("через неделю", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 9, 30)
+    assert result.title == ""
+
+
 def test_weekday_full_word() -> None:
     result = parse_task_from_text("сдать отчёт в понедельник", TODAY)
     assert result.status is ParseStatus.PARSED
@@ -117,6 +132,85 @@ def test_explicit_past_year_kept_as_is() -> None:
     assert result.explicit_year is True
 
 
+# --- Год словами после «число + месяц» (DEBT-4, доп. к #111) ----------------------------
+
+
+def test_month_word_with_year() -> None:
+    result = parse_task_from_text("отчёт 5 ноября 2025", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+    assert result.title == "Отчёт"
+
+
+def test_month_word_with_year_suffix_goda() -> None:
+    result = parse_task_from_text("отчёт 5 ноября 2025 года", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+    assert result.title == "Отчёт"
+
+
+def test_month_word_with_year_suffix_g() -> None:
+    result = parse_task_from_text("отчёт 5 ноября 2025 г.", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+    assert result.title == "Отчёт"
+
+
+def test_month_word_with_year_and_time() -> None:
+    """Год словами не мешает разбору времени (#103/#111): дата и время разбираются оба."""
+    result = parse_task_from_text("отчёт 5 ноября 2025 в 15:30", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+    assert result.title == "Отчёт"
+    assert result.remind_time == time(15, 30)
+
+
+def test_month_word_year_separated_by_preposition_is_ignored() -> None:
+    """«5 ноября в 2025» — бессмыслица (год не сразу за месяцем); не падает, год не берётся."""
+    result = parse_task_from_text("отчёт 5 ноября в 2025", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)
+    assert result.explicit_year is False
+
+
+def test_month_word_four_digits_followed_by_amount_word_is_not_a_year() -> None:
+    """Регрессия по ревью PR #115: «2000 рублей» — сумма, а не год 2000 (не 2000-11-05)."""
+    result = parse_task_from_text("Заплатить 5 ноября 2000 рублей", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)  # как без года, ближайшее 5 ноября
+    assert result.explicit_year is False
+    assert result.title == "Заплатить 2000 рублей"
+
+
+def test_month_word_four_digits_followed_by_arbitrary_word_is_not_a_year() -> None:
+    """Регрессия по ревью PR #115: «1984 Оруэлла» — не год (после числа не разрешённый хвост)."""
+    result = parse_task_from_text("Прочитать 5 ноября 1984 Оруэлла", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)
+    assert result.explicit_year is False
+    assert result.title == "Прочитать 1984 Оруэлла"
+
+
+def test_month_word_year_out_of_range_is_not_a_year() -> None:
+    """Год далеко за пределами today.year − 5 … today.year + 10 — не год (по ревью PR #115)."""
+    result = parse_task_from_text("Основано 5 ноября 1900 года назад", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2026, 11, 5)
+    assert result.explicit_year is False
+
+
+def test_month_word_year_before_trailing_comment_is_still_a_year() -> None:
+    """«5 ноября 2025, срочно» — запятая сразу за годом, это всё ещё год (по ревью PR #115)."""
+    result = parse_task_from_text("Отчёт 5 ноября 2025, срочно", TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert result.due_date == date(2025, 11, 5)
+    assert result.explicit_year is True
+
+
 # --- Несуществующие даты: похоже на дату, но она невозможна → NO_DATE, без исключений ----
 
 
@@ -137,6 +231,13 @@ def test_nonexistent_february_30() -> None:
     result = parse_task_from_text("30 февраля", TODAY)
     assert result.status is ParseStatus.NO_DATE
     assert result.title == ""
+
+
+def test_nonexistent_february_30_with_word_year() -> None:
+    result = parse_task_from_text("30 февраля 2025", TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert result.title == ""
+    assert result.due_date is None
 
 
 # --- Ложные срабатывания: не даты, хотя похожи на числа с точкой/пробелом ---------------
@@ -183,6 +284,30 @@ def test_false_positive_decimal_amount_with_dot() -> None:
     assert result.status is ParseStatus.NO_DATE
     assert result.due_date is None
     assert result.title == "Выручка 1.5 млн"
+
+
+def test_false_positive_multiplier_times() -> None:
+    """DEBT-4: «в 1.5 раза» — не 1 мая, а множитель («раза» — стоп-слово после ДД.ММ)."""
+    result = parse_task_from_text("Поднять цены в 1.5 раза", TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert result.due_date is None
+    assert result.title == "Поднять цены в 1.5 раза"
+
+
+def test_false_positive_percent_word() -> None:
+    """DEBT-4: «на 2.5 процента» — не 2 мая (issue #112, дословный пример)."""
+    result = parse_task_from_text("на 2.5 процента выросла выручка", TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert result.due_date is None
+    assert result.title == "На 2.5 процента выросла выручка"
+
+
+def test_false_positive_hours_duration_with_dot() -> None:
+    """DEBT-4: «2.5 часа» — не 2 мая (проверка из issue: «часа» тоже стоп-слово)."""
+    result = parse_task_from_text("заняло 2.5 часа", TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert result.due_date is None
+    assert result.title == "Заняло 2.5 часа"
 
 
 # --- title: обрезка до 60 символов, текст не теряется при нераспознанной дате -----------
