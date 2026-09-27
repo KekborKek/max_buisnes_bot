@@ -76,6 +76,21 @@ def fixture_reference(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def fixture_regime_limits(monkeypatch):
+    """Лимиты режимов (#107) из backend/tests/fixtures, а не content/regime_limits.yaml.
+
+    Экран 3 зовёт `loader.get_regime_limits` в каждом онбординге, поэтому подмена — для всех
+    тестов. Реальный файл проверяет только test_regime_limits напрямую через load_regime_limits.
+    """
+    from app.calendar import loader
+
+    config = loader.load_regime_limits(Path(__file__).parent / "fixtures" / "regime_limits.yaml")
+    loader.get_regime_limits.cache_clear()
+    monkeypatch.setattr(loader, "get_regime_limits", lambda: config)
+    return config
+
+
+@pytest.fixture(autouse=True)
 async def fresh_db():
     from app.core.db import Base, engine, init_db
 
