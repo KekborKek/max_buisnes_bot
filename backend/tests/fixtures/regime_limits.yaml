@@ -1,0 +1,26 @@
+# ТЕСТОВЫЕ ДАННЫЕ. Выдуманные лимиты спецрежимов для тестов (#107), не реальные налоговые
+# лимиты. Реальный файл — content/regime_limits.yaml.
+last_checked_at: "2026-01-01"
+regimes:
+  patent:
+    norm: "Тестовая норма о патенте"
+    norm_url: "https://example.invalid/patent-law"
+    fns_url: "https://example.invalid/patent-fns"
+    limits:
+      - { income_years: [2025], limit_rub: 20000000, verified: true }
+      - { income_years: [2026], limit_rub: 15000000, verified: false }
+      - { income_years_from: 2027, limit_rub: 10000000, verified: true }
+    steps:
+      - { text: "Тестовый шаг патента 1.", norm: "Тест п. 1", verified: true }
+      - { text: "Тестовый шаг патента 2.", norm: "Тест п. 2", verified: true }
+      - { text: "Тестовый шаг патента 3.", norm: "Тест п. 3", verified: false }
+  ausn:
+    norm: "Тестовая норма об АУСН"
+    norm_url: "https://example.invalid/ausn-law"
+    fns_url: "https://example.invalid/ausn-fns"
+    limits:
+      - { income_years: [2024, 2025, 2026], limit_rub: 60000000, verified: true }
+    steps:
+      - { text: "Тестовый шаг АУСН 1.", norm: "Тест ч. 1", verified: true }
+      - { text: "Тестовый шаг АУСН 2.", norm: "Тест ч. 2", verified: true }
+      - { text: "Тестовый шаг АУСН 3.", norm: "Тест ч. 3", verified: true }
