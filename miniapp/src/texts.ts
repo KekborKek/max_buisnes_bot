@@ -150,7 +150,9 @@ export const texts = {
     source: "Источник",
     checked: (date: string) => `сверено ${date}`,
     shifted: (date: string) => `перенос с ${date}, выходной`,
-    remindAt: (when: string, hour: number) => `Напомню ${when} в ${hour}:00`,
+    /** Час без ведущего нуля, минута с ним: «в 7:45», «в 15:30» (TIME-FE, #104). */
+    remindAt: (when: string, hour: number, minute: number) =>
+      `Напомню ${when} в ${hour}:${String(minute).padStart(2, "0")}`,
     /** `when` для remindAt по смещению задачи. В спеке есть только «за день» (экраны 9, 16). */
     remindWhen: {
       0: "TODO",
@@ -192,8 +194,9 @@ export const texts = {
     remind3: "За 3 дня",
     remind7: "За 7 дней",
     time: "Время напоминания",
-    /** Подпись варианта времени: «9:00 · 10:00 · 18:00» — формат как в card.remindAt. */
-    hour: (hour: number) => `${hour}:00`,
+    /** Время стёрли в поле (input type="time"). В спеке текста нет — временный текст техлида,
+     * ждёт правки UX (TIME-FE, #104). */
+    timeRequired: "Укажите время напоминания.",
     save: "Сохранить",
     cancel: "Отмена",
     discardConfirm: "Удалить черновик?",
