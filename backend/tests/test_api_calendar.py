@@ -248,7 +248,65 @@ async def test_me_with_profile(miniapp_api):
     [
         (
             {"task_draft": {"title": " Оплатить аренду ", "due_date": "2026-11-05"}},
-            {"title": "Оплатить аренду", "due_date": "2026-11-05"},
+            {
+                "title": "Оплатить аренду",
+                "due_date": "2026-11-05",
+                "remind_hour": None,
+                "remind_minute": None,
+            },
+        ),
+        # #103: время из сообщения — оба поля; битое или неполное время — оба null
+        (
+            {
+                "task_draft": {
+                    "title": "Аренда",
+                    "due_date": "2026-11-05",
+                    "remind_hour": 15,
+                    "remind_minute": 30,
+                }
+            },
+            {"title": "Аренда", "due_date": "2026-11-05", "remind_hour": 15, "remind_minute": 30},
+        ),
+        (
+            {"task_draft": {"title": "Аренда", "due_date": "2026-11-05", "remind_hour": 15}},
+            {
+                "title": "Аренда",
+                "due_date": "2026-11-05",
+                "remind_hour": None,
+                "remind_minute": None,
+            },
+        ),
+        (
+            {
+                "task_draft": {
+                    "title": "Аренда",
+                    "due_date": "2026-11-05",
+                    "remind_hour": 24,
+                    "remind_minute": 0,
+                }
+            },
+            {
+                "title": "Аренда",
+                "due_date": "2026-11-05",
+                "remind_hour": None,
+                "remind_minute": None,
+            },
+        ),
+        (
+            {
+                "task_draft": {
+                    "title": "Аренда",
+                    "due_date": "2026-11-05",
+                    "remind_hour": "15",
+                    "remind_minute": True,
+                }
+            },
+            {
+                "title": "Аренда",
+                "due_date": "2026-11-05",
+                "remind_hour": None,
+                "remind_minute": None,
+            },
         ),
         ({}, None),
         ({"task_draft": None}, None),
@@ -269,7 +327,12 @@ async def test_me_draft_from_dialog_state(miniapp_api, data, expected):
 # --- #96: черновик по start_param кнопки «Изменить» / «Выбрать дату» ----------------------------
 
 DRAFT = {"title": "Заплатить налог", "due_date": "2026-11-05", "id": "ab12cd34"}
-DRAFT_OUT = {"title": "Заплатить налог", "due_date": "2026-11-05"}
+DRAFT_OUT = {
+    "title": "Заплатить налог",
+    "due_date": "2026-11-05",
+    "remind_hour": None,
+    "remind_minute": None,
+}
 
 
 @pytest.mark.parametrize(
@@ -456,6 +519,7 @@ async def test_obligation_card(miniapp_api, caplog):
         "last_checked_at": "2026-01-01",
         "remind_offset_days": None,
         "remind_hour": None,
+        "remind_minute": None,
     }
     assert "test_yearly" in caplog.text
     assert "{notice_date}" in caplog.text
@@ -478,6 +542,7 @@ async def test_task_card(miniapp_api):
     assert body["status"] == "upcoming"
     assert body["remind_offset_days"] == 1
     assert body["remind_hour"] == 10
+    assert body["remind_minute"] == 0  # у задачи всегда число (#103)
     for field in ("norm", "source_url", "howto_steps", "howto_link", "penalty_text"):
         assert body[field] is None
 

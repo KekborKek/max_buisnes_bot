@@ -1,6 +1,8 @@
 """Тесты чистого парсера дат из свободного текста (экраны 9 и 10). Без БД, без сети."""
 
-from datetime import date
+from datetime import date, time
+
+import pytest
 
 from app.bot.dateparse import ParseStatus, parse_task_from_text
 
@@ -148,9 +150,12 @@ def test_false_positive_money_with_spaces() -> None:
 
 
 def test_false_positive_time_of_day() -> None:
+    """Время — не дата: NO_DATE, но время не теряется и уходит из названия (#103)."""
     result = parse_task_from_text("встреча в 15:00", TODAY)
     assert result.status is ParseStatus.NO_DATE
     assert result.due_date is None
+    assert result.title == "Встреча"
+    assert result.remind_time == time(15, 0)
 
 
 def test_false_positive_quantity() -> None:
@@ -228,3 +233,120 @@ def test_no_date_single_word_verb_like() -> None:
     result = parse_task_from_text("заплатить", TODAY)
     assert result.status is ParseStatus.NO_DATE
     assert result.title == "Заплатить"
+
+
+# --- #103: время вместе с датой ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "due", "at"),
+    [
+        ("Оплатить аренду 5 ноября в 15:30", "Оплатить аренду", date(2026, 11, 5), time(15, 30)),
+        ("оплатить аренду 5 ноября 15:30", "Оплатить аренду", date(2026, 11, 5), time(15, 30)),
+        ("15:30 оплатить 5.11", "Оплатить", date(2026, 11, 5), time(15, 30)),
+        ("позвонить завтра в 9:05", "Позвонить", date(2026, 9, 24), time(9, 5)),
+        ("позвонить завтра в 0:30", "Позвонить", date(2026, 9, 24), time(0, 30)),
+        ("бэкап завтра в 03:00", "Бэкап", date(2026, 9, 24), time(3, 0)),  # ведущий ноль
+        ("позвонить в 3 завтра", "Позвонить", date(2026, 9, 24), time(15, 0)),  # 1–6 — днём
+        ("позвонить завтра в 3", "Позвонить", date(2026, 9, 24), time(15, 0)),
+        ("позвонить завтра в 3:30", "Позвонить", date(2026, 9, 24), time(15, 30)),
+        ("позвонить завтра в 3 часа", "Позвонить", date(2026, 9, 24), time(15, 0)),
+        ("в 15 завтра маме", "Маме", date(2026, 9, 24), time(15, 0)),  # голое «в N» перед датой
+        ("встреча завтра в 15", "Встреча", date(2026, 9, 24), time(15, 0)),  # в конце текста
+        ("встреча в 15, завтра", "Встреча", date(2026, 9, 24), time(15, 0)),  # перед запятой
+        ("сменить пароль в 12 ночи завтра", "Сменить пароль", date(2026, 9, 24), time(0, 0)),
+        ("бэкап в 2 ночи завтра", "Бэкап", date(2026, 9, 24), time(2, 0)),
+        ("встреча с 15:00 до 16:00 завтра", "Встреча", date(2026, 9, 24), time(15, 0)),
+        ("встреча 15:00–16:00 завтра", "Встреча", date(2026, 9, 24), time(15, 0)),
+        ("записаться на 15:30 завтра", "Записаться", date(2026, 9, 24), time(15, 30)),
+        ("встреча в пн в 15", "Встреча", date(2026, 9, 28), time(15, 0)),
+        ("в 15 часов сдать отчёт 10.10", "Сдать отчёт", date(2026, 10, 10), time(15, 0)),
+        ("позвонить в 15 ч завтра", "Позвонить", date(2026, 9, 24), time(15, 0)),
+        ("позвонить в 15 ч. завтра", "Позвонить", date(2026, 9, 24), time(15, 0)),
+        ("позвонить в 9 утра завтра", "Позвонить", date(2026, 9, 24), time(9, 0)),
+        ("встреча в 3 дня 5 ноября", "Встреча", date(2026, 11, 5), time(15, 0)),
+        ("обед в 12 дня завтра", "Обед", date(2026, 9, 24), time(12, 0)),
+        ("ужин в 7 вечера завтра", "Ужин", date(2026, 9, 24), time(19, 0)),
+        ("в 7:30 вечера ужин завтра", "Ужин", date(2026, 9, 24), time(19, 30)),
+        ("созвон завтра в 23:59", "Созвон", date(2026, 9, 24), time(23, 59)),
+    ],
+)
+def test_time_with_date(text, title, due, at) -> None:
+    result = parse_task_from_text(text, TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert (result.title, result.due_date, result.remind_time) == (title, due, at)
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "due"),
+    [
+        ("оплатить 10.05", "Оплатить", date(2027, 5, 10)),  # точка — только дата
+        ("оплатить в 15 ноября", "Оплатить", date(2026, 11, 15)),  # «в 15» + месяц — дата
+        ("вырасти в 3 раза завтра", "Вырасти в 3 раза", date(2026, 9, 24)),
+        ("оплатить в 5 числа завтра", "Оплатить в 5 числа", date(2026, 9, 24)),
+        ("купить 3 пачки завтра", "Купить 3 пачки", date(2026, 9, 24)),
+        ("позвать 15 человек завтра", "Позвать 15 человек", date(2026, 9, 24)),
+        ("оплатить до 15 5 ноября", "Оплатить до 15", date(2026, 11, 5)),  # «до N» — срок
+        ("сдать отчёт до 18:00 в пятницу", "Сдать отчёт до 18:00", date(2026, 9, 25)),
+        ("Сдать отчёт к 9 утра завтра", "Сдать отчёт к 9 утра", date(2026, 9, 24)),
+        ("сдать не позднее 15:00 завтра", "Сдать не позднее 15:00", date(2026, 9, 24)),
+        ("Доставка в 2 этапа завтра", "Доставка в 2 этапа", date(2026, 9, 24)),
+        ("Отчёт в 4 квартале 5 ноября", "Отчёт в 4 квартале", date(2026, 11, 5)),
+        ("Прием в 11 кабинете завтра", "Прием в 11 кабинете", date(2026, 9, 24)),
+        ("Забрать в 5 магазинах завтра", "Забрать в 5 магазинах", date(2026, 9, 24)),
+        ("В 15 минут завтра позвонить", "В 15 минут позвонить", date(2026, 9, 24)),
+        ("ждать 3 часа завтра", "Ждать 3 часа", date(2026, 9, 24)),  # длительность
+        ("оплатить на 10:30 руб завтра", "Оплатить на 10:30 руб", date(2026, 9, 24)),
+        ("встреча в 5 ночи завтра", "Встреча в 5 ночи", date(2026, 9, 24)),  # ночи — 12, 1–4
+        ("встреча в 25:00 завтра", "Встреча в 25:00", date(2026, 9, 24)),
+        ("встреча в 12:60 завтра", "Встреча в 12:60", date(2026, 9, 24)),
+        ("ужин в 9 вечера завтра", "Ужин", date(2026, 9, 24)),  # 21:00 — это время
+    ],
+)
+def test_not_a_time(text, title, due) -> None:
+    result = parse_task_from_text(text, TODAY)
+    assert result.status is ParseStatus.PARSED
+    assert (result.title, result.due_date) == (title, due)
+    if text.startswith("ужин"):
+        assert result.remind_time == time(21, 0)
+    else:
+        assert result.remind_time is None
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "at"),
+    [
+        ("оплатить 10:05", "Оплатить", time(10, 5)),  # двоеточие — время, не 10 мая
+        ("позвонить бухгалтеру в 9 утра", "Позвонить бухгалтеру", time(9, 0)),
+        ("встреча в 15", "Встреча", time(15, 0)),
+    ],
+)
+def test_time_without_date_is_no_date_and_keeps_time(text, title, at) -> None:
+    result = parse_task_from_text(text, TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert (result.title, result.due_date, result.remind_time) == (title, None, at)
+
+
+@pytest.mark.parametrize(
+    "text", ["выручка 1.5 млн", "созвон в 12.30", "выручка в 1,5 раза больше", "купить 3 пачки"]
+)
+def test_numbers_are_neither_date_nor_time(text) -> None:
+    result = parse_task_from_text(text, TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert (result.due_date, result.remind_time) == (None, None)
+    assert result.title == text[0].upper() + text[1:]
+
+
+def test_only_time_is_unknown() -> None:
+    assert parse_task_from_text("15:30", TODAY).status is ParseStatus.UNKNOWN
+    assert parse_task_from_text("в 9 утра", TODAY).status is ParseStatus.UNKNOWN
+
+
+def test_invalid_date_keeps_time() -> None:
+    result = parse_task_from_text("оплатить 31.02 в 10:00", TODAY)
+    assert result.status is ParseStatus.NO_DATE
+    assert (result.title, result.remind_time) == ("Оплатить", time(10, 0))
+
+
+def test_date_without_time_has_no_time() -> None:
+    assert parse_task_from_text("оплатить аренду 5 ноября", TODAY).remind_time is None

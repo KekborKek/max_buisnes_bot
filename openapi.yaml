@@ -676,6 +676,12 @@ components:
           - type: integer
           - type: 'null'
           title: Remind Hour
+        remind_minute:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Minute
+          description: 'У задачи всегда число: 0–59'
       type: object
       required:
       - type
@@ -880,6 +886,18 @@ components:
           type: string
           format: date
           title: Due Date
+        remind_hour:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Hour
+          description: Время из сообщения (0–23); null — времени в сообщении не было
+        remind_minute:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Remind Minute
+          description: 0–59; null вместе с remind_hour
       type: object
       required:
       - title
@@ -905,9 +923,18 @@ components:
           default: 1
         remind_hour:
           type: integer
+          maximum: 23.0
+          minimum: 0.0
           title: Remind Hour
-          description: 9 · 10 · 18
+          description: 'Час напоминания по поясу пользователя: 0–23'
           default: 10
+        remind_minute:
+          type: integer
+          maximum: 59.0
+          minimum: 0.0
+          title: Remind Minute
+          description: 'Минуты напоминания: 0–59'
+          default: 0
       type: object
       required:
       - title
@@ -936,8 +963,19 @@ components:
         remind_hour:
           anyOf:
           - type: integer
+            maximum: 23.0
+            minimum: 0.0
           - type: 'null'
           title: Remind Hour
+          description: 'Час напоминания по поясу пользователя: 0–23'
+        remind_minute:
+          anyOf:
+          - type: integer
+            maximum: 59.0
+            minimum: 0.0
+          - type: 'null'
+          title: Remind Minute
+          description: 'Минуты напоминания: 0–59'
       type: object
       title: TaskPatch
       description: 'Изменение задачи: передаются только меняемые поля.'

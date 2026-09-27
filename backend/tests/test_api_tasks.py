@@ -78,6 +78,7 @@ async def test_create_task_with_defaults(miniapp_api):
         "last_checked_at": None,
         "remind_offset_days": 1,
         "remind_hour": 10,
+        "remind_minute": 0,
     }
     # 04.10 10:00 по Москве = 07:00 UTC
     assert await task_notifications(body["id"]) == [
@@ -141,8 +142,10 @@ async def test_create_task_creates_user_row(miniapp_api):
         ({"due_date": "2026-09-22"}, "due_date"),
         ({"due_date": "5 ноября"}, "due_date"),
         ({"remind_offset_days": 2}, "remind_offset_days"),
-        ({"remind_hour": 11}, "remind_hour"),
-        ({"remind_hour": 0}, "remind_hour"),
+        ({"remind_hour": 24}, "remind_hour"),
+        ({"remind_hour": -1}, "remind_hour"),
+        ({"remind_minute": 60}, "remind_minute"),
+        ({"remind_minute": -1}, "remind_minute"),
     ],
 )
 async def test_create_task_validation(miniapp_api, body, field):
@@ -163,14 +166,37 @@ async def test_create_task_title_limits(miniapp_api):
 
 
 @pytest.mark.parametrize("offset", [0, 1, 3, 7])
-@pytest.mark.parametrize("hour", [9, 10, 18])
-async def test_create_task_allowed_options(miniapp_api, offset, hour):
+@pytest.mark.parametrize(("hour", "minute"), [(0, 0), (9, 5), (10, 0), (18, 30), (23, 59)])
+async def test_create_task_allowed_options(miniapp_api, offset, hour, minute):
     await add_user(OWNER)
     r = await create(
-        miniapp_api, due_date="2026-10-30", remind_offset_days=offset, remind_hour=hour
+        miniapp_api,
+        due_date="2026-10-30",
+        remind_offset_days=offset,
+        remind_hour=hour,
+        remind_minute=minute,
     )
     assert r.status_code == 200
-    assert (r.json()["remind_offset_days"], r.json()["remind_hour"]) == (offset, hour)
+    body = r.json()
+    assert (body["remind_offset_days"], body["remind_hour"], body["remind_minute"]) == (
+        offset,
+        hour,
+        minute,
+    )
+
+
+async def test_create_task_reminder_at_any_minute(miniapp_api):
+    """#103: 07:45 по Москве = 04:45 UTC; карточка отдаёт то же время."""
+    await add_user(OWNER)
+    r = await create(miniapp_api, remind_hour=7, remind_minute=45)
+    assert r.status_code == 200
+    task_id = r.json()["id"]
+    # 04.10 07:45 по Москве = 04:45 UTC
+    assert await task_notifications(task_id) == [
+        ("task", "pending", datetime(2026, 10, 4, 4, 45, tzinfo=UTC))
+    ]
+    card = (await miniapp_api.request("GET", f"/api/items/task/{task_id}", OWNER)).json()
+    assert (card["remind_hour"], card["remind_minute"]) == (7, 45)
 
 
 # --- PATCH /api/tasks/{id} ----------------------------------------------------------------
@@ -199,6 +225,21 @@ async def test_patch_task_reschedules_notification(miniapp_api):
         ("task", "pending", datetime(2026, 10, 7, 6, tzinfo=UTC)),
     ]
     assert len(await events("task_created")) == 1
+
+
+async def test_patch_minute_only_reschedules_notification(miniapp_api):
+    """#103: новое время (только минуты) пересоздаёт напоминание."""
+    await add_user(OWNER)
+    task_id = (await create(miniapp_api)).json()["id"]
+    r = await miniapp_api.request(
+        "PATCH", f"/api/tasks/{task_id}", OWNER, json={"remind_minute": 15}
+    )
+    assert r.status_code == 200
+    assert (r.json()["remind_hour"], r.json()["remind_minute"]) == (10, 15)
+    assert await task_notifications(task_id) == [
+        ("task", "cancelled", datetime(2026, 10, 4, 7, tzinfo=UTC)),
+        ("task", "pending", datetime(2026, 10, 4, 7, 15, tzinfo=UTC)),
+    ]
 
 
 async def test_patch_title_only_keeps_notification(miniapp_api):
@@ -235,7 +276,14 @@ async def test_patch_overdue_task_title_keeps_past_date(miniapp_api):
 
 
 @pytest.mark.parametrize(
-    "body", [{"title": ""}, {"title": "я" * 61}, {"remind_offset_days": 5}, {"remind_hour": 12}]
+    "body",
+    [
+        {"title": ""},
+        {"title": "я" * 61},
+        {"remind_offset_days": 5},
+        {"remind_hour": 24},
+        {"remind_minute": 60},
+    ],
 )
 async def test_patch_task_validation(miniapp_api, body):
     await add_user(OWNER)
@@ -243,11 +291,12 @@ async def test_patch_task_validation(miniapp_api, body):
     r = await miniapp_api.request("PATCH", f"/api/tasks/{task_id}", OWNER, json=body)
     assert r.status_code == 422
     card = (await miniapp_api.request("GET", f"/api/items/task/{task_id}", OWNER)).json()
-    assert (card["title"], card["remind_offset_days"], card["remind_hour"]) == (
-        "Оплатить аренду",
-        1,
-        10,
-    )
+    assert (
+        card["title"],
+        card["remind_offset_days"],
+        card["remind_hour"],
+        card["remind_minute"],
+    ) == ("Оплатить аренду", 1, 10, 0)
 
 
 async def test_patch_foreign_or_deleted_task_is_404(miniapp_api):

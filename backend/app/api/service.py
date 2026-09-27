@@ -200,6 +200,7 @@ def task_card(task: Task, today: date) -> ItemCard:
         **task_item(task, today).model_dump(),
         remind_offset_days=task.remind_offset_days,
         remind_hour=task.remind_hour,
+        remind_minute=task.remind_minute or 0,
     )
 
 

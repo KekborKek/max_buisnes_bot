@@ -138,7 +138,9 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(60))
     due_date: Mapped[date] = mapped_column(Date)
     remind_offset_days: Mapped[int] = mapped_column(Integer, default=1)  # 0 | 1 | 3 | 7
-    remind_hour: Mapped[int] = mapped_column(Integer, default=10)
+    remind_hour: Mapped[int] = mapped_column(Integer, default=10)  # 0–23
+    # 0–59; server_default — лёгкая миграция добавит колонку в старую базу со значением 0 (#103)
+    remind_minute: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -11,12 +11,14 @@ ItemTypeParam = Literal["obligation", "task"]
 CategoryOut = Literal["taxes", "contributions", "reports", "custom"]
 StatusOut = Literal["done", "overdue", "today", "upcoming"]
 
-# Экран 17: название до 60 символов, «Напомнить» — 4 варианта, «Время напоминания» — 3.
+# Экран 17: название до 60 символов, «Напомнить» — 4 варианта, «Время» — любое ЧЧ:ММ (#103).
 TITLE_MAX_LEN = 60
 REMIND_OFFSETS = (0, 1, 3, 7)
-REMIND_HOURS = (9, 10, 18)
 DEFAULT_REMIND_OFFSET = 1
 DEFAULT_REMIND_HOUR = 10
+DEFAULT_REMIND_MINUTE = 0
+HOUR_DESCRIPTION = "Час напоминания по поясу пользователя: 0–23"
+MINUTE_DESCRIPTION = "Минуты напоминания: 0–59"
 
 
 class CalendarItem(BaseModel):
@@ -52,6 +54,7 @@ class ItemCard(CalendarItem):
     # только задача
     remind_offset_days: int | None = None
     remind_hour: int | None = None
+    remind_minute: int | None = Field(default=None, description="У задачи всегда число: 0–59")
 
 
 def _check_title(value: str) -> str:
@@ -69,19 +72,16 @@ def _check_offset(value: int) -> int:
     return value
 
 
-def _check_hour(value: int) -> int:
-    if value not in REMIND_HOURS:
-        raise ValueError(f"remind_hour must be one of {REMIND_HOURS}")
-    return value
-
-
 class TaskInput(BaseModel):
     """Создание своей задачи (экран 17)."""
 
     title: str = Field(description=f"1–{TITLE_MAX_LEN} символов после обрезки пробелов")
     due_date: date = Field(description="Не раньше сегодняшнего дня пользователя")
     remind_offset_days: int = Field(default=DEFAULT_REMIND_OFFSET, description="0 · 1 · 3 · 7")
-    remind_hour: int = Field(default=DEFAULT_REMIND_HOUR, description="9 · 10 · 18")
+    remind_hour: int = Field(default=DEFAULT_REMIND_HOUR, ge=0, le=23, description=HOUR_DESCRIPTION)
+    remind_minute: int = Field(
+        default=DEFAULT_REMIND_MINUTE, ge=0, le=59, description=MINUTE_DESCRIPTION
+    )
 
     @field_validator("title")
     @classmethod
@@ -93,11 +93,6 @@ class TaskInput(BaseModel):
     def _offset(cls, v: int) -> int:
         return _check_offset(v)
 
-    @field_validator("remind_hour")
-    @classmethod
-    def _hour(cls, v: int) -> int:
-        return _check_hour(v)
-
 
 class TaskPatch(BaseModel):
     """Изменение задачи: передаются только меняемые поля."""
@@ -107,7 +102,8 @@ class TaskPatch(BaseModel):
         default=None, description="Новая дата не раньше сегодняшней; прежнюю можно оставить"
     )
     remind_offset_days: int | None = None
-    remind_hour: int | None = None
+    remind_hour: int | None = Field(default=None, ge=0, le=23, description=HOUR_DESCRIPTION)
+    remind_minute: int | None = Field(default=None, ge=0, le=59, description=MINUTE_DESCRIPTION)
 
     @field_validator("title")
     @classmethod
@@ -118,11 +114,6 @@ class TaskPatch(BaseModel):
     @classmethod
     def _offset(cls, v: int | None) -> int | None:
         return None if v is None else _check_offset(v)
-
-    @field_validator("remind_hour")
-    @classmethod
-    def _hour(cls, v: int | None) -> int | None:
-        return None if v is None else _check_hour(v)
 
 
 class ReminderSettingsOut(BaseModel):
@@ -185,6 +176,10 @@ class TaskDraft(BaseModel):
 
     title: str
     due_date: date
+    remind_hour: int | None = Field(
+        default=None, description="Время из сообщения (0–23); null — времени в сообщении не было"
+    )
+    remind_minute: int | None = Field(default=None, description="0–59; null вместе с remind_hour")
 
 
 class MeResponse(BaseModel):

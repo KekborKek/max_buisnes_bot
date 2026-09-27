@@ -135,7 +135,8 @@ last_checked_at: "2026-09-20"
 | `title` | str ≤ 60 | |
 | `due_date` | date | не раньше сегодняшнего при создании |
 | `remind_offset_days` | int | `0` · `1` · `3` · `7`, по умолчанию `1` |
-| `remind_hour` | int | по умолчанию `10` |
+| `remind_hour` | int | `0`–`23`, по умолчанию `10` |
+| `remind_minute` | int | `0`–`59`, по умолчанию `0` (#103: любое время ЧЧ:ММ у своей задачи; час напоминаний по обязательствам — экран 13, 9/10/18) |
 | `done_at` | datetime, null | |
 | `deleted_at` | datetime, null | мягкое удаление |
 
@@ -150,7 +151,7 @@ last_checked_at: "2026-09-20"
 | `item_type` | str | `obligation` · `task` · `week` (записи сводки `digest`, `calendar/digest.py`) |
 | `item_id` | int | `UserObligation.id` или `Task.id` |
 | `kind` | str | `d30` · `d7` · `d1` · `overdue` · `snooze` · `task` · `digest` |
-| `send_at` | datetime UTC | 10:00 по поясу пользователя, пересчитан в UTC |
+| `send_at` | datetime UTC | 10:00 по поясу пользователя (у задачи — `remind_hour`:`remind_minute`), пересчитан в UTC |
 | `status` | str | `pending` · `sent` · `cancelled` · `failed` |
 | `attempts` | int | |
 
@@ -191,4 +192,4 @@ last_checked_at: "2026-09-20"
 }
 ```
 
-Карточка (`GET /api/items/...`) — то же плюс `norm`, `source_url`, `howto_steps`, `howto_link`, `penalty_text`, `last_checked_at`; у задачи — `remind_offset_days`, `remind_hour`. `status` считает бэкенд в поясе пользователя; фронт его не пересчитывает.
+Карточка (`GET /api/items/...`) — то же плюс `norm`, `source_url`, `howto_steps`, `howto_link`, `penalty_text`, `last_checked_at`; у задачи — `remind_offset_days`, `remind_hour`, `remind_minute`. `status` считает бэкенд в поясе пользователя; фронт его не пересчитывает.

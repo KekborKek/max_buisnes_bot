@@ -10,8 +10,9 @@
     fb_service  — сбоев подряд (со второго — `service_2`);
     last_action — {update_type, text, payload} упавшего действия, его повторяет «Повторить»;
     task_title  — название задачи без даты, ждёт «Завтра» / «Через неделю» (экран 9);
-    task_draft  — {title, due_date[, id]}: черновик для формы 17 («Выбрать дату», D27);
-                  `id` — у каждого нового черновика (экраны 9 и 10, #87, #96), его несут кнопки.
+    task_draft  — {title, due_date[, id][, remind_hour, remind_minute]}: черновик для формы 17
+                  («Выбрать дату», D27); `id` — у каждого нового черновика (экраны 9 и 10, #87,
+                  #96), его несут кнопки; время — только если оно было в сообщении (#103).
 Счётчики сбрасывает любое успешное действие (`after_handler`, зовёт диспетчер до коммита).
 
 Payload кнопок: fb:retry — «Повторить»; fb:tomorrow:<id> и fb:week:<id> обрабатывает task_chat
@@ -21,7 +22,7 @@ Payload кнопок: fb:retry — «Повторить»; fb:tomorrow:<id> и f
 
 import logging
 import secrets
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
@@ -69,16 +70,22 @@ def draft_start_param(draft_id: str | None) -> str:
     return f"{DRAFT_START_PARAM}_{draft_id}" if draft_id else DRAFT_START_PARAM
 
 
-def draft(title: str, due_date: date, draft_id: str | None = None) -> dict:
+def draft(
+    title: str, due_date: date, draft_id: str | None = None, remind_time: time | None = None
+) -> dict:
     """`task_draft` в том виде, что читает `/api/me` (api/routes.task_draft): title, due_date.
 
     `id` — новое поле (#87): его несут кнопки экранов 9 и 10, чтобы старая кнопка не взяла
     чужой черновик. `/api/me` сверяет его с id из start_param (#96); title и due_date
-    переименовывать нельзя.
+    переименовывать нельзя. `remind_hour` и `remind_minute` — время из сообщения (#103),
+    пишутся только вместе и только когда время было.
     """
-    value = {"title": title, "due_date": due_date.isoformat()}
+    value: dict = {"title": title, "due_date": due_date.isoformat()}
     if draft_id is not None:
         value["id"] = draft_id
+    if remind_time is not None:
+        value["remind_hour"] = remind_time.hour
+        value["remind_minute"] = remind_time.minute
     return value
 
 
@@ -141,17 +148,18 @@ def no_date_keyboard(draft_id: str) -> dict:
     return kb.inline_keyboard(*rows)
 
 
-async def show_no_date(ctx: Ctx, title: str, today: date) -> None:
+async def show_no_date(ctx: Ctx, title: str, today: date, remind_time: time | None = None) -> None:
     """Случай «не нашёл дату»: название ждёт даты в `task_title`, текст не теряется.
 
     «Выбрать дату» — open_app, нажатие до бота не доходит, поэтому черновик формы 17 пишем
     сразу: название и завтрашний день (форма всё равно даст выбрать дату). Новый id черновика
-    делает кнопки прежних сообщений устаревшими (#96).
+    делает кнопки прежних сообщений устаревшими (#96). Время из сообщения (#103) — в том же
+    черновике: его берут «Завтра» / «Через неделю» и форма 17.
     """
     draft_id = new_draft_id()
     state, data = await ctx.get_state()
     data[TASK_TITLE_KEY] = title
-    data[TASK_DRAFT_KEY] = draft(title, today + timedelta(days=1), draft_id)
+    data[TASK_DRAFT_KEY] = draft(title, today + timedelta(days=1), draft_id, remind_time)
     await ctx.set_state(state, data)
     await ctx.track("date_not_parsed", {})
     await ctx.track("fallback_shown", {"case": "no_date"})

@@ -77,9 +77,12 @@ def reminder_settings(raw: Mapping[str, Any] | None) -> dict[str, Any]:
     return merged
 
 
-def send_at_utc(day: date, hour: int, tz: str) -> datetime:
-    """`hour`:00 дня `day` по часовому поясу `tz` (IANA) → aware datetime в UTC. (T4)"""
-    return datetime.combine(day, time(hour), tzinfo=ZoneInfo(tz)).astimezone(UTC)
+def send_at_utc(day: date, hour: int, tz: str, minute: int = 0) -> datetime:
+    """`hour`:`minute` дня `day` по часовому поясу `tz` (IANA) → aware datetime в UTC. (T4)
+
+    `minute` — только у своих задач (#103); обязательства, сводка и snooze — ровно в `hour`:00.
+    """
+    return datetime.combine(day, time(hour, minute), tzinfo=ZoneInfo(tz)).astimezone(UTC)
 
 
 def _enabled_kinds(*, needs_prep: bool, d30: bool, d7: bool) -> frozenset[str]:
@@ -125,9 +128,15 @@ def plan_task_notification(
     remind_hour: int,
     tz: str,
     now: datetime,
+    remind_minute: int = 0,
 ) -> PlannedNotification | None:
-    """Ровно одно `task`-уведомление за remind_offset_days до срока (D11); в прошлом — None. (T4)"""
-    at = send_at_utc(due_date - timedelta(days=remind_offset_days), remind_hour, tz)
+    """Ровно одно `task`-уведомление за remind_offset_days до срока (D11); в прошлом — None. (T4)
+
+    Время — `remind_hour`:`remind_minute` по `tz` (#103).
+    """
+    at = send_at_utc(
+        due_date - timedelta(days=remind_offset_days), remind_hour, tz, minute=remind_minute
+    )
     if at <= now:
         return None
     return PlannedNotification(kind="task", send_at=at)
@@ -272,6 +281,7 @@ async def sync_task_notification(
             task.due_date,
             remind_offset_days=task.remind_offset_days,
             remind_hour=task.remind_hour,
+            remind_minute=task.remind_minute or 0,
             tz=tz,
             now=now,
         )
@@ -313,8 +323,8 @@ async def resync_user_notifications(
       записи, которой нет в справочнике, пропускаем — её pending отменит отправка
       (`_claim` → `load_reminder_item` вернёт None);
     - `task`-уведомления: pending с send_at в будущем и `attempts == 0` получают send_at
-      по новому поясу (у задачи свои remind_offset_days и remind_hour). Новое время уже
-      прошло — остаётся старое: это единственное напоминание по задаче (D11). В прошлом,
+      по новому поясу (у задачи свои remind_offset_days, remind_hour и remind_minute). Новое
+      время уже прошло — остаётся старое: это единственное напоминание по задаче (D11). В прошлом,
       в отправке или на повторе (`attempts > 0`, см. `_claim`) — не трогаем;
     - задача без `task`-уведомления (по старому поясу время уже прошло) получает его, если по
       новому поясу оно впереди — правилом `sync_task_notification`. Если по задаче уже было
@@ -357,6 +367,7 @@ async def resync_user_notifications(
             task.due_date,
             remind_offset_days=task.remind_offset_days,
             remind_hour=task.remind_hour,
+            remind_minute=task.remind_minute or 0,
             tz=tz,
             now=now,
         )

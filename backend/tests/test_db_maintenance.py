@@ -431,6 +431,33 @@ async def test_real_models_on_c0e0ec6_schema_no_alter_no_errors(tmp_engine, capl
     assert {"profiles", "tasks", "notifications"} <= tables  # новые таблицы — от create_all
 
 
+async def test_tasks_without_remind_minute_get_column_and_zero(tmp_engine, caplog):
+    """#103: прод-база до remind_minute поднимается, у старых задач remind_minute = 0."""
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    await init_db(tmp_engine)
+    await _execute(
+        tmp_engine,
+        "ALTER TABLE tasks DROP COLUMN remind_minute",  # схема до #103
+        "INSERT INTO users (user_id, created_at) VALUES (7, '2026-09-20 08:00:00.000000')",
+        "INSERT INTO tasks (id, user_id, title, due_date, remind_offset_days, remind_hour, "
+        "created_at) VALUES (1, 7, 'Аренда', '2026-11-05', 1, 18, '2026-09-20 08:00:00.000000')",
+    )
+    assert "remind_minute" not in await _columns(tmp_engine, "tasks")
+    alters = _count_alters(tmp_engine)
+
+    await init_db(tmp_engine)
+
+    assert len(alters) == 1 and "ADD COLUMN remind_minute" in alters[0]
+    assert not _problems(caplog)
+    async with tmp_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT remind_hour, remind_minute, typeof(remind_minute) FROM tasks")
+            )
+        ).one()
+    assert tuple(row) == (18, 0, "integer")  # DEFAULT '0' в INTEGER-колонке — число
+
+
 async def test_real_models_fresh_db_twice_no_alter_no_alarms(tmp_engine, caplog):
     caplog.set_level(logging.WARNING, logger=LOGGER)
     alters = _count_alters(tmp_engine)

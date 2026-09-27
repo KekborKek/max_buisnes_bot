@@ -60,6 +60,9 @@ def draft_id_from(start_param: str | None) -> str | None:
 def task_draft(state: DialogState | None, draft_id: str | None = None) -> TaskDraft | None:
     """Черновик из бота: data["task_draft"] = {"title", "due_date": "YYYY-MM-DD", "id"} (T8b).
 
+    Необязательные `remind_hour` и `remind_minute` — время из сообщения (#103): отдаются оба
+    или ни одного; черновик без них (времени не было, записан до #103) — оба null.
+
     `draft_id` — из start_param кнопки (#96): черновик отдаётся, только если id совпал.
     Без него (голый `task_draft`, другой вход) — текущий черновик, как раньше.
     Битый или неполный черновик — null: форма откроется пустой, а не с ошибкой.
@@ -77,7 +80,15 @@ def task_draft(state: DialogState | None, draft_id: str | None = None) -> TaskDr
     except ValueError:
         log.warning("task_draft с неразборчивой датой %r", due)
         return None
-    return TaskDraft(title=title.strip(), due_date=due_date)
+    hour, minute = raw.get("remind_hour"), raw.get("remind_minute")
+    if not (_is_int_in(hour, 23) and _is_int_in(minute, 59)):
+        hour = minute = None  # времени не было (или черновик до #103) — оба null
+    return TaskDraft(title=title.strip(), due_date=due_date, remind_hour=hour, remind_minute=minute)
+
+
+def _is_int_in(value: object, top: int) -> bool:
+    """Целое 0…top; bool не считается."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= top
 
 
 class TrackRequest(BaseModel):
