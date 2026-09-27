@@ -113,6 +113,34 @@ test("строка ведёт на карточку, «+ Задача» — на
   expect(nav.push).toHaveBeenCalledWith({ name: "task", draft: false });
 });
 
+test("дата другого года — год отдельной строкой в .row-date, не наезжает на название (#105)", () => {
+  const items = [
+    ...ITEMS,
+    makeItem({ id: 5, title: "Взнос ИП за 2026 год", due_date: "2027-01-05" }),
+  ];
+  renderList({ items, loading: false, error: null });
+  const rows = screen.getAllByRole("button").filter((b) => b.classList.contains("row"));
+  const futureRow = rows.find(
+    (r) => r.querySelector(".row-title")?.textContent === "Взнос ИП за 2026 год",
+  );
+  expect(futureRow).toBeDefined();
+
+  const dateCell = futureRow!.querySelector(".row-date")!;
+  expect(dateCell).toHaveAttribute("aria-label", "5 янв 2027");
+  const yearCell = dateCell.querySelector(".row-date__year")!;
+  expect(yearCell).toHaveTextContent("2027");
+  expect(yearCell).toHaveAttribute("aria-hidden", "true");
+  // Название не обрезано наездом даты — оно полностью в DOM (обрезка только через CSS).
+  expect(futureRow).toHaveTextContent("Взнос ИП за 2026 год");
+
+  // Строка без года — разметка не меняется: просто текст, без .row-date__year.
+  const plainRow = rows.find((r) => r.querySelector(".row-title")?.textContent === "Декларация")!;
+  const plainDateCell = plainRow.querySelector(".row-date")!;
+  expect(plainDateCell.querySelector(".row-date__year")).toBeNull();
+  expect(plainDateCell).not.toHaveAttribute("aria-label");
+  expect(plainDateCell.textContent).toBe("28 окт");
+});
+
 test("переключатель «Список | Месяц»: активная вкладка отмечена", () => {
   renderList({ items: [], loading: false, error: null });
   expect(screen.getByRole("button", { name: texts.list.tabList })).toHaveAttribute(

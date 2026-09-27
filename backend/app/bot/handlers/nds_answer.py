@@ -83,27 +83,41 @@ def years_text(years: tuple[int, ...]) -> str:
 
 
 def threshold_years(nds: NdsConfig, income_year: int) -> tuple[int, ...]:
-    """Годы дохода того порога, который действует для `income_year`."""
+    """Годы дохода того порога, который действует для `income_year`.
+
+    Год позже последнего в справочнике (#106, как в nds_limit_for) — наследует годы
+    последней записи: закон не называет годы дальше 2030-го, но порог не меняется.
+    """
     for threshold in nds.thresholds:
         if income_year in threshold.income_years:
             return threshold.income_years
+    if nds.thresholds:
+        latest = max(nds.thresholds, key=lambda th: max(th.income_years))
+        if income_year > max(latest.income_years):
+            return latest.income_years
     raise ReferenceFileError(f"в nds.yaml нет порога для дохода за {income_year} год")
 
 
 def thresholds_text(nds: NdsConfig) -> str:
-    """«20 млн ₽ — доходы за 2025–2028 годы, 15 млн ₽ — за 2029-й, 10 млн ₽ — за 2030-й»."""
+    """«20 млн ₽ — за 2025–2028 годы; 15 млн ₽ — за 2029 год; 10 млн ₽ — за 2030 год и
+    последующие годы» (#106, дословный текст «Почему так?»): у последнего порога —
+    суффикс nds.threshold_last_suffix, разделитель между порогами — «; »."""
     parts = []
     ordered = sorted(nds.thresholds, key=lambda th: min(th.income_years))
+    last_index = len(ordered) - 1
     for index, threshold in enumerate(ordered):
         limit = t("start.nds_limit", value=common.format_mln(threshold.limit_rub))
         years = threshold.income_years
-        if index == 0:
-            parts.append(t("nds.threshold_first", limit=limit, years=years_text(years)))
-        elif len(years) == 1:
-            parts.append(t("nds.threshold_single", limit=limit, year=years[0]))
+        if len(years) == 1:
+            part = t("nds.threshold_single", limit=limit, year=years[0])
+        elif index == 0:
+            part = t("nds.threshold_first", limit=limit, years=years_text(years))
         else:
-            parts.append(t("nds.threshold_range", limit=limit, years=years_text(years)))
-    return ", ".join(parts)
+            part = t("nds.threshold_range", limit=limit, years=years_text(years))
+        if index == last_index:
+            part += t("nds.threshold_last_suffix")
+        parts.append(part)
+    return "; ".join(parts)
 
 
 def nearest_nds_due(

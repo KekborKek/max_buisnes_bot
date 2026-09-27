@@ -28,6 +28,7 @@ from app.calendar.types import (
     Obligation,
     QuarterlyRule,
     Reference,
+    ReferenceFileError,
 )
 from app.core.db import SessionLocal
 from app.core.models import Event, Profile
@@ -266,7 +267,9 @@ async def test_why_shows_thresholds_law_and_links(fake_max, fixture_reference):
     await onboard(fake_max)
     msg = await run(fake_max, press("nds:why"))
 
-    thresholds = f"{limit('20')} — доходы за 2025–2026 годы, {limit('15')} — за 2027-й"
+    thresholds = f"{limit('20')} — за 2025–2026 годы; {limit('15')} — за 2027 год" + t(
+        "nds.threshold_last_suffix"
+    )
     assert msg["text"] == t("nds.why", thresholds=thresholds, law=fixture_reference.nds.law)
     rows = msg["attachments"][0]["payload"]["buttons"]
     assert rows[0] == [
@@ -289,8 +292,30 @@ def test_thresholds_text_matches_spec_example():
         ),
         last_checked_at=date(2026, 1, 1),
     )
-    expected = "20 млн ₽ — доходы за 2025–2028 годы, 15 млн ₽ — за 2029-й, 10 млн ₽ — за 2030-й"
+    expected = (
+        "20 млн ₽ — за 2025–2028 годы; 15 млн ₽ — за 2029 год; "
+        "10 млн ₽ — за 2030 год и последующие годы"
+    )
     assert nds_answer.thresholds_text(nds).replace(" ", " ") == expected
+
+
+def test_threshold_years_for_year_after_reference_inherits_last_record():
+    """#106: доход за год позже справочника — не ошибка, годы последнего порога."""
+    nds = NdsConfig(
+        law="—",
+        law_url="https://example.invalid",
+        fns_guide_url="https://example.invalid",
+        thresholds=(
+            NdsThreshold(income_years=(2025, 2026, 2027, 2028), limit_rub=20_000_000),
+            NdsThreshold(income_years=(2029,), limit_rub=15_000_000),
+            NdsThreshold(income_years=(2030,), limit_rub=10_000_000),
+        ),
+        last_checked_at=date(2026, 1, 1),
+    )
+    assert nds_answer.threshold_years(nds, 2031) == (2030,)
+    assert nds_answer.threshold_years(nds, 2050) == (2030,)
+    with pytest.raises(ReferenceFileError):
+        nds_answer.threshold_years(nds, 2024)  # раньше первой записи — по-прежнему ошибка
 
 
 # --- ошибки -----------------------------------------------------------------------------------
@@ -323,7 +348,9 @@ async def test_payer_without_nds_records_is_data_error_then_retry(
 
 
 async def test_no_threshold_for_income_year_is_error(fake_max, clock):
-    clock["now"] = datetime(2029, 3, 1, 9, 0, tzinfo=UTC)  # доход за 2028 — в фикстуре порога нет
+    # доход за 2024 — раньше первой записи фикстуры (2025); #106: только год позже
+    # последней записи наследует её порог, год раньше первой — по-прежнему ошибка.
+    clock["now"] = datetime(2025, 3, 1, 9, 0, tzinfo=UTC)
     msg = await onboard(fake_max, "lt10", "usn6")
 
     assert msg["text"] == t("common.error")
