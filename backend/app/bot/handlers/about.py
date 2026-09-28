@@ -6,8 +6,8 @@ issue #54 — раздел «Состояния» файла экрана важ
 
 Кнопки: «Проверить НДС» (календарь ещё не собран) или «Открыть календарь» (собран, и задан
 `MAX_BOT_USERNAME` — иначе кнопка не показывается, как в `start.built_keyboard`); рядом
-«Написать нам», только если задан `SUPPORT_URL` (D13). Строка `privacy` — только при
-заданном `PRIVACY_URL` (D13).
+«Написать нам» — всегда, обращение пишется в боте (handlers/feedback.py, D13). Строка
+`privacy` — только при заданном `PRIVACY_URL` (D13).
 """
 
 import logging
@@ -15,6 +15,7 @@ from datetime import date
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
+from app.bot.handlers import feedback
 from app.bot.handlers.common import ensure_profile
 from app.bot.handlers.start import CHECK
 from app.bot.router import router
@@ -52,16 +53,19 @@ def about_body() -> str:
     return t("about.body", last_checked=last_checked)
 
 
-def about_keyboard(profile: Profile) -> dict | None:
-    """Один ряд: check-или-open (по `calendar_built_at`) + «Написать нам» (по `SUPPORT_URL`)."""
+def about_keyboard(profile: Profile, *, with_write: bool = True) -> dict | None:
+    """Один ряд: check-или-open (по `calendar_built_at`) + «Написать нам».
+
+    «Написать нам» — всегда, кроме группового чата (обращение только в личке, feedback.py).
+    """
     settings = get_settings()
     row: list[dict] = []
     if profile.calendar_built_at is None:
         row.append(kb.callback(t("about.btn_check"), CHECK))
     elif settings.max_bot_username:
         row.append(kb.open_app(t("about.btn_open")))
-    if settings.support_url:
-        row.append(kb.link(t("about.btn_write"), settings.support_url))
+    if with_write:
+        row.append(feedback.write_button("about.btn_write", "about"))
     return kb.inline_keyboard(row) if row else None
 
 
@@ -76,7 +80,7 @@ async def show_about(ctx: Ctx) -> None:
     if settings.privacy_url:
         text = f"{text}\n{t('about.privacy', privacy_url=settings.privacy_url)}"
 
-    keyboard = about_keyboard(profile)
+    keyboard = about_keyboard(profile, with_write=not ctx.is_group)
     await ctx.reply(text, attachments=[keyboard] if keyboard else None)
 
 

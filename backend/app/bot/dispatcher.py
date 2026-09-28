@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.bot.handlers  # noqa: F401  регистрирует обработчики
 from app.bot.context import Ctx
-from app.bot.handlers import fallback
+from app.bot.handlers import fallback, feedback
 from app.bot.router import router
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -118,6 +118,10 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
     Экран 10: после успешного обработчика `fallback.after_handler` сбрасывает счётчики сбоев
     в той же транзакции; после падения и rollback `fallback.on_failure` отдельной короткой
     транзакцией (без сети) запоминает действие для «Повторить» и ставит в очередь ответ.
+
+    «Написать нам»: `feedback.after_handler` выводит из ожидания обращения, если апдейт
+    обработал не сам экран обращения (команда, другая кнопка). Отложенное через `ctx.defer`
+    (пересылка обращения админам) выполняется последним — после отправки ответа пользователю.
     """
     if get_settings().capture_updates:
         _capture(update)
@@ -138,6 +142,7 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
             if handler:
                 await handler(ctx)
             await fallback.after_handler(ctx)
+            await feedback.after_handler(ctx)
             await session.commit()
         except Exception:
             # Ключ апдейта и user_id — иначе на демо непонятно, у кого и что упало (issue #21):
@@ -159,3 +164,6 @@ async def process_update(update: dict, max_client: MaxClient) -> None:
         failed = await ctx.send_outbox()
         if failed:
             await _track_send_failure(ctx, failed)
+        # Ответ пользователю уже ушёл — теперь отложенное (пересылка обращения админам).
+        # Вебхук зовёт process_update в фоне (BackgroundTasks), так что ответ 200 это не держит.
+        await ctx.run_deferred()

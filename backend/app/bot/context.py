@@ -1,6 +1,7 @@
 """Контекст одного апдейта: кто написал, что прислал, как ответить, какое состояние диалога."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +35,7 @@ class Ctx:
     callback_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     outbox: list[dict] = field(default_factory=list)  # см. reply/send_outbox
+    deferred: list[Callable[[], Awaitable[None]]] = field(default_factory=list)  # см. defer
 
     @classmethod
     def from_update(cls, update: dict, session: AsyncSession, max_client: MaxClient) -> "Ctx":
@@ -99,7 +101,9 @@ class Ctx:
             return {"chat_id": self.chat_id}
         return {}
 
-    async def reply(self, text: str, attachments: list[dict] | None = None) -> None:
+    async def reply(
+        self, text: str, attachments: list[dict] | None = None, *, fmt: str | None = "markdown"
+    ) -> None:
         """Ставит сообщение в очередь: в сеть оно уйдёт после коммита транзакции.
 
         Отправлять прямо отсюда нельзя. SQLite допускает одного писателя, а запрос к MAX API
@@ -114,12 +118,35 @@ class Ctx:
         Ограничение: промежуточное «ищу…» перед долгой работой так не показать — вся очередь
         уходит одним пакетом после коммита. Понадобится — заводим `flush_outbox` (коммит +
         отправка + продолжение), сейчас такого сценария нет.
+
+        `fmt` — как в `MaxClient.send_message`: по умолчанию markdown; `None` — без разметки,
+        для чужого текста (обращения в `/feedback_list`), чтобы `[x](url)` и `*_` не стали
+        ссылкой или форматированием.
         """
-        self.outbox.append({"text": text, "attachments": attachments})
+        self.outbox.append({"text": text, "attachments": attachments, "fmt": fmt})
 
     def drop_outbox(self) -> None:
-        """Выбрасывает неотправленное: транзакция откатилась, сообщать не о чем."""
+        """Выбрасывает неотправленное и отложенное: транзакция откатилась, сообщать не о чем."""
         self.outbox.clear()
+        self.deferred.clear()
+
+    def defer(self, job: Callable[[], Awaitable[None]]) -> None:
+        """Работа после коммита и после отправки ответа пользователю — сеть вне транзакции.
+
+        Для сообщений не автору апдейта (пересылка обращения админам, handlers/feedback.py):
+        `reply` шлёт только в текущий чат. Своей сессии у задачи нет — нужна база, открывает
+        свою. Транзакция откатилась — отложенное выбрасывается вместе с ответами (`drop_outbox`).
+        """
+        self.deferred.append(job)
+
+    async def run_deferred(self) -> None:
+        """Выполняет отложенное по очереди; ошибка одной задачи не мешает остальным."""
+        jobs, self.deferred = self.deferred, []
+        for job in jobs:
+            try:
+                await job()
+            except Exception:
+                log.exception("отложенная задача упала для %s", self.update_type)
 
     async def send_outbox(self) -> int:
         """Отправляет накопленное. Вызывать только когда транзакция уже закрыта.
@@ -137,7 +164,10 @@ class Ctx:
         for message in pending:
             try:
                 await self.max.send_message(
-                    message["text"], attachments=message["attachments"], **target
+                    message["text"],
+                    attachments=message["attachments"],
+                    fmt=message.get("fmt", "markdown"),
+                    **target,
                 )
             except Exception:
                 failed += 1

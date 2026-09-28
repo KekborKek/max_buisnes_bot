@@ -622,7 +622,9 @@ async def test_legacy_button_without_draft_is_unknown(fake_max, no_bot_name):
     for payload in (task_chat.SAVE, task_chat.ANYWAY, task_chat.YES):
         await process_update(press(payload), fake_max)
     assert await tasks() == []
-    assert [m["text"] for m in fake_max.sent] == [t("fallback.unknown")] * 3
+    # третий непонятый подряд — с `unknown_3` («Написать нам» теперь всегда, D13)
+    unknown_3 = f"{t('fallback.unknown')}\n{t('fallback.unknown_3')}"
+    assert [m["text"] for m in fake_max.sent] == [t("fallback.unknown")] * 2 + [unknown_3]
 
 
 async def test_api_me_reads_draft_with_id(fake_max, bot_name, miniapp_api):

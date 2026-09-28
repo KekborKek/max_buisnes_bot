@@ -26,6 +26,7 @@ from datetime import date, time, timedelta
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
+from app.bot.handlers import feedback
 from app.bot.handlers.start import ABOUT
 from app.bot.router import router
 from app.core.config import get_settings
@@ -104,20 +105,19 @@ def retry_keyboard() -> dict:
 
 
 def unknown_keyboard(*, with_write: bool) -> dict:
-    """«Открыть календарь» «О сервисе»; ниже — «Написать нам» (только с SUPPORT_URL, D13)."""
+    """«Открыть календарь» «О сервисе»; ниже — «Написать нам» (обращение в боте, D13)."""
     row = [kb.callback(t("fallback.btn_about"), ABOUT)]
     open_button = open_calendar_button("fallback.btn_open")
     if open_button is not None:
         row.insert(0, open_button)
     rows = [row]
-    support_url = get_settings().support_url
-    if with_write and support_url:
-        rows.append([kb.link(t("fallback.btn_write"), support_url)])
+    if with_write:
+        rows.append([feedback.write_button("fallback.btn_write", "fallback")])
     return kb.inline_keyboard(*rows)
 
 
 async def show_unknown(ctx: Ctx, *, text_key: str = "fallback.unknown") -> None:
-    """Случай «не понял». С третьего раза подряд — `unknown_3` и «Написать нам» (SUPPORT_URL)."""
+    """Случай «не понял». С третьего раза подряд — `unknown_3` и «Написать нам» (D13)."""
     state, data = await ctx.get_state()
     count = int(data.get(UNKNOWN_KEY) or 0) + 1
     await ctx.set_state(state, {**data, UNKNOWN_KEY: count})
@@ -125,7 +125,8 @@ async def show_unknown(ctx: Ctx, *, text_key: str = "fallback.unknown") -> None:
     await ctx.track("fallback_shown", {"case": "unknown"})
 
     text = t(text_key)
-    third = count >= UNKNOWN_LIMIT and bool(get_settings().support_url)
+    # В группе «Написать нам» нет (handlers/feedback.py): обращение — только в личке.
+    third = count >= UNKNOWN_LIMIT and not ctx.is_group
     if third:
         text = f"{text}\n{t('fallback.unknown_3')}"
     await ctx.reply(text, attachments=[unknown_keyboard(with_write=third)])
