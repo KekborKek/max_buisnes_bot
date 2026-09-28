@@ -1,7 +1,18 @@
 // HTTP-клиент API мини-приложения. Контракт — openapi.yaml в корне репозитория.
 // Все запросы — с таймаутом; ошибки разделены по видам, чтобы экран показал нужный текст.
 import { getInitData, getWebApp } from "../bridge";
-import type { CalendarItem, ItemCard, Me, Profile, RebuildResult, TaskCard } from "../types";
+import type {
+  CalendarItem,
+  IcsLink,
+  ItemCard,
+  Me,
+  Profile,
+  RebuildResult,
+  ShareAccepted,
+  ShareInvite,
+  ShareLink,
+  TaskCard,
+} from "../types";
 import type { DataSource } from "./source";
 
 /** Вид ошибки: 401 ≠ сеть ≠ таймаут ≠ 5xx. */
@@ -84,9 +95,18 @@ export const httpSource: DataSource = {
   updateTask: (id, input) =>
     request<TaskCard>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  icsLink: () => request<IcsLink>("/api/ics/link"),
   rebuild: () => request<RebuildResult>("/api/calendar/rebuild", { method: "POST" }),
   saveSettings: (input) =>
     request<Profile>("/api/profile/settings", { method: "PUT", body: JSON.stringify(input) }),
+  createShare: (type, id) =>
+    request<ShareLink>("/api/shares", {
+      method: "POST",
+      body: JSON.stringify({ item_type: type, item_id: id }),
+    }),
+  getShare: (code) => request<ShareInvite>(`/api/shares/${encodeURIComponent(code)}`),
+  acceptShare: (code) =>
+    request<ShareAccepted>(`/api/shares/${encodeURIComponent(code)}/accept`, { method: "POST" }),
   track: (name, props = {}) =>
     request<void>("/api/events", { method: "POST", body: JSON.stringify({ name, props }) }),
 };

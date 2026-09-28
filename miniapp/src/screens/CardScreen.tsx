@@ -1,11 +1,11 @@
 // Экран 16. Карточка обязательства или своей задачи (docs/screens/16-card.md).
 // Статус не пересчитываем: после отметки показываем карточку, которую вернул бэкенд.
 // События item_done / item_undone / wrong_date_reported пишет бэкенд; здесь — только
-// item_card_opened и error.
+// item_card_opened, share_created и error.
 import { Button, CellHeader, CellList, CellSimple, Typography } from "@maxhub/max-ui";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { openExternalLink } from "../bridge";
+import { getBotUrl, miniappStartUrl, openExternalLink, shareToChat } from "../bridge";
 import { dateIn, formatCardDate, formatDate, formatNumericDate } from "../calendar";
 import { errorKind, type ErrorKind, isNotFound } from "../data/http";
 import type { DataSource } from "../data/source";
@@ -16,10 +16,10 @@ import { useToast } from "../shell/Toast";
 import { useConfirmPress } from "../shell/useConfirmPress";
 import { findItem, itemKey, useCalendarStore } from "../store";
 import { texts } from "../texts";
-import type { CalendarItem, ItemCard, ObligationCard } from "../types";
+import type { CalendarItem, ItemCard, ObligationCard, ShareLink } from "../types";
 
 type CardRoute = Extract<Route, { name: "card" }>;
-type Action = "done" | "undo" | "report" | "delete";
+type Action = "done" | "undo" | "report" | "delete" | "share";
 
 interface Props {
   source: DataSource;
@@ -36,6 +36,11 @@ const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
  * (тот же объект маршрута в стеке) и повторный эффект StrictMode событие не дублируют.
  */
 const openedRoutes = new WeakSet<CardRoute>();
+
+/** Ссылка приглашения: от бэкенда, без имени бота на бэкенде — из VITE_BOT_URL. */
+function shareUrl(share: ShareLink): string {
+  return share.link ?? miniappStartUrl(getBotUrl(), `share_${share.code}`);
+}
 
 function Banner({ children }: { children: ReactNode }) {
   return (
@@ -102,6 +107,10 @@ export function CardScreen({ source, route, today, timezone }: Props) {
   );
   const [reported, setReported] = useState(false);
   const confirmDelete = useConfirmPress();
+  // Приглашение «Поделиться» готовим заранее: MAX Bridge проверяет клик пользователя, и запрос
+  // между нажатием и shareMaxContent может этот клик «потерять». Код по тому же событию бэкенд
+  // переиспользует, поэтому повторное открытие карточки строк не плодит.
+  const [share, setShare] = useState<ShareLink | null>(null);
 
   useEffect(() => {
     if (openedRoutes.has(route)) return;
@@ -138,6 +147,23 @@ export function CardScreen({ source, route, today, timezone }: Props) {
       alive = false;
     };
   }, [source, itemType, id, attempt, upsert, remove]);
+
+  const loadedTitle = card?.title;
+  const loadedDue = card?.due_date;
+  useEffect(() => {
+    if (loadedTitle === undefined || loadedDue === undefined) return;
+    let alive = true;
+    source.createShare(itemType, id).then(
+      (result) => {
+        if (alive) setShare(result);
+      },
+      // Не вышло заранее — попробуем по нажатию; экран из-за этого не меняется.
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [source, itemType, id, loadedTitle, loadedDue]);
 
   const retryLoad = () => {
     setLoading(true);
@@ -208,6 +234,34 @@ export function CardScreen({ source, route, today, timezone }: Props) {
         remove("task", id);
         nav.home();
         toast(texts.card.deleted);
+      }),
+    );
+  };
+
+  const sendShare = (link: ShareLink) => {
+    const url = shareUrl(link);
+    if (!url) {
+      toast(texts.share.failed);
+      quiet(source.track("error", { where: "card_share", kind: "no_link" }));
+      return Promise.resolve();
+    }
+    const text = texts.share.message(link.title, formatDate(link.due_date, today));
+    return shareToChat(text, url).then((result) => {
+      if (result === "copied") toast(texts.share.copied);
+      if (result === "failed") toast(texts.share.failed);
+    });
+  };
+  const onShare = () => {
+    quiet(source.track("share_created", { item_type: itemType, item_id: id }));
+    // Готовая ссылка — shareMaxContent вызывается синхронно в обработчике нажатия.
+    if (share) {
+      void sendShare(share);
+      return;
+    }
+    run("share", () =>
+      source.createShare(itemType, id).then((result) => {
+        setShare(result);
+        return sendShare(result);
       }),
     );
   };
@@ -310,6 +364,16 @@ export function CardScreen({ source, route, today, timezone }: Props) {
               </Button>
             </div>
           )}
+          <Button
+            size="large"
+            stretched
+            variant="secondary"
+            loading={busy === "share"}
+            disabled={busy !== null}
+            onClick={onShare}
+          >
+            {texts.share.button}
+          </Button>
         </div>
       )}
       {card?.type === "obligation" && <ObligationDetails card={card} />}

@@ -177,6 +177,14 @@ class RebuildResponse(BaseModel):
     profile: ProfileOut
 
 
+class IcsLinkResponse(BaseModel):
+    """Ссылки на ленту iCalendar пользователя: «Добавить в календарь телефона» (экран 19)."""
+
+    url: str = Field(description="https-ссылка на .ics: разовый импорт или подписка по URL")
+    webcal_url: str = Field(description="Та же лента по схеме webcal:// — подписка в календаре")
+    items: int = Field(description="Событий в ленте сейчас; 0 — добавлять пока нечего")
+
+
 class TaskDraft(BaseModel):
     """Черновик задачи из бота (DialogState.data["task_draft"], экран 9 → 17)."""
 
@@ -204,3 +212,43 @@ class MeResponse(BaseModel):
             "draft = null, форма 17 открывается пустой с тостом (#96)"
         ),
     )
+
+
+# --- «Поделиться сроком» (SHARE) ------------------------------------------------------------
+
+
+class ShareInput(BaseModel):
+    """Своё событие, которым делятся: обязательство или задача."""
+
+    item_type: ItemTypeParam
+    item_id: int
+
+
+class ShareOut(BaseModel):
+    """Приглашение: код для `?startapp=share_<code>` и готовая ссылка."""
+
+    code: str = Field(description="URL-safe, [A-Za-z0-9_-]")
+    link: str | None = Field(
+        description=(
+            "https://max.ru/<MAX_BOT_USERNAME>?startapp=share_<code>; "
+            "null — MAX_BOT_USERNAME не задан, мини-апп строит ссылку сам"
+        )
+    )
+    title: str = Field(description="Название, которое получит получатель (до 60 символов)")
+    due_date: date
+
+
+class ShareInvite(BaseModel):
+    """Что видит получатель. Кто отправил — не отдаём."""
+
+    code: str
+    item_type: ItemTypeParam = Field(description="Чем поделились: обязательство или задача")
+    title: str
+    due_date: date
+
+
+class ShareAccepted(BaseModel):
+    """Результат «Добавить»: задача получателя."""
+
+    created: bool = Field(description="false — приглашение уже принято раньше, та же задача")
+    task: ItemCard

@@ -232,3 +232,122 @@ test("тема: повторный клик по уже активному ва�
   await userEvent.click(screen.getByRole("button", { name: texts.profile.themeSystem }));
   expect(source.track).not.toHaveBeenCalled();
 });
+
+// --- Лента .ics: «Добавить в календарь телефона» и «Скопировать ссылку для подписки» ------------
+
+const ICS = {
+  url: "https://vse-uspel.ru/api/ics/1-abc.ics",
+  webcal_url: "webcal://vse-uspel.ru/api/ics/1-abc.ics",
+  items: 2,
+};
+
+function inMax() {
+  const openLink = vi.fn();
+  window.WebApp = { initData: "signed", initDataUnsafe: {}, openLink };
+  return openLink;
+}
+
+test("календарь телефона: ссылка запрашивается заранее, нажатие открывает её через openLink", async () => {
+  const openLink = inMax();
+  const { source, last } = await renderReady();
+  // Ссылка запрошена при открытии экрана: Bridge открывает ссылку только по клику.
+  expect(source.icsLink).toHaveBeenCalledOnce();
+  expect(source.track).not.toHaveBeenCalled();
+  await act(async () => last("icsLink").resolve(ICS));
+
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
+  expect(openLink).toHaveBeenCalledWith(ICS.url);
+  expect(source.track).toHaveBeenCalledWith("ics_link_requested", { action: "open" });
+  expect(screen.getByText(texts.profile.icsHint)).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("календарь телефона: нажали до ответа — кнопка занята, ссылка откроется по ответу", async () => {
+  const openLink = inMax();
+  const { source, last } = await renderReady();
+  const button = screen.getByRole("button", { name: texts.profile.ics });
+  await userEvent.click(button);
+  await userEvent.click(button);
+  expect(source.track).toHaveBeenCalledTimes(1);
+  expect(openLink).not.toHaveBeenCalled();
+
+  await act(async () => last("icsLink").resolve(ICS));
+  expect(openLink).toHaveBeenCalledOnce();
+  expect(openLink).toHaveBeenCalledWith(ICS.url);
+  expect(source.icsLink).toHaveBeenCalledOnce();
+});
+
+test("календарь телефона вне MAX — новая вкладка", async () => {
+  const open = vi.fn();
+  vi.stubGlobal("open", open);
+  const { last } = await renderReady();
+  await act(async () => last("icsLink").resolve(ICS));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
+  expect(open).toHaveBeenCalledWith(ICS.url, "_blank", "noopener");
+});
+
+test("календарь телефона: событий нет — файл не открывается, тост «Пока нечего добавлять»", async () => {
+  const openLink = inMax();
+  const { last } = await renderReady();
+  await act(async () => last("icsLink").resolve({ ...ICS, items: 0 }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
+  expect(openLink).not.toHaveBeenCalled();
+  expect(screen.getByRole("status")).toHaveTextContent(texts.profile.icsEmpty);
+});
+
+test("календарь телефона: ошибка видна после нажатия, «Повторить» без перезапуска", async () => {
+  const openLink = inMax();
+  const { source, last } = await renderReady();
+  // Заранее запрошенная ссылка не пришла — пока не нажали, плашки нет.
+  await act(async () => last("icsLink").reject(new ApiError("network")));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+  // Нажатие повторяет запрос; он тоже падает — плашка с «Повторить».
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
+  expect(source.icsLink).toHaveBeenCalledTimes(2);
+  await act(async () => last("icsLink").reject(new ApiError("server", 503)));
+  expect(screen.getByRole("alert")).toHaveTextContent(texts.common.error);
+  expect(source.track).toHaveBeenCalledWith("error", { where: "ics", kind: "server" });
+  expect(openLink).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("button", { name: texts.common.retry }));
+  expect(source.icsLink).toHaveBeenCalledTimes(3);
+  await act(async () => last("icsLink").resolve(ICS));
+  expect(openLink).toHaveBeenCalledWith(ICS.url);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("ссылка для подписки: копируется https-адрес ленты, тост «Ссылка скопирована»", async () => {
+  const openLink = inMax();
+  const { source, last } = await renderReady();
+  await act(async () => last("icsLink").resolve({ ...ICS, items: 0 }));
+  const writeText = vi.fn(() => Promise.resolve());
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+
+  await act(async () => screen.getByRole("button", { name: texts.profile.icsCopy }).click());
+  // Подписка имеет смысл и при пустом календаре: события появятся позже.
+  expect(writeText).toHaveBeenCalledWith(ICS.url);
+  expect(screen.getByRole("status")).toHaveTextContent(texts.profile.icsCopied);
+  expect(source.track).toHaveBeenCalledWith("ics_link_requested", { action: "copy" });
+  expect(openLink).not.toHaveBeenCalled();
+});
+
+test("ссылка для подписки: буфер недоступен — ссылка показывается текстом", async () => {
+  const { last } = await renderReady();
+  await act(async () => last("icsLink").resolve(ICS));
+  const writeText = vi.fn(() => Promise.reject(new Error("denied")));
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  // execCommand в jsdom нет — запасной путь тоже не срабатывает, как в WebView без буфера.
+
+  await act(async () => screen.getByRole("button", { name: texts.profile.icsCopy }).click());
+  expect(screen.getByText(texts.profile.icsCopyFailed)).toBeInTheDocument();
+  expect(screen.getByText(ICS.url)).toBeInTheDocument();
+  expect(screen.queryByText(texts.profile.icsCopied)).not.toBeInTheDocument();
+});
+
+test("пока профиль грузится, кнопок ленты нет и ссылка не запрашивается", () => {
+  const { source } = renderProfile();
+  expect(screen.queryByRole("button", { name: texts.profile.ics })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.profile.icsCopy })).not.toBeInTheDocument();
+  expect(source.icsLink).not.toHaveBeenCalled();
+});

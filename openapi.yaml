@@ -405,6 +405,187 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/shares:
+    post:
+      tags:
+      - miniapp
+      summary: Создать приглашение по своему событию
+      description: 'Повторный вызов по тому же событию с теми же названием и датой
+        — тот же код.
+
+
+        Мини-апп зовёт его при открытии карточки (ссылка должна быть готова к нажатию:
+        MAX Bridge
+
+        проверяет клик пользователя), поэтому `share_created` пишет мини-апп по нажатию,
+        а не здесь.'
+      operationId: create_share_api_shares_post
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/shares/{code}:
+    get:
+      tags:
+      - miniapp
+      summary: Приглашение по коду (без данных отправителя)
+      operationId: get_share_api_shares__code__get
+      parameters:
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareInvite'
+        '404':
+          description: Приглашения с таким кодом нет
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/shares/{code}/accept:
+    post:
+      tags:
+      - miniapp
+      summary: Добавить срок из приглашения себе (идемпотентно)
+      description: 'Профиль не нужен: получатель может быть новым пользователем (экран
+        18).
+
+
+        Повторное принятие тем же пользователем отдаёт ту же задачу (`created: false`).
+        Если ту
+
+        задачу он удалил — создаётся новая.'
+      operationId: accept_share_api_shares__code__accept_post
+      parameters:
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareAccepted'
+        '404':
+          description: Приглашения с таким кодом нет
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/ics/link:
+    get:
+      tags:
+      - miniapp
+      summary: Ссылка на ленту iCalendar пользователя (экран 19)
+      operationId: ics_link_api_ics_link_get
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IcsLinkResponse'
+        '503':
+          description: Секрет для подписи ссылок не настроен или справочник недоступен
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/ics/{token}.ics:
+    get:
+      tags:
+      - miniapp
+      summary: Лента iCalendar пользователя (без initData, доступ по токену из ссылки)
+      operationId: ics_feed_api_ics__token__ics_get
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Лента RFC 5545
+          content:
+            text/calendar: {}
+        '404':
+          description: Неверный токен
+        '503':
+          description: Справочник недоступен
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/me:
     get:
       tags:
@@ -586,6 +767,28 @@ components:
       - label
       - url
       title: HowtoLinkOut
+    IcsLinkResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+          description: 'https-ссылка на .ics: разовый импорт или подписка по URL'
+        webcal_url:
+          type: string
+          title: Webcal Url
+          description: Та же лента по схеме webcal:// — подписка в календаре
+        items:
+          type: integer
+          title: Items
+          description: Событий в ленте сейчас; 0 — добавлять пока нечего
+      type: object
+      required:
+      - url
+      - webcal_url
+      - items
+      title: IcsLinkResponse
+      description: 'Ссылки на ленту iCalendar пользователя: «Добавить в календарь
+        телефона» (экран 19).'
     ItemCard:
       properties:
         type:
@@ -877,6 +1080,93 @@ components:
       title: ReminderSettingsOut
       description: Настройки напоминаний (экран 13) поверх умолчаний. d1 выключить
         нельзя — его здесь нет.
+    ShareAccepted:
+      properties:
+        created:
+          type: boolean
+          title: Created
+          description: false — приглашение уже принято раньше, та же задача
+        task:
+          $ref: '#/components/schemas/ItemCard'
+      type: object
+      required:
+      - created
+      - task
+      title: ShareAccepted
+      description: 'Результат «Добавить»: задача получателя.'
+    ShareInput:
+      properties:
+        item_type:
+          type: string
+          enum:
+          - obligation
+          - task
+          title: Item Type
+        item_id:
+          type: integer
+          title: Item Id
+      type: object
+      required:
+      - item_type
+      - item_id
+      title: ShareInput
+      description: 'Своё событие, которым делятся: обязательство или задача.'
+    ShareInvite:
+      properties:
+        code:
+          type: string
+          title: Code
+        item_type:
+          type: string
+          enum:
+          - obligation
+          - task
+          title: Item Type
+          description: 'Чем поделились: обязательство или задача'
+        title:
+          type: string
+          title: Title
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+      type: object
+      required:
+      - code
+      - item_type
+      - title
+      - due_date
+      title: ShareInvite
+      description: Что видит получатель. Кто отправил — не отдаём.
+    ShareOut:
+      properties:
+        code:
+          type: string
+          title: Code
+          description: URL-safe, [A-Za-z0-9_-]
+        link:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Link
+          description: https://max.ru/<MAX_BOT_USERNAME>?startapp=share_<code>; null
+            — MAX_BOT_USERNAME не задан, мини-апп строит ссылку сам
+        title:
+          type: string
+          title: Title
+          description: Название, которое получит получатель (до 60 символов)
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+      type: object
+      required:
+      - code
+      - link
+      - title
+      - due_date
+      title: ShareOut
+      description: 'Приглашение: код для `?startapp=share_<code>` и готовая ссылка.'
     TaskDraft:
       properties:
         title:

@@ -11,6 +11,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text as sql_text
 
+from app.api.ics import IcsTokenLogFilter
 from app.api.routes import router as api_router
 from app.calendar import reminders
 from app.core.config import get_settings
@@ -20,6 +21,9 @@ from app.webhook import router as webhook_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
+# Токен ленты iCalendar в пути — доступ к календарю: в журнал доступа он не попадает.
+# uvicorn настраивает логирование до импорта приложения, фильтр на логгере это переживает.
+logging.getLogger("uvicorn.access").addFilter(IcsTokenLogFilter())
 
 SCHEDULER_INTERVAL_SECONDS = 60.0
 

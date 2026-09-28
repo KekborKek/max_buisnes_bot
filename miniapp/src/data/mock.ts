@@ -11,6 +11,7 @@ import type {
   ObligationCard,
   Profile,
   RebuildResult,
+  ShareInvite,
   TaskCard,
   TaskInput,
 } from "../types";
@@ -175,6 +176,21 @@ export function createMockSource(scenario: MockScenario): DataSource {
   let nextTaskId = 100;
   // Профиль тоже живёт в моке: сохранённые на экране 13 настройки видны после «Назад» и на экране 19.
   let profile: Profile = MOCK_PROFILE;
+  // «Поделиться» (SHARE): приглашения и кто их уже принял — код → id задачи.
+  // Код `invalid0` — «ссылка недействительна»; любой другой неизвестный — тестовое приглашение.
+  const shares = new Map<string, ShareInvite>();
+  const accepted = new Map<string, number>();
+  const invite = (code: string): ShareInvite => {
+    if (code === "invalid0") throw new ApiError("client", 404);
+    return (
+      shares.get(code) ?? {
+        code,
+        item_type: "obligation",
+        title: "Тестовый срок из приглашения (ТЕСТОВЫЕ ДАННЫЕ)",
+        due_date: addDays(mockToday(), 10),
+      }
+    );
+  };
 
   /** Сбои чтения — как у календаря в T11. */
   const readFailure = () => {
@@ -258,6 +274,13 @@ export function createMockSource(scenario: MockScenario): DataSource {
         find("task", id);
         cards = cards.filter((c) => !(c.type === "task" && c.id === id));
       }),
+    // ТЕСТОВЫЕ ДАННЫЕ: адрес-заглушка, ленты за ним нет (.invalid не резолвится).
+    icsLink: () =>
+      read(() => ({
+        url: "https://example.invalid/api/ics/mock.ics",
+        webcal_url: "webcal://example.invalid/api/ics/mock.ics",
+        items: cards.filter((c) => !c.done_at).length,
+      })),
     // Мок сборку не повторяет: события те же, меняется только время сборки.
     rebuild: () =>
       write((): RebuildResult => {
@@ -279,6 +302,32 @@ export function createMockSource(scenario: MockScenario): DataSource {
       write(() => {
         profile = { ...profile, timezone, reminders };
         return profile;
+      }),
+    createShare: (type, id) =>
+      read(() => {
+        const card = find(type, id);
+        const code = `mock${type[0]}${id}`;
+        shares.set(code, { code, item_type: type, title: card.title, due_date: card.due_date });
+        return { code, link: null, title: card.title, due_date: card.due_date };
+      }),
+    getShare: (code) => read(() => invite(code)),
+    acceptShare: (code) =>
+      write(() => {
+        const inv = invite(code);
+        const known = accepted.get(code);
+        const existing = cards.find((c) => c.type === "task" && c.id === known);
+        if (existing) return { created: false, task: existing as TaskCard };
+        const input: TaskInput = {
+          title: inv.title,
+          due_date: inv.due_date,
+          remind_offset_days: 1,
+          remind_hour: 10,
+          remind_minute: 0,
+        };
+        const created = taskFrom(nextTaskId++, input, null);
+        cards = [...cards, created];
+        accepted.set(code, created.id);
+        return { created: true, task: created };
       }),
     track: async (name, props = {}) => {
       console.debug("[ТЕСТОВЫЕ ДАННЫЕ] track", name, props);

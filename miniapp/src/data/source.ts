@@ -2,12 +2,16 @@
 // T11b: переключить экраны на API = поправить getDataSource() (и, если надо, httpSource).
 import type {
   CalendarItem,
+  IcsLink,
   ItemCard,
   ItemType,
   Me,
   Profile,
   RebuildResult,
   ReminderSettingsInput,
+  ShareAccepted,
+  ShareInvite,
+  ShareLink,
   TaskCard,
   TaskInput,
 } from "../types";
@@ -39,6 +43,11 @@ export interface DataSource {
   /** DELETE /api/tasks/{id}, 204. */
   deleteTask(id: number): Promise<void>;
   /**
+   * GET /api/ics/link — ссылка на ленту iCalendar (экран 19). Событие ics_link_requested
+   * шлёт мини-апп по нажатию; ics_feed_fetched пишет бэкенд, когда ленту скачивают.
+   */
+  icsLink(): Promise<IcsLink>;
+  /**
    * POST /api/calendar/rebuild — «Пересобрать» (экран 19), идемпотентно. Отметки, свои задачи,
    * пояс и настройки уведомлений не сбрасываются. Событие calendar_built пишет бэкенд.
    * Профиль не заполнен — ApiError("client", 409).
@@ -50,6 +59,15 @@ export interface DataSource {
    * 503 — справочник недоступен, настройки не сохранены.
    */
   saveSettings(input: ReminderSettingsInput): Promise<Profile>;
+  /**
+   * POST /api/shares — приглашение по своему событию (SHARE). Тот же элемент с теми же названием
+   * и датой — тот же код, поэтому карточка зовёт его при открытии. Чужое — ApiError("client", 404).
+   */
+  createShare(type: ItemType, id: number): Promise<ShareLink>;
+  /** GET /api/shares/{code}. Нет такого кода — ApiError("client", 404). share_opened пишет бэкенд. */
+  getShare(code: string): Promise<ShareInvite>;
+  /** POST /api/shares/{code}/accept — идемпотентно. share_accepted и task_created пишет бэкенд. */
+  acceptShare(code: string): Promise<ShareAccepted>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
 }
 
