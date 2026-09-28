@@ -150,7 +150,9 @@ async def _accept(ctx: Ctx, raw: str | None) -> None:
     if not admin_ids:
         log.warning("обращение #%s сохранено, но ADMIN_IDS пуст — пересылать некому", item.id)
         return
-    message = t("feedback.forward", id=item.id, author=_author(ctx.user_name, ctx.user_id), text=text)
+    message = t(
+        "feedback.forward", id=item.id, author=_author(ctx.user_name, ctx.user_id), text=text
+    )
     feedback_id = item.id
     client = ctx.max
     ctx.defer(lambda: forward(client, feedback_id, message, admin_ids))

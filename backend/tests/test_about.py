@@ -109,9 +109,7 @@ async def test_about_works_mid_onboarding(fake_max):
 # --- ссылки D13 ----------------------------------------------------------------------------
 
 
-async def test_privacy_line_shown_and_write_button_is_callback_when_urls_set(
-    fake_max, monkeypatch
-):
+async def test_privacy_line_shown_and_write_button_is_callback_when_urls_set(fake_max, monkeypatch):
     """D13 после «Написать нам в боте»: SUPPORT_URL ботом не используется, ссылки нет."""
     monkeypatch.setattr(get_settings(), "support_url", "https://max.ru/support")
     monkeypatch.setattr(get_settings(), "privacy_url", "https://max.ru/privacy")
@@ -162,9 +160,7 @@ async def test_calendar_built_shows_open_app_button(fake_max, monkeypatch):
     }
 
 
-async def test_calendar_built_without_bot_username_shows_only_write_button(
-    fake_max, monkeypatch
-):
+async def test_calendar_built_without_bot_username_shows_only_write_button(fake_max, monkeypatch):
     """Без MAX_BOT_USERNAME «Открыть календарь» нет, но «Написать нам» остаётся."""
     monkeypatch.setattr(get_settings(), "max_bot_username", "")
     await run(fake_max, press("start:check"))
