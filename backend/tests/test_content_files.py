@@ -155,26 +155,7 @@ def test_nds_thresholds_cover_current_and_previous_year():
 # --- 5. У каждого варианта ответа онбординга о режиме есть хотя бы одна запись ------------
 
 
-def _regime_param(regime: str):
-    if regime == "ausn":
-        # НАХОДКА (не чинить, вопрос аналитику): content/texts.yaml предлагает кнопку
-        # q2_ausn на онбординге, но ни одна запись content/obligations.yaml не указывает
-        # ausn в applies_if.regime. Профиль с этим режимом получает пустой календарь
-        # (экран calendar_ready.empty — это не падение, но, возможно, пробел в данных).
-        # strict=True: как только аналитик добавит запись(и) для АУСН, xfail станет XPASS
-        # и упадёт с ошибкой — это и есть сигнал снять пометку.
-        return pytest.param(
-            regime,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="в content/obligations.yaml нет записей с applies_if.regime, "
-                "включающим ausn — вопрос аналитику (issue #68)",
-            ),
-        )
-    return regime
-
-
-@pytest.mark.parametrize("regime", [_regime_param(r) for r in _ONBOARDING_REGIMES])
+@pytest.mark.parametrize("regime", _ONBOARDING_REGIMES)
 def test_each_onboarding_regime_has_obligations(regime):
     """Профиль после онбординга не должен получать пустой календарь ни для одного
     реального ответа на вопрос о режиме (content/texts.yaml: q2_usn6/q2_usn15/q2_patent/
