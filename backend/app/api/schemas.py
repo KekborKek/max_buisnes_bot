@@ -204,3 +204,10 @@ class MeResponse(BaseModel):
             "draft = null, форма 17 открывается пустой с тостом (#96)"
         ),
     )
+
+
+class IcsLinkResponse(BaseModel):
+    """Ссылки на ленту iCalendar пользователя: «Добавить в календарь телефона» (экран 19)."""
+
+    url: str = Field(description="https-ссылка на .ics: разовый импорт или подписка по URL")
+    webcal_url: str = Field(description="Та же лента по схеме webcal:// — подписка в календаре")

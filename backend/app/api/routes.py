@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import items, profile, tasks
+from app.api import ics, items, profile, tasks
 from app.api.deps import current_launch, launch_user_id, optional_reference
 from app.api.schemas import MeResponse, TaskDraft
 from app.api.service import profile_out
@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api", tags=["miniapp"])
 router.include_router(items.router)
 router.include_router(tasks.router)
 router.include_router(profile.router)
+router.include_router(ics.router)
 Launch = Annotated[dict, Depends(current_launch)]
 Session = Annotated[AsyncSession, Depends(get_session)]
 OptionalRef = Annotated[Reference | None, Depends(optional_reference)]

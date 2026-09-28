@@ -405,6 +405,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/ics/link:
+    get:
+      tags:
+      - miniapp
+      summary: Ссылка на ленту iCalendar пользователя (экран 19)
+      operationId: ics_link_api_ics_link_get
+      parameters:
+      - name: x-max-init-data
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Max-Init-Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IcsLinkResponse'
+        '503':
+          description: Секрет для подписи ссылок не настроен
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/ics/{token}.ics:
+    get:
+      tags:
+      - miniapp
+      summary: Лента iCalendar пользователя (без initData, доступ по токену из ссылки)
+      operationId: ics_feed_api_ics__token__ics_get
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Лента RFC 5545
+          content:
+            text/calendar: {}
+        '404':
+          description: Неверный токен
+        '503':
+          description: Справочник недоступен
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/me:
     get:
       tags:
@@ -586,6 +644,23 @@ components:
       - label
       - url
       title: HowtoLinkOut
+    IcsLinkResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+          description: 'https-ссылка на .ics: разовый импорт или подписка по URL'
+        webcal_url:
+          type: string
+          title: Webcal Url
+          description: Та же лента по схеме webcal:// — подписка в календаре
+      type: object
+      required:
+      - url
+      - webcal_url
+      title: IcsLinkResponse
+      description: 'Ссылки на ленту iCalendar пользователя: «Добавить в календарь
+        телефона» (экран 19).'
     ItemCard:
       properties:
         type:
