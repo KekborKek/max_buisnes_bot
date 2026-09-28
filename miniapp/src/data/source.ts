@@ -8,6 +8,9 @@ import type {
   Profile,
   RebuildResult,
   ReminderSettingsInput,
+  ShareAccepted,
+  ShareInvite,
+  ShareLink,
   TaskCard,
   TaskInput,
 } from "../types";
@@ -50,6 +53,15 @@ export interface DataSource {
    * 503 — справочник недоступен, настройки не сохранены.
    */
   saveSettings(input: ReminderSettingsInput): Promise<Profile>;
+  /**
+   * POST /api/shares — приглашение по своему событию (SHARE). Тот же элемент с теми же названием
+   * и датой — тот же код, поэтому карточка зовёт его при открытии. Чужое — ApiError("client", 404).
+   */
+  createShare(type: ItemType, id: number): Promise<ShareLink>;
+  /** GET /api/shares/{code}. Нет такого кода — ApiError("client", 404). share_opened пишет бэкенд. */
+  getShare(code: string): Promise<ShareInvite>;
+  /** POST /api/shares/{code}/accept — идемпотентно. share_accepted и task_created пишет бэкенд. */
+  acceptShare(code: string): Promise<ShareAccepted>;
   track(name: string, props?: Record<string, unknown>): Promise<void>;
 }
 

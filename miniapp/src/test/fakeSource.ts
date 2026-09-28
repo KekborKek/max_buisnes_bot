@@ -9,6 +9,9 @@ import type {
   ObligationCard,
   Profile,
   RebuildResult,
+  ShareAccepted,
+  ShareInvite,
+  ShareLink,
   TaskCard,
 } from "../types";
 
@@ -103,6 +106,9 @@ export function fakeSource() {
     deleteTask: [] as Deferred<void>[],
     rebuild: [] as Deferred<RebuildResult>[],
     saveSettings: [] as Deferred<Profile>[],
+    createShare: [] as Deferred<ShareLink>[],
+    getShare: [] as Deferred<ShareInvite>[],
+    acceptShare: [] as Deferred<ShareAccepted>[],
   };
   function pending<T>(list: Deferred<T>[]): Promise<T> {
     const d = deferred<T>();
@@ -122,6 +128,9 @@ export function fakeSource() {
     deleteTask: vi.fn<DataSource["deleteTask"]>(() => pending(calls.deleteTask)),
     rebuild: vi.fn<DataSource["rebuild"]>(() => pending(calls.rebuild)),
     saveSettings: vi.fn<DataSource["saveSettings"]>(() => pending(calls.saveSettings)),
+    createShare: vi.fn<DataSource["createShare"]>(() => pending(calls.createShare)),
+    getShare: vi.fn<DataSource["getShare"]>(() => pending(calls.getShare)),
+    acceptShare: vi.fn<DataSource["acceptShare"]>(() => pending(calls.acceptShare)),
     track: vi.fn<DataSource["track"]>(() => Promise.resolve()),
   } satisfies DataSource;
   const last = <T>(list: Deferred<T>[]) => list[list.length - 1];

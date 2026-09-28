@@ -13,9 +13,11 @@ interface Props {
   error: ErrorKind | null;
   retrying?: boolean;
   onRetry: () => void;
+  /** Новый пользователь только что добавил срок из приглашения (SHARE): объясняем, где он. */
+  added?: boolean;
 }
 
-export function GateScreen({ loading, error, retrying = false, onRetry }: Props) {
+export function GateScreen({ loading, error, retrying = false, onRetry, added = false }: Props) {
   if (loading) {
     return (
       <Panel centeredX centeredY className="screen-center" aria-busy="true">
@@ -28,6 +30,7 @@ export function GateScreen({ loading, error, retrying = false, onRetry }: Props)
     <div className="screen">
       {error && <ErrorBanner kind={error} onRetry={onRetry} retrying={retrying} />}
       <Panel centeredX centeredY className="gate">
+        {added && <Typography.Body className="gate-added">{texts.share.gateAdded}</Typography.Body>}
         <Typography.Headline>{texts.gate.title}</Typography.Headline>
         <Typography.Body>{texts.gate.text}</Typography.Body>
         {/* Адреса бота нет (VITE_BOT_URL пуст) — кнопку не показываем, как D13. */}

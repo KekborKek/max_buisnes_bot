@@ -154,3 +154,30 @@ export function toCalendarItem(card: ItemCard): CalendarItem {
   const { type, id, title, category, due_date, original_date, status, done_at } = card;
   return { type, id, title, category, due_date, original_date, status, done_at };
 }
+
+/** Ответ POST /api/shares — приглашение «добавить срок себе в календарь» (SHARE). */
+export interface ShareLink {
+  /** URL-safe код для `?startapp=share_<code>`. */
+  code: string;
+  /** Готовая ссылка `https://max.ru/<бот>?startapp=share_<code>`; null — имя бота не задано. */
+  link: string | null;
+  /** Название, которое получит получатель (до 60 символов). */
+  title: string;
+  /** YYYY-MM-DD. */
+  due_date: string;
+}
+
+/** Ответ GET /api/shares/{code}: что видит получатель. Кто отправил — бэкенд не отдаёт. */
+export interface ShareInvite {
+  code: string;
+  item_type: ItemType;
+  title: string;
+  /** YYYY-MM-DD; может быть в прошлом (D32). */
+  due_date: string;
+}
+
+/** Ответ POST /api/shares/{code}/accept. `created: false` — принято раньше, та же задача. */
+export interface ShareAccepted {
+  created: boolean;
+  task: TaskCard;
+}

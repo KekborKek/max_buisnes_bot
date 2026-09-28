@@ -6,7 +6,8 @@ import type { MaxBackButton } from "./bridge";
 import type { ItemType } from "./types";
 
 export type Tab = "list" | "month";
-export type CardSource = "list" | "month" | "bot";
+/** `share` — задача, только что добавленная из приглашения «Поделиться» (SHARE). */
+export type CardSource = "list" | "month" | "bot" | "share";
 
 export type Route =
   | { name: "list" }
@@ -41,9 +42,11 @@ export function navReducer(stack: Route[], action: NavAction): Route[] {
 
 /** Куда ведёт start_param из бота (docs/screens/16-card.md, 17-task-form.md, экран 13 — #85). */
 export type StartTarget =
-  | { kind: "item"; itemType: ItemType; id: number }
+  | { kind: "item"; itemType: ItemType; id: number; source?: CardSource }
   | { kind: "task_draft" }
   | { kind: "settings" }
+  /** Приглашение «Поделиться» (SHARE): `share_<code>`, код — алфавит startapp. */
+  | { kind: "share"; code: string }
   | null;
 
 const ITEM_PARAM = /^item_(obligation|task)_(\d+)$/;
@@ -53,11 +56,15 @@ const ITEM_PARAM = /^item_(obligation|task)_(\d+)$/;
  * Тот же формат, что `_DRAFT_ID_PARAM` в backend/app/api/routes.py.
  */
 const DRAFT_PARAM = /^task_draft(_[0-9a-z]{1,32})?$/;
+/** Код не проверяем: битый (обрезали при копировании) бэкенд отклонит 404 — экран «ссылка недействительна». */
+const SHARE_PARAM = /^share_(.*)$/;
 
 export function parseStartParam(raw: string | null): StartTarget {
   if (!raw) return null;
   if (DRAFT_PARAM.test(raw)) return { kind: "task_draft" };
   if (raw === "settings") return { kind: "settings" };
+  const share = SHARE_PARAM.exec(raw);
+  if (share) return { kind: "share", code: share[1] };
   const m = ITEM_PARAM.exec(raw);
   if (!m) return null;
   const id = Number(m[2]);
@@ -69,12 +76,13 @@ export function parseStartParam(raw: string | null): StartTarget {
 /**
  * Начальный стек. Из бота (`item_*`, `task_draft`, `settings`) — список 14 и поверх него
  * карточка 16, форма 17 или настройки 13: «Назад» ведёт на 14, а не на запомненную вкладку.
+ * Приглашение (`share`) к этому моменту уже отработал экран ShareScreen — открывается вкладка.
  */
 export function initialStack(target: StartTarget, tab: Tab): Route[] {
   if (target?.kind === "item") {
     return [
       { name: "list" },
-      { name: "card", itemType: target.itemType, id: target.id, source: "bot" },
+      { name: "card", itemType: target.itemType, id: target.id, source: target.source ?? "bot" },
     ];
   }
   if (target?.kind === "task_draft") return [{ name: "list" }, { name: "task", draft: true }];
