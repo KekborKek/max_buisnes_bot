@@ -465,13 +465,17 @@ test("после «Пересобрать» список грузится зан
 
 // --- Экран 13: из бота (start_param=settings) и со строки экрана 19 --------------------------
 
-test("?start_param=settings открывает экран 13 поверх списка; «Назад» — на список 14", async () => {
+test("?start_param=settings открывает экран «Настройки» поверх списка; «Назад» — на список 14", async () => {
   localStorage.setItem("calendar.tab", "month");
   window.history.replaceState(null, "", "/?start_param=settings");
   const { source, lastMe, lastCalendar } = fakeSource();
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
   expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
+  // Все три секции экрана «Настройки» (29.09): напоминания, тема, календарь телефона.
+  expect(screen.getByText(texts.settings.sectionReminders)).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: texts.settings.theme })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.settings.ics })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: texts.settings.save })).toBeDisabled();
   expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "bot" });
 
@@ -479,6 +483,25 @@ test("?start_param=settings открывает экран 13 поверх спи
   await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
   expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
   expect(screen.getByText("Аванс")).toBeInTheDocument();
+});
+
+test("профиль → «Настройки» → «Назад» ведёт обратно в профиль (29.09)", async () => {
+  const { source, lastMe, lastCalendar } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
+  expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
+  expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "profile" });
+
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  expect(screen.queryByText(texts.settings.title)).not.toBeInTheDocument();
+  // Экран 19 при открытии, как всегда, запрашивает профиль заново.
+  await act(async () => lastMe().resolve(makeMe(true)));
+  expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();
 });
 
 test("из бота: сохранение возвращает на список 14 с тостом «Сохранено»", async () => {
@@ -497,7 +520,7 @@ test("из бота: сохранение возвращает на список
   expect(screen.getByText(texts.settings.saved)).toBeInTheDocument();
 });
 
-test("экран 19 → «Напоминания» → смена пояса → назад на 19 с новым поясом, календарь заново", async () => {
+test("экран 19 → «Настройки» → смена пояса → назад на 19 с новым поясом, календарь заново", async () => {
   const { source, lastMe, lastCalendar, last } = fakeSource();
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
@@ -505,7 +528,7 @@ test("экран 19 → «Напоминания» → смена пояса →
 
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
   expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
   expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "profile" });
 
@@ -537,7 +560,7 @@ test("смена пояса сбрасывает кеш месяцев: сетк
 
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   await act(async () =>
@@ -556,7 +579,7 @@ test("без смены пояса кеш месяцев остаётся", asyn
   await act(async () => lastMe().resolve(makeMe(true)));
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.hourOption(18) }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   const profile = makeMe(true).profile!;
@@ -576,7 +599,7 @@ test("«Назад» с экрана 13 до ответа сохранения: 
   await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
 
@@ -617,7 +640,7 @@ test("экран 19: если профиль не обновился, после
   await act(async () => lastCalendar().resolve([]));
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.reminders }));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   await act(async () =>

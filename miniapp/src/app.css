@@ -102,17 +102,49 @@ body {
   color: var(--text-secondary);
 }
 
-/* Тема оформления (FRONT-20): подпись + сегмент («Список | Месяц» из .tabs, D8). */
-.profile-theme {
+/* Строка «Настройки» на экране 19 — вход на экран 13 (#86, 29.09). */
+.settings-entry {
+  cursor: pointer;
+}
+
+/* Экран 13 «Настройки» (29.09): заголовки секций «Напоминания», «Тема оформления»,
+   «Календарь телефона». */
+.settings-section {
+  display: block;
+  padding: 8px 16px 0;
+}
+
+/* Тема оформления (FRONT-20): сегмент («Список | Месяц» из .tabs, D8), заголовок — секции. */
+.settings-theme {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 16px;
 }
 
-/* Строка-вход на экран 13 (#86). */
-.settings-entry {
-  cursor: pointer;
+/* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
+.settings-ics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.settings-ics-hint {
+  color: var(--text-secondary);
+}
+
+/* Скопировать не вышло: ссылку можно выделить и скопировать вручную. */
+.settings-ics-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-ics-url {
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
 }
 
 /* Экран 13: «За 1 день» включено всегда. Цвет — как у включённого, приглушён, чтобы не читался
@@ -123,31 +155,6 @@ body {
 
 .switch-locked input[aria-disabled="true"] {
   cursor: not-allowed;
-}
-
-/* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
-.profile-ics {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 0 16px;
-}
-
-.profile-ics-hint {
-  color: var(--text-secondary);
-}
-
-/* Скопировать не вышло: ссылку можно выделить и скопировать вручную. */
-.profile-ics-manual {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.profile-ics-url {
-  overflow-wrap: anywhere;
-  user-select: all;
-  -webkit-user-select: all;
 }
 
 .profile-actions {

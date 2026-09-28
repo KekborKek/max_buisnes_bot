@@ -346,7 +346,7 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
           initial={profile}
           onProfile={onProfile}
           onRebuilt={rebuilt}
-          onReminders={() => nav.push({ name: "settings", source: "profile" })}
+          onSettings={() => nav.push({ name: "settings", source: "profile" })}
         />
       );
       break;

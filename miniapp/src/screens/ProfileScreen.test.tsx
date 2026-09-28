@@ -1,10 +1,10 @@
-// Экран 19: четыре состояния (загрузка, пусто, ошибка, получилось), «Пересобрать», «Изменить».
+// Экран 19: четыре состояния (загрузка, пусто, ошибка, получилось), «Пересобрать календарь»,
+// «Изменить данные», строка «Настройки» (решение 29.09: тема и .ics — на экране 13).
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ApiError } from "../data/http";
-import { ThemeProvider } from "../shell/Theme";
 import { ToastProvider } from "../shell/Toast";
 import { fakeSource, makeMe, PROFILE } from "../test/fakeSource";
 import { texts } from "../texts";
@@ -13,20 +13,11 @@ import { ProfileScreen } from "./ProfileScreen";
 
 beforeEach(() => {
   vi.stubEnv("VITE_BOT_URL", "https://max.ru/test_bot");
-  // ProfileScreen рендерит ThemeProvider (сегмент темы, FRONT-20) — jsdom matchMedia не знает,
-  // системная тема тестам экрана 19 не важна, важно, что она есть и не роняет рендер.
-  vi.stubGlobal("matchMedia", () => ({
-    matches: false,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }));
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
-  localStorage.clear();
-  delete document.documentElement.dataset.theme;
   delete window.WebApp;
 });
 
@@ -43,21 +34,19 @@ function renderProfile() {
   const fake = fakeSource();
   const onProfile = vi.fn();
   const onRebuilt = vi.fn();
-  const onReminders = vi.fn();
+  const onSettings = vi.fn();
   render(
-    <ThemeProvider>
-      <ToastProvider>
-        <ProfileScreen
-          source={fake.source}
-          initial={PROFILE}
-          onProfile={onProfile}
-          onRebuilt={onRebuilt}
-          onReminders={onReminders}
-        />
-      </ToastProvider>
-    </ThemeProvider>,
+    <ToastProvider>
+      <ProfileScreen
+        source={fake.source}
+        initial={PROFILE}
+        onProfile={onProfile}
+        onRebuilt={onRebuilt}
+        onSettings={onSettings}
+      />
+    </ToastProvider>,
   );
-  return { ...fake, onProfile, onRebuilt, onReminders };
+  return { ...fake, onProfile, onRebuilt, onSettings };
 }
 
 async function renderReady(profile: Profile = FRESH) {
@@ -164,34 +153,44 @@ test("409 — профиль не заполнен: своя плашка без
   expect(source.track).toHaveBeenCalledWith("error", { where: "rebuild", kind: "incomplete" });
 });
 
-test("строка «Напоминания» между профилем и темой ведёт на экран 13", async () => {
-  const { onReminders } = await renderReady();
-  const entry = screen.getByRole("button", { name: texts.profile.reminders });
-  const theme = screen.getByRole("group", { name: texts.profile.theme });
-  // Строка стоит после строк профиля и перед выбором темы.
+test("строка «Настройки» после строк профиля ведёт на экран 13 (29.09)", async () => {
+  const { onSettings } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.settings });
   expect(
     screen.getByText(texts.profile.timezone).compareDocumentPosition(entry) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(entry.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
   await userEvent.click(entry);
-  expect(onReminders).toHaveBeenCalledOnce();
+  expect(onSettings).toHaveBeenCalledOnce();
 });
 
-test("строка «Напоминания» открывается с клавиатуры: Enter и пробел", async () => {
-  const { onReminders } = await renderReady();
-  const entry = screen.getByRole("button", { name: texts.profile.reminders });
+test("строка «Настройки» открывается с клавиатуры: Enter и пробел", async () => {
+  const { onSettings } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.settings });
   entry.focus();
   await userEvent.keyboard("{Enter}");
-  expect(onReminders).toHaveBeenCalledTimes(1);
+  expect(onSettings).toHaveBeenCalledTimes(1);
   await userEvent.keyboard(" ");
-  expect(onReminders).toHaveBeenCalledTimes(2);
+  expect(onSettings).toHaveBeenCalledTimes(2);
 });
 
-test("пока профиль грузится, строки «Напоминания» нет", () => {
+test("пока профиль грузится, строки «Настройки» нет", () => {
   renderProfile();
-  expect(screen.queryByRole("button", { name: texts.profile.reminders })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.profile.settings })).not.toBeInTheDocument();
+});
+
+test("решение 29.09: на профиле нет темы, «Напоминаний» и календаря телефона; ленту не запрашивает", async () => {
+  const { source } = await renderReady();
+  expect(screen.getByRole("button", { name: "Изменить данные" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Пересобрать календарь" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: texts.settings.theme })).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.settings.theme)).not.toBeInTheDocument();
+  expect(screen.queryByText("Напоминания")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.settings.ics })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.settings.icsCopy })).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.settings.icsHint)).not.toBeInTheDocument();
+  expect(source.icsLink).not.toHaveBeenCalled();
 });
 
 test("«Изменить» в MAX — openMaxLink с диплинком бота ?start=profile_edit", async () => {
@@ -207,147 +206,4 @@ test("без VITE_BOT_URL «Изменить» нет, «Пересобрать�
   await renderReady();
   expect(screen.queryByRole("button", { name: texts.profile.edit })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();
-});
-
-test("тема: сегмент с тремя вариантами, выбор красит активную кнопку, html и шлёт theme_changed", async () => {
-  const { source } = await renderReady();
-  const systemBtn = screen.getByRole("button", { name: texts.profile.themeSystem });
-  const lightBtn = screen.getByRole("button", { name: texts.profile.themeLight });
-  const darkBtn = screen.getByRole("button", { name: texts.profile.themeDark });
-
-  // Без сохранённого выбора активна «Как в системе» (matchMedia замокан на светлую).
-  expect(systemBtn).toHaveAttribute("aria-pressed", "true");
-  expect(lightBtn).toHaveAttribute("aria-pressed", "false");
-  expect(darkBtn).toHaveAttribute("aria-pressed", "false");
-
-  await userEvent.click(darkBtn);
-  expect(darkBtn).toHaveAttribute("aria-pressed", "true");
-  expect(systemBtn).toHaveAttribute("aria-pressed", "false");
-  expect(document.documentElement.dataset.theme).toBe("dark");
-  expect(source.track).toHaveBeenCalledWith("theme_changed", { theme: "dark" });
-});
-
-test("тема: повторный клик по уже активному варианту событие не повторяет", async () => {
-  const { source } = await renderReady();
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.themeSystem }));
-  expect(source.track).not.toHaveBeenCalled();
-});
-
-// --- Лента .ics: «Добавить в календарь телефона» и «Скопировать ссылку для подписки» ------------
-
-const ICS = {
-  url: "https://vse-uspel.ru/api/ics/1-abc.ics",
-  webcal_url: "webcal://vse-uspel.ru/api/ics/1-abc.ics",
-  items: 2,
-};
-
-function inMax() {
-  const openLink = vi.fn();
-  window.WebApp = { initData: "signed", initDataUnsafe: {}, openLink };
-  return openLink;
-}
-
-test("календарь телефона: ссылка запрашивается заранее, нажатие открывает её через openLink", async () => {
-  const openLink = inMax();
-  const { source, last } = await renderReady();
-  // Ссылка запрошена при открытии экрана: Bridge открывает ссылку только по клику.
-  expect(source.icsLink).toHaveBeenCalledOnce();
-  expect(source.track).not.toHaveBeenCalled();
-  await act(async () => last("icsLink").resolve(ICS));
-
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
-  expect(openLink).toHaveBeenCalledWith(ICS.url);
-  expect(source.track).toHaveBeenCalledWith("ics_link_requested", { action: "open" });
-  expect(screen.getByText(texts.profile.icsHint)).toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-test("календарь телефона: нажали до ответа — кнопка занята, ссылка откроется по ответу", async () => {
-  const openLink = inMax();
-  const { source, last } = await renderReady();
-  const button = screen.getByRole("button", { name: texts.profile.ics });
-  await userEvent.click(button);
-  await userEvent.click(button);
-  expect(source.track).toHaveBeenCalledTimes(1);
-  expect(openLink).not.toHaveBeenCalled();
-
-  await act(async () => last("icsLink").resolve(ICS));
-  expect(openLink).toHaveBeenCalledOnce();
-  expect(openLink).toHaveBeenCalledWith(ICS.url);
-  expect(source.icsLink).toHaveBeenCalledOnce();
-});
-
-test("календарь телефона вне MAX — новая вкладка", async () => {
-  const open = vi.fn();
-  vi.stubGlobal("open", open);
-  const { last } = await renderReady();
-  await act(async () => last("icsLink").resolve(ICS));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
-  expect(open).toHaveBeenCalledWith(ICS.url, "_blank", "noopener");
-});
-
-test("календарь телефона: событий нет — файл не открывается, тост «Пока нечего добавлять»", async () => {
-  const openLink = inMax();
-  const { last } = await renderReady();
-  await act(async () => last("icsLink").resolve({ ...ICS, items: 0 }));
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
-  expect(openLink).not.toHaveBeenCalled();
-  expect(screen.getByRole("status")).toHaveTextContent(texts.profile.icsEmpty);
-});
-
-test("календарь телефона: ошибка видна после нажатия, «Повторить» без перезапуска", async () => {
-  const openLink = inMax();
-  const { source, last } = await renderReady();
-  // Заранее запрошенная ссылка не пришла — пока не нажали, плашки нет.
-  await act(async () => last("icsLink").reject(new ApiError("network")));
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-  // Нажатие повторяет запрос; он тоже падает — плашка с «Повторить».
-  await userEvent.click(screen.getByRole("button", { name: texts.profile.ics }));
-  expect(source.icsLink).toHaveBeenCalledTimes(2);
-  await act(async () => last("icsLink").reject(new ApiError("server", 503)));
-  expect(screen.getByRole("alert")).toHaveTextContent(texts.common.error);
-  expect(source.track).toHaveBeenCalledWith("error", { where: "ics", kind: "server" });
-  expect(openLink).not.toHaveBeenCalled();
-
-  await userEvent.click(screen.getByRole("button", { name: texts.common.retry }));
-  expect(source.icsLink).toHaveBeenCalledTimes(3);
-  await act(async () => last("icsLink").resolve(ICS));
-  expect(openLink).toHaveBeenCalledWith(ICS.url);
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-test("ссылка для подписки: копируется https-адрес ленты, тост «Ссылка скопирована»", async () => {
-  const openLink = inMax();
-  const { source, last } = await renderReady();
-  await act(async () => last("icsLink").resolve({ ...ICS, items: 0 }));
-  const writeText = vi.fn(() => Promise.resolve());
-  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-
-  await act(async () => screen.getByRole("button", { name: texts.profile.icsCopy }).click());
-  // Подписка имеет смысл и при пустом календаре: события появятся позже.
-  expect(writeText).toHaveBeenCalledWith(ICS.url);
-  expect(screen.getByRole("status")).toHaveTextContent(texts.profile.icsCopied);
-  expect(source.track).toHaveBeenCalledWith("ics_link_requested", { action: "copy" });
-  expect(openLink).not.toHaveBeenCalled();
-});
-
-test("ссылка для подписки: буфер недоступен — ссылка показывается текстом", async () => {
-  const { last } = await renderReady();
-  await act(async () => last("icsLink").resolve(ICS));
-  const writeText = vi.fn(() => Promise.reject(new Error("denied")));
-  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-  // execCommand в jsdom нет — запасной путь тоже не срабатывает, как в WebView без буфера.
-
-  await act(async () => screen.getByRole("button", { name: texts.profile.icsCopy }).click());
-  expect(screen.getByText(texts.profile.icsCopyFailed)).toBeInTheDocument();
-  expect(screen.getByText(ICS.url)).toBeInTheDocument();
-  expect(screen.queryByText(texts.profile.icsCopied)).not.toBeInTheDocument();
-});
-
-test("пока профиль грузится, кнопок ленты нет и ссылка не запрашивается", () => {
-  const { source } = renderProfile();
-  expect(screen.queryByRole("button", { name: texts.profile.ics })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: texts.profile.icsCopy })).not.toBeInTheDocument();
-  expect(source.icsLink).not.toHaveBeenCalled();
 });
