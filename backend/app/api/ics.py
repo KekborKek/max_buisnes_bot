@@ -7,6 +7,10 @@
 выведенном из MAX_WEBHOOK_SECRET с меткой домена `ics-v1`. Токен stateless: в БД ничего не
 хранится, новая переменная окружения не нужна. Смена MAX_WEBHOOK_SECRET отзывает все ссылки.
 Неверный токен — 404, как у несуществующего адреса: не подсказываем, что формат угадан.
+Секрет пуст или взят из .env.example (репозиторий публичный) — ссылок нет: /link 503, лента 404.
+
+Токен — это доступ к календарю, поэтому в журнал доступа uvicorn путь ленты попадает замаскированным
+(`IcsTokenLogFilter`, подключается в main.py), а nginx мини-аппа журнал для `/api/ics/` не пишет.
 
 Путь — только под `/api/`: остальные пути прокси отдаёт мини-аппу (HTML с кодом 200).
 """
@@ -21,6 +25,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import service
@@ -29,7 +34,7 @@ from app.api.ics_format import FeedEvent, render_calendar
 from app.api.schemas import IcsLinkResponse
 from app.calendar.reminders import reminder_settings
 from app.calendar.types import Reference
-from app.core.config import Settings, get_settings
+from app.core.config import _EXAMPLE_WEBHOOK_SECRET, Settings, get_settings
 from app.core.db import get_session
 from app.core.events import track
 from app.core.models import Event, Task, UserObligation
@@ -45,7 +50,10 @@ OptionalRef = Annotated[Reference | None, Depends(optional_reference)]
 
 KEY_LABEL = b"ics-v1"  # метка домена: тот же секрет в другом месте даёт другой ключ
 SIG_BYTES = 16  # 128 бит подписи — перебор бессмыслен
-_TOKEN = re.compile(r"(\d{1,20})-([0-9a-f]{32})")
+_TOKEN = re.compile(r"([0-9]{1,20})-([0-9a-f]{32})")  # только ASCII-цифры, не \d
+# Путь ленты в строке журнала: токен заменяется звёздочками
+_FEED_PATH = re.compile(r"/api/ics/[^/?#\s\"]+\.ics")
+MASKED_FEED_PATH = "/api/ics/***.ics"
 
 # Название календаря у пользователя. Временный текст техлида (28.09), ждёт UX.
 CALENDAR_NAME = "Календарь ИП"
@@ -59,6 +67,34 @@ def current_settings() -> Settings:
 
 
 Conf = Annotated[Settings, Depends(current_settings)]
+
+
+def signing_secret(settings: Settings) -> str:
+    """Секрет подписи ссылок; пустой или из .env.example (он публичен) — пустая строка."""
+    secret = settings.max_webhook_secret.strip()
+    return "" if secret == _EXAMPLE_WEBHOOK_SECRET else secret
+
+
+def mask_feed_path(text: str) -> str:
+    """`/api/ics/<токен>.ics` → `/api/ics/***.ics` (для журналов)."""
+    return _FEED_PATH.sub(MASKED_FEED_PATH, text)
+
+
+class IcsTokenLogFilter(logging.Filter):
+    """Маскирует токен ленты в записях журнала доступа uvicorn.
+
+    Запись uvicorn.access: msg `'%s - "%s %s HTTP/%s" %d'`, путь — третий аргумент.
+    Запись не отбрасывается, только правится.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                mask_feed_path(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = mask_feed_path(record.msg)
+        return True
 
 
 def _key(secret: str) -> bytes:
@@ -103,17 +139,28 @@ def _not_found() -> HTTPException:
     "/ics/link",
     response_model=IcsLinkResponse,
     summary="Ссылка на ленту iCalendar пользователя (экран 19)",
-    responses={503: {"description": "Секрет для подписи ссылок не настроен"}},
+    responses={
+        503: {"description": "Секрет для подписи ссылок не настроен или справочник недоступен"}
+    },
 )
-async def ics_link(user_id: UserId, request: Request, settings: Conf) -> IcsLinkResponse:
-    secret = settings.max_webhook_secret
+async def ics_link(
+    user_id: UserId,
+    request: Request,
+    session: Session,
+    settings: Conf,
+    reference: OptionalRef,
+) -> IcsLinkResponse:
+    secret = signing_secret(settings)
     if not secret:
-        # В проде секрет обязателен (config.py), здесь — только незаполненный локальный .env.
-        log.warning("MAX_WEBHOOK_SECRET пуст: ссылку на ленту iCalendar подписать нечем")
+        # В проде config.py не даёт стартовать с таким секретом; здесь — только локальный .env.
+        log.warning("MAX_WEBHOOK_SECRET пуст или из примера: ссылку на ленту подписать нечем")
         raise HTTPException(status_code=503, detail="ics_unavailable")
+    if reference is None:  # без справочника и лента ответит 503 — не зовём туда
+        raise HTTPException(status_code=503, detail="reference_unavailable")
+    events = await _feed_events(session, user_id, reference, _uid_domain(settings))
     url = f"{_base_url(settings, request)}/api/ics/{make_token(user_id, secret)}.ics"
     webcal = "webcal://" + url.split("://", 1)[1]
-    return IcsLinkResponse(url=url, webcal_url=webcal)
+    return IcsLinkResponse(url=url, webcal_url=webcal, items=len(events))
 
 
 async def _feed_events(
@@ -167,29 +214,56 @@ async def _feed_events(
 
 
 async def _track_fetch_daily(session: AsyncSession, user_id: int, items: int) -> None:
-    """ics_feed_fetched — не чаще раза в сутки (UTC) на пользователя.
+    """ics_feed_fetched — примерно раз в сутки (UTC) на пользователя.
 
     Календарь-подписчик опрашивает ленту сам, часто и без участия человека; событие на каждый
     запрос мерило бы настройки клиентов и раздувало таблицу. Раз в сутки — ответ на вопрос
     «сколько людей пользуются лентой». Часы — настоящие: created_at события пишется по ним.
+    «Примерно»: проверка и запись не атомарны, два одновременных запроса могут записать два.
+
+    Аналитика не должна ронять ленту: ошибка БД — warning и откат, лента отдаётся.
     """
     day_start = datetime.combine(datetime.now(UTC).date(), time(), tzinfo=UTC)
-    seen = await session.scalar(
-        select(Event.id)
-        .where(
-            Event.user_id == user_id,
-            Event.name == FEED_FETCHED,
-            Event.created_at >= day_start,
+    try:
+        seen = await session.scalar(
+            select(Event.id)
+            .where(
+                Event.user_id == user_id,
+                Event.name == FEED_FETCHED,
+                Event.created_at >= day_start,
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    if seen is None:
-        await track(session, user_id, FEED_FETCHED, {"items": items})
-        await session.commit()
+        if seen is None:
+            await track(session, user_id, FEED_FETCHED, {"items": items})
+            await session.commit()
+    except SQLAlchemyError:
+        log.warning("ics_feed_fetched не записано, лента отдаётся", exc_info=True)
+        await session.rollback()
+
+
+FEED_PATH = "/ics/{token}.ics"
+FEED_MEDIA_TYPE = "text/calendar; charset=utf-8"
+FEED_HEADERS = {
+    # inline: iOS открывает .ics предпросмотром «Добавить в Календарь», Android скачивает
+    "Content-Disposition": f'inline; filename="{FILE_NAME}"',
+    "Cache-Control": "private, no-store",
+    "X-Robots-Tag": "noindex",
+}
+
+
+def _feed_owner(token: str, settings: Settings, reference: Reference | None) -> int:
+    """Владелец ленты по токену: неверный — 404, справочник недоступен — 503."""
+    user_id = user_from_token(token, signing_secret(settings))
+    if user_id is None:
+        raise _not_found()
+    if reference is None:
+        raise HTTPException(status_code=503, detail="reference_unavailable")
+    return user_id
 
 
 @router.get(
-    "/ics/{token}.ics",
+    FEED_PATH,
     summary="Лента iCalendar пользователя (без initData, доступ по токену из ссылки)",
     response_class=Response,
     responses={
@@ -205,20 +279,17 @@ async def ics_feed(
     now: Now,
     reference: OptionalRef,
 ) -> Response:
-    user_id = user_from_token(token, settings.max_webhook_secret)
-    if user_id is None:
-        raise _not_found()
-    if reference is None:
-        raise HTTPException(status_code=503, detail="reference_unavailable")
+    user_id = _feed_owner(token, settings, reference)
+    assert reference is not None  # _feed_owner ответил бы 503
     events = await _feed_events(session, user_id, reference, _uid_domain(settings))
     await _track_fetch_daily(session, user_id, len(events))
     body = render_calendar(events, name=CALENDAR_NAME, now=now)
-    return Response(
-        content=body.encode("utf-8"),
-        media_type="text/calendar; charset=utf-8",
-        headers={
-            # inline: iOS открывает .ics предпросмотром «Добавить в Календарь», Android скачивает
-            "Content-Disposition": f'inline; filename="{FILE_NAME}"',
-            "Cache-Control": "private, no-store",
-        },
-    )
+    return Response(content=body.encode("utf-8"), media_type=FEED_MEDIA_TYPE, headers=FEED_HEADERS)
+
+
+# HEAD — отдельным маршрутом вне схемы: у GET+HEAD в одном маршруте FastAPI дублирует operationId
+@router.head(FEED_PATH, include_in_schema=False)
+async def ics_feed_head(token: str, settings: Conf, reference: OptionalRef) -> Response:
+    """Клиенты проверяют ленту HEAD-запросом: те же коды и заголовки, без тела и аналитики."""
+    _feed_owner(token, settings, reference)
+    return Response(media_type=FEED_MEDIA_TYPE, headers=FEED_HEADERS)

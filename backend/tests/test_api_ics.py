@@ -4,10 +4,13 @@
 «Сейчас» — 23.09.2026 10:00 по Москве (фикстура miniapp_api).
 """
 
+import logging
 from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import ics
 from app.api.ics_format import FeedEvent, escape_text, fold, format_trigger, render_calendar
@@ -109,6 +112,20 @@ async def feed(api, user_id: int, secret: str = SECRET):
 
 def test_escape_text():
     assert escape_text("a\\b;c,d\ne\r\nf") == "a\\\\b\\;c\\,d\\ne\\nf"
+
+
+def test_escape_text_drops_control_chars_keeps_tab():
+    assert escape_text("a\x00b\x07c\x1bd\x7fe\tf\rg") == "abcde\tf\\ng"
+
+
+def test_url_without_line_breaks():
+    body = render_calendar(
+        [FeedEvent(uid="u@x", day=date(2026, 10, 1), summary="s", url="https://a.b/\r\nX:y")],
+        name="n",
+        now=NOW,
+    )
+    assert "URL:https://a.b/X:y\r\n" in body
+    assert "\r\nX:y" not in body
 
 
 def test_fold_cyrillic_by_octets_without_splitting_chars():
@@ -236,7 +253,14 @@ async def test_feed_fetched_tracked_once_a_day(miniapp_api, ics_settings):
 
 @pytest.mark.parametrize(
     "token",
-    ["garbage", "701-" + "0" * 32, "701", "-" + "a" * 32, "701-" + "A" * 32],
+    [
+        "garbage",
+        "701-" + "0" * 32,
+        "701",
+        "-" + "a" * 32,
+        "701-" + "A" * 32,
+        "\u0667\u0660\u0661-" + "a" * 32,  # «701» арабско-индийскими цифрами: \d их принял бы
+    ],
 )
 async def test_bad_token_404(miniapp_api, ics_settings, token):
     await add_user(OWNER)
@@ -288,6 +312,7 @@ async def test_link_returns_https_and_webcal(miniapp_api, ics_settings):
     assert body == {
         "url": f"{BASE}/api/ics/{token}.ics",
         "webcal_url": f"webcal://vse-uspel.ru/api/ics/{token}.ics",
+        "items": 0,
     }
     # Ссылка открывает ленту без initData
     path = body["url"].removeprefix(BASE)
@@ -304,3 +329,105 @@ async def test_link_without_secret_503(miniapp_api):
         assert feed_res.status_code == 404
     finally:
         app.dependency_overrides.pop(ics.current_settings, None)
+
+
+async def test_link_counts_feed_items(miniapp_api, ics_settings):
+    await add_user(OWNER)
+    await add_obligation(OWNER, date(2026, 10, 28))
+    await add_obligation(OWNER, date(2026, 10, 1), done=True)
+    await add_task(OWNER, "Задача", date(2026, 11, 5))
+    res = await miniapp_api.request("GET", "/api/ics/link", OWNER)
+    assert res.json()["items"] == 2
+
+
+# --- Секрет из .env.example -----------------------------------------------------------------
+
+
+async def test_example_secret_disables_links(miniapp_api):
+    """change-me-please опубликован в .env.example: подписанные им ссылки подделает любой."""
+    example = "change-me-please"
+    s = Settings(_env_file=None, max_webhook_secret=f" {example} ", public_base_url=BASE)
+    app.dependency_overrides[ics.current_settings] = lambda: s
+    try:
+        await add_user(OWNER)
+        assert (await miniapp_api.request("GET", "/api/ics/link", OWNER)).status_code == 503
+        assert (await feed(miniapp_api, OWNER, secret=example)).status_code == 404
+    finally:
+        app.dependency_overrides.pop(ics.current_settings, None)
+
+
+# --- Устойчивость и заголовки ---------------------------------------------------------------
+
+
+async def test_feed_served_when_analytics_commit_fails(miniapp_api, ics_settings, monkeypatch):
+    await add_user(OWNER)
+    await add_task(OWNER, "Задача", date(2026, 11, 5))
+
+    async def broken_commit(self):
+        raise OperationalError("COMMIT", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(AsyncSession, "commit", broken_commit)
+    res = await feed(miniapp_api, OWNER)
+    assert res.status_code == 200
+    assert "SUMMARY:Задача" in unfold(res.text)
+    monkeypatch.undo()
+    async with SessionLocal() as s:
+        rows = list(await s.scalars(select(Event).where(Event.name == "ics_feed_fetched")))
+    assert rows == []
+
+
+async def test_feed_headers_and_head(miniapp_api, ics_settings):
+    await add_user(OWNER)
+    await add_task(OWNER, "Задача", date(2026, 11, 5))
+    path = f"/api/ics/{ics.make_token(OWNER, SECRET)}.ics"
+
+    get = await miniapp_api.client.get(path)
+    assert get.headers["x-robots-tag"] == "noindex"
+
+    head = await miniapp_api.client.head(path)
+    assert head.status_code == 200
+    assert head.headers["content-type"] == "text/calendar; charset=utf-8"
+    assert head.content == b""
+    assert (await miniapp_api.client.head("/api/ics/garbage.ics")).status_code == 404
+    # HEAD аналитику не пишет: событие одно — от GET
+    async with SessionLocal() as s:
+        rows = list(await s.scalars(select(Event).where(Event.name == "ics_feed_fetched")))
+    assert len(rows) == 1
+
+
+# --- Токен в журнале доступа ----------------------------------------------------------------
+
+
+def _access_record(path: str) -> logging.LogRecord:
+    """Запись в том виде, в каком её создаёт uvicorn.protocols.http (uvicorn.access)."""
+    return logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:5000", "GET", path, "1.1", 200),
+        None,
+    )
+
+
+def test_access_log_filter_masks_token():
+    token = ics.make_token(OWNER, SECRET)
+    record = _access_record(f"/api/ics/{token}.ics?x=1")
+    assert ics.IcsTokenLogFilter().filter(record) is True
+    message = record.getMessage()
+    assert token not in message
+    assert '"GET /api/ics/***.ics?x=1 HTTP/1.1" 200' in message
+
+
+def test_access_log_filter_leaves_other_paths():
+    record = _access_record("/api/ics/link")
+    ics.IcsTokenLogFilter().filter(record)
+    assert '"GET /api/ics/link HTTP/1.1"' in record.getMessage()
+
+
+def test_access_log_filter_installed_on_uvicorn_logger():
+    import app.main  # noqa: F401 — подключает фильтр при импорте
+
+    filters = logging.getLogger("uvicorn.access").filters
+    assert any(isinstance(f, ics.IcsTokenLogFilter) for f in filters)

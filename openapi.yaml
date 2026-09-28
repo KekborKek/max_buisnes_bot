@@ -428,7 +428,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/IcsLinkResponse'
         '503':
-          description: Секрет для подписи ссылок не настроен
+          description: Секрет для подписи ссылок не настроен или справочник недоступен
         '422':
           description: Validation Error
           content:
@@ -654,10 +654,15 @@ components:
           type: string
           title: Webcal Url
           description: Та же лента по схеме webcal:// — подписка в календаре
+        items:
+          type: integer
+          title: Items
+          description: Событий в ленте сейчас; 0 — добавлять пока нечего
       type: object
       required:
       - url
       - webcal_url
+      - items
       title: IcsLinkResponse
       description: 'Ссылки на ленту iCalendar пользователя: «Добавить в календарь
         телефона» (экран 19).'

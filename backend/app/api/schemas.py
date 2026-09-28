@@ -182,6 +182,7 @@ class IcsLinkResponse(BaseModel):
 
     url: str = Field(description="https-ссылка на .ics: разовый импорт или подписка по URL")
     webcal_url: str = Field(description="Та же лента по схеме webcal:// — подписка в календаре")
+    items: int = Field(description="Событий в ленте сейчас; 0 — добавлять пока нечего")
 
 
 class TaskDraft(BaseModel):

@@ -8,6 +8,7 @@
   не включается), без пояса: день один и тот же в любом часовом поясе телефона.
 """
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -16,6 +17,10 @@ CRLF = "\r\n"
 LINE_OCTETS = 75  # §3.1: строка не длиннее 75 октетов без CRLF
 
 PRODID = "-//Pareto//MAX Calendar IP//RU"
+
+# Управляющие символы, запрещённые в TEXT (§3.3.11); TAB и переводы строк обрабатываются отдельно
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_NEWLINES = re.compile(r"[\r\n]")
 
 
 @dataclass(frozen=True)
@@ -33,9 +38,14 @@ class FeedEvent:
 
 
 def escape_text(value: str) -> str:
-    """Значение TEXT: `\\` → `\\\\`, `;` → `\\;`, `,` → `\\,`, перевод строки → `\\n`."""
+    """Значение TEXT: `\\` → `\\\\`, `;` → `\\;`, `,` → `\\,`, перевод строки → `\\n`.
+
+    Прочие управляющие символы (кроме TAB) вырезаются: в TEXT они запрещены.
+    """
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    value = _CONTROL.sub("", value)
     value = value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
-    return value.replace("\r\n", "\\n").replace("\r", "\\n").replace("\n", "\\n")
+    return value.replace("\n", "\\n")
 
 
 def fold(line: str) -> str:
@@ -101,7 +111,7 @@ def _event_lines(event: FeedEvent, stamp: str) -> list[str]:
     if event.description:
         lines.append(f"DESCRIPTION:{escape_text(event.description)}")
     if event.url:
-        lines.append(f"URL:{event.url}")
+        lines.append(f"URL:{_NEWLINES.sub('', event.url)}")
     # Целодневный срок не занимает время в расписании
     lines.append("TRANSP:TRANSPARENT")
     if event.alarm_before_min is not None:
