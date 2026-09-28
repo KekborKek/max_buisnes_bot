@@ -131,14 +131,15 @@ async def demo_remind(ctx: Ctx) -> None:
         return
     is_admin = ctx.user_id in get_settings().admin_ids
 
-    if _rate_limited(ctx.user_id):
-        # Временный текст техлида (28.09), ждёт UX — content/texts.yaml: demo.rate_limited.
-        await ctx.reply(t("demo.rate_limited", seconds=_RATE_LIMIT_SECONDS))
-        return
-
     kind = _parse_kind(ctx.text)
     if kind != digest.KIND and kind not in KINDS:
         await ctx.reply(t("demo.usage", kinds=", ".join(KINDS)))
+        return
+
+    # Лимит — после проверки вида: опечатка в виде не «съедает» следующую попытку.
+    if _rate_limited(ctx.user_id):
+        # Временный текст техлида (28.09), ждёт UX — content/texts.yaml: demo.rate_limited.
+        await ctx.reply(t("demo.rate_limited", seconds=_RATE_LIMIT_SECONDS))
         return
 
     await ctx.track("demo_remind_used", {"kind": kind, "is_admin": is_admin})
