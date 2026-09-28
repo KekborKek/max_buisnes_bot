@@ -1,0 +1,189 @@
+# DATA-API 1.0 — «Календарь обязательств ИП», команда «Парето».
+# Секретов в файле нет.
+#
+# АВТОРИЗАЦИЯ. API — бэкенд мини-приложения MAX. Роль max_user = любой пользователь MAX,
+# открывший мини-приложение: каждый запрос несёт заголовок X-Max-Init-Data с подписанными
+# данными запуска (MAX Bridge, window.WebApp.initData). Бэкенд проверяет подпись токеном
+# бота (HMAC-SHA256, https://dev.max.ru/docs/webapps/validation) и берёт пользователя из
+# initData. Логинов, паролей и отдельных токенов нет. Без заголовка или с неверной подписью — 401.
+#
+# КАК ПОЛУЧИТЬ ДОСТУП. Отдельная тестовая учётная запись не нужна — подходит любой аккаунт MAX:
+#   1. Открыть бота https://max.ru/t233_hakaton_max_bot, нажать «Начать».
+#   2. «Проверить НДС» → ответить на четыре вопроса → «Собрать календарь».
+#   3. «Открыть календарь» — мини-приложение отправляет запросы ниже с initData этого аккаунта.
+# Без шагов 1–2 /api/me отвечает has_profile: false, календарь пуст, а задачи создаются.
+# Подробно — README.md, раздел «Пошаговый сценарий проверки».
+#
+# Даты в проверках — 2026 год; задача, созданная проверкой, удаляется в cleanup.
+
+schemaVersion: "1.0"
+
+solution:
+  name: "Календарь обязательств ИП"
+  teamId: "pareto"
+
+api:
+  baseUrl: "https://vse-uspel.ru"
+  openapi: "./openapi.yaml"
+  defaultHeaders:
+    Accept: "application/json"
+
+checks:
+  - id: "health"
+    name: "Доступность сервиса и базы"
+    description: "Публичная проверка: сервис жив, база отвечает (db: ok)."
+    method: "GET"
+    path: "/health"
+    role: "public"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["status", "db"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "me-unauthorized"
+    name: "Без initData доступа нет"
+    description: "Запрос без заголовка X-Max-Init-Data отклоняется: авторизация только через подписанные данные запуска MAX."
+    method: "GET"
+    path: "/api/me"
+    role: "public"
+    expected:
+      statusCodes: [401]
+      contentType: "application/json"
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "me"
+    name: "Текущий пользователь и профиль"
+    description: "Пользователь из initData; has_profile и profile — ответы онбординга в боте."
+    method: "GET"
+    path: "/api/me"
+    role: "max_user"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["user_id", "has_profile"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "calendar"
+    name: "Сроки за период"
+    description: "Налоговые сроки и свои задачи пользователя за период плюс все просроченные без отметки. Экраны «Список» и «Месяц»."
+    method: "GET"
+    path: "/api/calendar"
+    role: "max_user"
+    request:
+      query:
+        from: "2026-10-01"
+        to: "2026-12-31"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      bodySchema:
+        type: "array"
+        items:
+          type: "object"
+          required: ["type", "id", "title", "category", "due_date", "status"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "create-task"
+    name: "Создать свою задачу"
+    description: "Экран «Новая задача». Задача попадает в календарь, по ней создаётся напоминание."
+    method: "POST"
+    path: "/api/tasks"
+    role: "max_user"
+    request:
+      headers:
+        Content-Type: "application/json"
+      body:
+        title: "Проверка DATA-API: оплатить аренду"
+        due_date: "2026-12-15"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["type", "id", "title", "due_date", "status"]
+      bodySchema:
+        type: "object"
+        required: ["type", "id", "title", "due_date", "status"]
+        properties:
+          type:
+            const: "task"
+          id:
+            type: "integer"
+          title:
+            type: "string"
+    timeoutMs: 5000
+    repeatable: false
+    extract:
+      taskId: "$.id"
+
+  - id: "read-task"
+    name: "Карточка задачи"
+    description: "Экран карточки: название, срок, статус, настройки напоминания."
+    method: "GET"
+    path: "/api/items/{item_type}/{item_id}"
+    role: "max_user"
+    dependsOn: ["create-task"]
+    request:
+      path:
+        item_type: "task"
+        item_id: "${taskId}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["id", "title", "due_date", "status"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "update-task"
+    name: "Изменить задачу"
+    description: "Перенос срока задачи; напоминание пересчитывается."
+    method: "PATCH"
+    path: "/api/tasks/{task_id}"
+    role: "max_user"
+    dependsOn: ["create-task"]
+    request:
+      path:
+        task_id: "${taskId}"
+      headers:
+        Content-Type: "application/json"
+      body:
+        due_date: "2026-12-20"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["id", "due_date"]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: "mark-done"
+    name: "Отметить выполненным"
+    description: "Отметка выполнения; будущие напоминания по задаче отменяются. Повторная отметка идемпотентна."
+    method: "POST"
+    path: "/api/items/{item_type}/{item_id}/done"
+    role: "max_user"
+    dependsOn: ["create-task"]
+    request:
+      path:
+        item_type: "task"
+        item_id: "${taskId}"
+    expected:
+      statusCodes: [200]
+      contentType: "application/json"
+      requiredFields: ["id", "status"]
+    timeoutMs: 5000
+    repeatable: true
+
+cleanup:
+  - id: "delete-task"
+    method: "DELETE"
+    path: "/api/tasks/{task_id}"
+    role: "max_user"
+    request:
+      path:
+        task_id: "${taskId}"
+    expected:
+      statusCodes: [204, 404]
+    timeoutMs: 5000
