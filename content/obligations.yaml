@@ -1,5 +1,5 @@
 # Справочник обязательств ИП для «Календаря обязательств».
-# Профиль MVP: ИП на УСН без сотрудников (6% и 15% — отдельные записи, решение D17)
+# Профили: УСН 6% и 15% (отдельные записи, D17), патент, АУСН; с 29.09 — и сроки работодателя (has_employees: true)
 # + блок НДС для тех, кто превысил порог из content/nds.yaml.
 #
 # Нормы — НК РФ в редакции на сентябрь 2026 года:
@@ -16,7 +16,7 @@
 #
 # Правило: сумм в рублях здесь нет — они меняются каждый год. Шаги отправляют смотреть сумму на сайт ФНС.
 
-version: "2026-09-28"
+version: "2026-09-29"
 obligations:
 
   # ---------- УСН «Доходы» 6% ----------
@@ -451,3 +451,494 @@ obligations:
     penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой и списание долга со счёта."
     rule_version: 1
     last_checked_at: "2026-09-28"
+
+  # ---------- Работодатель (has_employees: true) и взнос 1% на патенте — аналитик 29.09.2026 ----------
+
+  - id: emp_notice_25
+    title: "Уведомление по НДФЛ и взносам за сотрудников"
+    category: reports
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/5f5aeb9844a3cec55dca4cf7554741a3/"
+    howto_steps:
+      - "Посчитайте НДФЛ, удержанный с сотрудников с 1-го по 22-е число этого месяца, и страховые взносы за прошлый месяц."
+      - "Заполните уведомление в кабинете ИП. В январе, апреле, июле и октябре взносы в него не включайте — их сумму налоговая возьмёт из расчёта по взносам."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в налог — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_pay_28
+    title: "НДФЛ и страховые взносы за сотрудников"
+    category: taxes
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6; ст. 431, п. 3"
+    source_url: "https://base.garant.ru/10900200/23e49d47fcc69dbc2ae38897d844c8d6/"
+    howto_steps:
+      - "Сложите НДФЛ, удержанный с сотрудников с 1-го по 22-е число этого месяца, и страховые взносы за прошлый месяц."
+      - "Проверьте, что уведомление по этим суммам ушло до 25-го — иначе деньги на едином счёте не засчитаются."
+      - "Пополните единый налоговый счёт на общую сумму — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_notice_3
+    title: "Уведомление по НДФЛ с 23-го числа прошлого месяца"
+    category: reports
+    date_rule: { type: monthly_in_quarter, months: [2, 3], day: 3 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/5f5aeb9844a3cec55dca4cf7554741a3/"
+    howto_steps:
+      - "Посчитайте НДФЛ, удержанный с сотрудников с 23-го по последнее число прошлого месяца."
+      - "Заполните уведомление в кабинете ИП: налог НДФЛ, сумма за этот период."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в налог — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_notice_3_apr
+    title: "Уведомление по НДФЛ с 23-го числа прошлого месяца"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 3 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/5f5aeb9844a3cec55dca4cf7554741a3/"
+    howto_steps:
+      - "Посчитайте НДФЛ, удержанный с сотрудников с 23-го по последнее число прошлого месяца."
+      - "Заполните уведомление в кабинете ИП: налог НДФЛ, сумма за этот период."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в налог — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_notice_3_jul
+    title: "Уведомление по НДФЛ с 23-го числа прошлого месяца"
+    category: reports
+    date_rule: { type: yearly, month: 7, day: 3 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/5f5aeb9844a3cec55dca4cf7554741a3/"
+    howto_steps:
+      - "Посчитайте НДФЛ, удержанный с сотрудников с 23-го по последнее число прошлого месяца."
+      - "Заполните уведомление в кабинете ИП: налог НДФЛ, сумма за этот период."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в налог — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_notice_3_oct
+    title: "Уведомление по НДФЛ с 23-го числа прошлого месяца"
+    category: reports
+    date_rule: { type: yearly, month: 10, day: 3 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/5f5aeb9844a3cec55dca4cf7554741a3/"
+    howto_steps:
+      - "Посчитайте НДФЛ, удержанный с сотрудников с 23-го по последнее число прошлого месяца."
+      - "Заполните уведомление в кабинете ИП: налог НДФЛ, сумма за этот период."
+      - "Подпишите и отправьте уведомление — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Без уведомления деньги на едином счёте не засчитаются в налог — пойдут пени. За неподанное уведомление — штраф 200 ₽."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  # ---------- Сотрудники: НДФЛ за 23-е–конец месяца (все режимы, включая АУСН) ----------
+
+  - id: emp_ndfl_pay_5
+    title: "НДФЛ с зарплат с 23-го числа прошлого месяца"
+    category: taxes
+    date_rule: { type: monthly_in_quarter, months: [2, 3], day: 5 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent, ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Проверьте сумму НДФЛ, удержанного с сотрудников с 23-го по последнее число прошлого месяца (на АУСН её считает банк)."
+      - "На УСН и патенте уведомление по этой сумме подают до 3-го числа, на АУСН уведомление не нужно."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_pay_5_apr
+    title: "НДФЛ с зарплат с 23-го числа прошлого месяца"
+    category: taxes
+    date_rule: { type: yearly, month: 4, day: 5 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent, ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Проверьте сумму НДФЛ, удержанного с сотрудников с 23-го по последнее число прошлого месяца (на АУСН её считает банк)."
+      - "На УСН и патенте уведомление по этой сумме подают до 3-го числа, на АУСН уведомление не нужно."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_pay_5_jul
+    title: "НДФЛ с зарплат с 23-го числа прошлого месяца"
+    category: taxes
+    date_rule: { type: yearly, month: 7, day: 5 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent, ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Проверьте сумму НДФЛ, удержанного с сотрудников с 23-го по последнее число прошлого месяца (на АУСН её считает банк)."
+      - "На УСН и патенте уведомление по этой сумме подают до 3-го числа, на АУСН уведомление не нужно."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_pay_5_oct
+    title: "НДФЛ с зарплат с 23-го числа прошлого месяца"
+    category: taxes
+    date_rule: { type: yearly, month: 10, day: 5 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent, ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Проверьте сумму НДФЛ, удержанного с сотрудников с 23-го по последнее число прошлого месяца (на АУСН её считает банк)."
+      - "На УСН и патенте уведомление по этой сумме подают до 3-го числа, на АУСН уведомление не нужно."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_pay_28_ausn
+    title: "НДФЛ с зарплат сотрудников"
+    category: taxes
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 28 }
+    shift: next_workday
+    applies_if:
+      regime: [ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 226, п. 6; Федеральный закон № 17-ФЗ от 25.02.2022, ст. 17"
+    source_url: "https://base.garant.ru/403574288/a7b26eafd8fd23d18ca4410ac5359e0e/"
+    howto_steps:
+      - "Проверьте в кабинете банка сумму НДФЛ с зарплат, выплаченных с 1-го по 22-е число этого месяца: на АУСН её считает банк."
+      - "Уведомление на АУСН не подаётся, а взносы с зарплат — 0%: платить нужно только НДФЛ."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  # ---------- Сотрудники: конец года (последний рабочий день — см. шапку) ----------
+
+  - id: emp_ndfl_dec
+    title: "НДФЛ за 23–31 декабря: уведомление и уплата"
+    category: taxes
+    date_rule: { type: yearly, month: 12, day: 30 }
+    shift: none
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 226, п. 6; ст. 58, п. 9"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Посчитайте НДФЛ с зарплат и премий, которые выплатите с 23 по 31 декабря, — январских сроков для них нет."
+      - "Подайте уведомление по этой сумме в кабинете ИП в последний рабочий день года."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_ndfl_dec_ausn
+    title: "НДФЛ за 23–31 декабря"
+    category: taxes
+    date_rule: { type: yearly, month: 12, day: 30 }
+    shift: none
+    applies_if:
+      regime: [ausn]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 226, п. 6; Федеральный закон № 17-ФЗ от 25.02.2022, ст. 17"
+    source_url: "https://base.garant.ru/10900200/ab638dabf921ddbdf8ba27dfed32f89a/"
+    howto_steps:
+      - "Посчитайте НДФЛ с зарплат и премий, которые выплатите с 23 по 31 декабря: сумму покажет банк."
+      - "Уведомление на АУСН не подаётся — хватит пополнить счёт."
+      - "Пополните единый налоговый счёт на сумму НДФЛ — до {due_date}."
+    howto_link: { label: "Открыть кабинет ИП", url: "https://lkip2.nalog.ru/lk" }
+    penalty_text: "Пени за каждый день просрочки, дальше — требование от налоговой."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  # ---------- Сотрудники: отчёты в налоговую (УСН, патент) ----------
+
+  - id: emp_rsv
+    title: "Расчёт по страховым взносам за сотрудников"
+    category: reports
+    date_rule: { type: quarterly, offset_month: 1, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 431, п. 7"
+    source_url: "https://base.garant.ru/10900200/23e49d47fcc69dbc2ae38897d844c8d6/"
+    howto_steps:
+      - "Соберите выплаты каждому сотруднику за квартал и начисленные с них взносы."
+      - "Заполните расчёт в бухгалтерии банка или программе: он заменяет уведомление по взносам за последний месяц квартала."
+      - "Отправьте расчёт в налоговую — до {due_date}."
+    howto_link: { label: "Страховые взносы на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/insprem/" }
+    penalty_text: "Штраф 5% от неуплаченных взносов за каждый месяц просрочки (не меньше 1 000 ₽)."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_psv
+    title: "Персонифицированные сведения о сотрудниках"
+    category: reports
+    date_rule: { type: monthly_in_quarter, months: [2, 3], day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "НК РФ, ст. 431, п. 7"
+    source_url: "https://base.garant.ru/10900200/23e49d47fcc69dbc2ae38897d844c8d6/"
+    howto_steps:
+      - "Соберите данные за прошлый месяц: ФИО, СНИЛС и ИНН сотрудников и сумму выплат каждому."
+      - "Заполните отчёт в бухгалтерии банка или программе. За март, июнь, сентябрь и декабрь его не сдают — эти данные идут в расчёт по взносам."
+      - "Отправьте отчёт в налоговую — до {due_date}."
+    howto_link: { label: "Страховые взносы на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/insprem/" }
+    penalty_text: "Штраф 200 ₽ за каждый несданный отчёт."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_6ndfl_q1
+    title: "Расчёт 6-НДФЛ за I квартал"
+    category: reports
+    date_rule: { type: yearly, month: 4, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 230, п. 2"
+    source_url: "https://nalog.garant.ru/fns/nk/9b4beb5583a0da68549c480ddd5b0837/"
+    howto_steps:
+      - "Соберите выплаты сотрудникам за январь–март, удержанный и перечисленный НДФЛ."
+      - "Заполните расчёт 6-НДФЛ в бухгалтерии банка или программе и сверьте суммы с уведомлениями."
+      - "Отправьте расчёт в налоговую — до {due_date}."
+    howto_link: { label: "НДФЛ на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/" }
+    penalty_text: "Штраф 1 000 ₽ за каждый месяц просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_6ndfl_h1
+    title: "Расчёт 6-НДФЛ за полугодие"
+    category: reports
+    date_rule: { type: yearly, month: 7, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 230, п. 2"
+    source_url: "https://nalog.garant.ru/fns/nk/9b4beb5583a0da68549c480ddd5b0837/"
+    howto_steps:
+      - "Соберите выплаты сотрудникам за январь–июнь, удержанный и перечисленный НДФЛ."
+      - "Заполните расчёт 6-НДФЛ в бухгалтерии банка или программе и сверьте суммы с уведомлениями."
+      - "Отправьте расчёт в налоговую — до {due_date}."
+    howto_link: { label: "НДФЛ на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/" }
+    penalty_text: "Штраф 1 000 ₽ за каждый месяц просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_6ndfl_9m
+    title: "Расчёт 6-НДФЛ за 9 месяцев"
+    category: reports
+    date_rule: { type: yearly, month: 10, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 230, п. 2"
+    source_url: "https://nalog.garant.ru/fns/nk/9b4beb5583a0da68549c480ddd5b0837/"
+    howto_steps:
+      - "Соберите выплаты сотрудникам за январь–сентябрь, удержанный и перечисленный НДФЛ."
+      - "Заполните расчёт 6-НДФЛ в бухгалтерии банка или программе и сверьте суммы с уведомлениями."
+      - "Отправьте расчёт в налоговую — до {due_date}."
+    howto_link: { label: "НДФЛ на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/" }
+    penalty_text: "Штраф 1 000 ₽ за каждый месяц просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_6ndfl_year
+    title: "Расчёт 6-НДФЛ за прошлый год"
+    category: reports
+    date_rule: { type: yearly, month: 2, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "НК РФ, ст. 230, п. 2"
+    source_url: "https://nalog.garant.ru/fns/nk/9b4beb5583a0da68549c480ddd5b0837/"
+    howto_steps:
+      - "Соберите выплаты сотрудникам за прошлый год, удержанный и перечисленный НДФЛ."
+      - "Заполните годовой 6-НДФЛ со справками о доходах на каждого сотрудника."
+      - "Отправьте расчёт в налоговую — до {due_date}."
+    howto_link: { label: "НДФЛ на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/taxation/taxes/ndfl/" }
+    penalty_text: "Штраф 1 000 ₽ за каждый месяц просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  # ---------- Сотрудники: СФР ----------
+
+  - id: emp_efs1_stazh
+    title: "ЕФС-1: стаж сотрудников за прошлый год"
+    category: reports
+    date_rule: { type: yearly, month: 1, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent, ausn]
+      has_employees: true
+    needs_prep: true
+    norm: "Федеральный закон № 27-ФЗ от 01.04.1996, ст. 11"
+    source_url: "https://sfr.gov.ru/employers/lk_insurer/baza_znanij/efs_1"
+    howto_steps:
+      - "Соберите по каждому, кто работал у вас в прошлом году, периоды работы, отпуска без оплаты и больничные."
+      - "Заполните подраздел 1.2 формы ЕФС-1 в бухгалтерии банка или программе."
+      - "Отправьте сведения в СФР — до {due_date}."
+    howto_link: { label: "ЕФС-1 на сайте СФР", url: "https://sfr.gov.ru/employers/lk_insurer/baza_znanij/efs_1" }
+    penalty_text: "СФР может оштрафовать за каждого сотрудника, по которому сведения опоздали."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_efs1_r2
+    title: "ЕФС-1: взносы на травматизм за квартал"
+    category: reports
+    date_rule: { type: quarterly, offset_month: 1, day: 25 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: true
+    norm: "Федеральный закон № 125-ФЗ от 24.07.1998, ст. 24, п. 1"
+    source_url: "https://base.garant.ru/12112505/7b14d2c2dfc862f67bd2c3471bf87b3f/"
+    howto_steps:
+      - "Соберите выплаты сотрудникам за квартал и начисленные взносы на травматизм."
+      - "Заполните раздел 2 формы ЕФС-1 в бухгалтерии банка или программе."
+      - "Отправьте сведения в СФР — до {due_date}."
+    howto_link: { label: "ЕФС-1 на сайте СФР", url: "https://sfr.gov.ru/employers/lk_insurer/baza_znanij/efs_1" }
+    penalty_text: "Штраф 5% от взносов за последние три месяца за каждый месяц просрочки (не больше 30%, не меньше 1 000 ₽)."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_injury
+    title: "Взносы на травматизм за сотрудников"
+    category: contributions
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 15 }
+    shift: next_workday
+    applies_if:
+      regime: [usn6, usn15, patent]
+      has_employees: true
+    needs_prep: false
+    norm: "Федеральный закон № 125-ФЗ от 24.07.1998, ст. 22, п. 4"
+    source_url: "https://base.garant.ru/12112505/94f5bf092e8d98af576ee351987de4f0/"
+    howto_steps:
+      - "Посчитайте взносы за прошлый месяц: выплаты сотрудникам умножить на тариф из уведомления СФР."
+      - "Эти взносы платят в СФР отдельной платёжкой — не через единый налоговый счёт."
+      - "Оплатите взносы — до {due_date}."
+    howto_link: { label: "Работодателям на сайте СФР", url: "https://sfr.gov.ru/employers/" }
+    penalty_text: "Пени за каждый день просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  - id: emp_injury_ausn
+    title: "Взносы на травматизм на АУСН"
+    category: contributions
+    date_rule: { type: monthly_in_quarter, months: [1, 2, 3], day: 15 }
+    shift: next_workday
+    applies_if:
+      regime: [ausn]
+      has_employees: true
+    needs_prep: false
+    norm: "Федеральный закон № 125-ФЗ от 24.07.1998, ст. 22, п. 2.2 и 4.1"
+    source_url: "https://base.garant.ru/12112505/94f5bf092e8d98af576ee351987de4f0/"
+    howto_steps:
+      - "На АУСН взнос фиксированный: каждый месяц платится 1/12 годовой суммы, которую утверждает правительство."
+      - "Платят в СФР отдельной платёжкой — не через единый налоговый счёт."
+      - "Оплатите взнос за прошлый месяц — до {due_date}."
+    howto_link: { label: "Работодателям на сайте СФР", url: "https://sfr.gov.ru/employers/" }
+    penalty_text: "Пени за каждый день просрочки."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
+
+  # ---------- Патент без условия по сотрудникам: 1% с потенциального дохода ----------
+
+  - id: contrib_1pct_patent
+    title: "Взносы 1% с дохода по патенту свыше 300 000 ₽ за прошлый год"
+    category: contributions
+    date_rule: { type: yearly, month: 7, day: 1 }
+    shift: next_workday
+    applies_if:
+      regime: [patent]
+    needs_prep: true
+    norm: "НК РФ, ст. 430, п. 1.2 и п. 9, пп. 5; ст. 432, п. 2"
+    source_url: "https://base.garant.ru/10900200/25251f9c341b4b29fabf5cb7957c5992/"
+    howto_steps:
+      - "Возьмите потенциальный годовой доход из патента (или сумму по всем патентам за прошлый год) — не реальную выручку."
+      - "Посчитайте 1% от суммы свыше 300 000 ₽."
+      - "Пополните единый налоговый счёт на эту сумму — до {due_date}."
+    howto_link: { label: "Взносы ИП на сайте ФНС", url: "https://www.nalog.gov.ru/rn77/ip/in_premip/" }
+    penalty_text: "Пени за каждый день просрочки, дальше — налоговая взыщет долг сама."
+    rule_version: 1
+    last_checked_at: "2026-09-29"
