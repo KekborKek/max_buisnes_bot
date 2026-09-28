@@ -2,9 +2,9 @@
 // Профиль при открытии запрашивается заново: его могли поменять в боте («Изменить»).
 // calendar_built пишет бэкенд в POST /api/calendar/rebuild; открытие экрана события не шлёт.
 import { Button, CellList, CellSimple, Typography } from "@maxhub/max-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { botStartUrl, getBotUrl, openBotChat } from "../bridge";
+import { botStartUrl, getBotUrl, openBotChat, openCalendarFeed } from "../bridge";
 import { formatNumericDate } from "../calendar";
 import { ApiError, errorKind, type ErrorKind } from "../data/http";
 import type { DataSource } from "../data/source";
@@ -128,6 +128,81 @@ function RemindersEntry({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+type IcsLoad =
+  { kind: "loading" } | { kind: "ready"; url: string } | { kind: "failed"; error: ErrorKind };
+
+/**
+ * «Добавить в календарь телефона»: лента .ics (GET /api/ics/link). Bridge открывает ссылку только
+ * по клику пользователя, поэтому ссылка запрашивается заранее, при открытии экрана, а нажатие
+ * открывает её синхронно. Нажали раньше ответа — кнопка «грузится», ссылка откроется по ответу
+ * (если Bridge не пропустит переход без свежего клика, второе нажатие откроет готовую ссылку).
+ * Ошибку заранее запрошенной ссылки показываем только после нажатия — тогда же запрос повторяется.
+ * Открываем https-ссылку, не webcal:// — см. openCalendarFeed.
+ */
+function CalendarExport({ source }: { source: DataSource }) {
+  const [link, setLink] = useState<IcsLoad>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const [waiting, setWaiting] = useState(false);
+  const [error, setError] = useState<ErrorKind | null>(null);
+  // Нажатие до ответа: читается в колбэке запроса, где состояние было бы устаревшим.
+  const waitingRef = useRef(false);
+
+  useEffect(() => {
+    let alive = true;
+    source.icsLink().then(
+      (res) => {
+        if (!alive) return;
+        setLink({ kind: "ready", url: res.url });
+        if (waitingRef.current) {
+          waitingRef.current = false;
+          setWaiting(false);
+          openCalendarFeed(res.url);
+        }
+      },
+      (e: unknown) => {
+        if (!alive) return;
+        const kind = errorKind(e);
+        setLink({ kind: "failed", error: kind });
+        if (waitingRef.current) {
+          waitingRef.current = false;
+          setWaiting(false);
+          setError(kind);
+          quiet(source.track("error", { where: "ics", kind }));
+        }
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [source, attempt]);
+
+  const add = () => {
+    if (waitingRef.current) return;
+    quiet(source.track("ics_link_requested", {}));
+    setError(null);
+    if (link.kind === "ready") {
+      openCalendarFeed(link.url);
+      return;
+    }
+    waitingRef.current = true;
+    setWaiting(true);
+    if (link.kind === "failed") {
+      setLink({ kind: "loading" });
+      setAttempt((n) => n + 1);
+    }
+  };
+
+  return (
+    <div className="profile-ics">
+      {error && <ErrorBanner kind={error} onRetry={add} retrying={waiting} />}
+      <Button size="large" stretched variant="secondary" loading={waiting} onClick={add}>
+        {texts.profile.ics}
+      </Button>
+      <Typography.Label className="profile-ics-hint">{texts.profile.icsHint}</Typography.Label>
+    </div>
+  );
+}
+
 export function ProfileScreen({ source, initial, onProfile, onRebuilt, onReminders }: Props) {
   const toast = useToast();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -213,6 +288,7 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt, onReminde
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
       {profile && <RemindersEntry onOpen={onReminders} />}
+      {profile && <CalendarExport source={source} />}
       <ThemeControl source={source} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (

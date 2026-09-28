@@ -2,6 +2,7 @@
 // T11b: переключить экраны на API = поправить getDataSource() (и, если надо, httpSource).
 import type {
   CalendarItem,
+  IcsLink,
   ItemCard,
   ItemType,
   Me,
@@ -38,6 +39,11 @@ export interface DataSource {
   updateTask(id: number, input: TaskInput): Promise<TaskCard>;
   /** DELETE /api/tasks/{id}, 204. */
   deleteTask(id: number): Promise<void>;
+  /**
+   * GET /api/ics/link — ссылка на ленту iCalendar (экран 19). Событие ics_link_requested
+   * шлёт мини-апп по нажатию; ics_feed_fetched пишет бэкенд, когда ленту скачивают.
+   */
+  icsLink(): Promise<IcsLink>;
   /**
    * POST /api/calendar/rebuild — «Пересобрать» (экран 19), идемпотентно. Отметки, свои задачи,
    * пояс и настройки уведомлений не сбрасываются. Событие calendar_built пишет бэкенд.

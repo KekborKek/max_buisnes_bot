@@ -93,6 +93,18 @@ export function openExternalLink(url: string): void {
 }
 
 /**
+ * Открыть ленту iCalendar (экран 19, «Добавить в календарь телефона»). В MAX —
+ * `openLink(url)`: ссылка уходит во внешний браузер, а тот передаёт .ics календарю телефона.
+ * Bridge проверяет клик пользователя (dev.max.ru/docs/webapps/bridge): без клика перехода нет,
+ * поэтому звать только синхронно из обработчика нажатия, а ссылку получать заранее.
+ * Передаём https: про схему webcal:// в документации openLink ничего нет [сверить].
+ * Вне MAX — новая вкладка.
+ */
+export function openCalendarFeed(url: string): void {
+  openExternalLink(url);
+}
+
+/**
  * Открыть диалог с ботом. В MAX — `openMaxLink(url)` [сверить: поведение на живом клиенте];
  * вне MAX или без метода — обычная ссылка.
  */

@@ -70,6 +70,14 @@ export interface RebuildResult {
   profile: Profile;
 }
 
+/** GET /api/ics/link — лента iCalendar пользователя («Добавить в календарь телефона», экран 19). */
+export interface IcsLink {
+  /** https://…/api/ics/<token>.ics — открывается без initData. */
+  url: string;
+  /** Та же лента по схеме webcal:// — подписка в календаре. */
+  webcal_url: string;
+}
+
 /** Черновик задачи из бота (экраны 9, 10): `DialogState` → `/api/me`. Даты может не быть. */
 export interface TaskDraft {
   title: string;

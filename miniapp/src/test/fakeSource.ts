@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import type { DataSource } from "../data/source";
 import type {
   CalendarItem,
+  IcsLink,
   ItemCard,
   Me,
   ObligationCard,
@@ -101,6 +102,7 @@ export function fakeSource() {
     createTask: [] as Deferred<TaskCard>[],
     updateTask: [] as Deferred<TaskCard>[],
     deleteTask: [] as Deferred<void>[],
+    icsLink: [] as Deferred<IcsLink>[],
     rebuild: [] as Deferred<RebuildResult>[],
     saveSettings: [] as Deferred<Profile>[],
   };
@@ -120,6 +122,7 @@ export function fakeSource() {
     createTask: vi.fn<DataSource["createTask"]>(() => pending(calls.createTask)),
     updateTask: vi.fn<DataSource["updateTask"]>(() => pending(calls.updateTask)),
     deleteTask: vi.fn<DataSource["deleteTask"]>(() => pending(calls.deleteTask)),
+    icsLink: vi.fn<DataSource["icsLink"]>(() => pending(calls.icsLink)),
     rebuild: vi.fn<DataSource["rebuild"]>(() => pending(calls.rebuild)),
     saveSettings: vi.fn<DataSource["saveSettings"]>(() => pending(calls.saveSettings)),
     track: vi.fn<DataSource["track"]>(() => Promise.resolve()),
