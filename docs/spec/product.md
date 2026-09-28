@@ -166,6 +166,9 @@ disclaimer:
 | `date_not_parsed` | — | 10 |
 | `fallback_shown` | `case` (`unknown`/`no_date`/`service`) | 10 |
 | `about_opened` | — | 11 |
+| `feedback_started` | `source` (`about`/`fallback`/`command`) — начато обращение «Написать нам» | 10, 11 |
+| `feedback_sent` | `length` — символов в сохранённом обращении | 10, 11 |
+| `feedback_cancelled` | — нажата «Отмена» в ожидании обращения | 10, 11 |
 | `miniapp_opened` | `start_param`, `has_profile` | 14, 18 |
 | `month_opened` | — | 15 |
 | `item_card_opened` | `item_id`, `item_type`, `source` (`list`/`month`/`bot`) | 16 |
