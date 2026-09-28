@@ -84,3 +84,16 @@ test("режим «Список | Месяц» запоминается, а бе
   expect(() => saveTab("list")).not.toThrow();
   expect(loadTab()).toBe("list");
 });
+
+test("start_param share_<code> — приглашение «Поделиться»; открывается обычная вкладка", () => {
+  expect(parseStartParam("share_abcdEFGH-_12")).toEqual({ kind: "share", code: "abcdEFGH-_12" });
+  // Обрезанный код — тоже приглашение: «недействительна» покажет экран по ответу бэкенда.
+  expect(parseStartParam("share_")).toEqual({ kind: "share", code: "" });
+  expect(initialStack({ kind: "share", code: "abcdEFGH1234" }, "month")).toEqual([
+    { name: "month" },
+  ]);
+  expect(initialStack({ kind: "item", itemType: "task", id: 7, source: "share" }, "list")).toEqual([
+    { name: "list" },
+    { name: "card", itemType: "task", id: 7, source: "share" },
+  ]);
+});

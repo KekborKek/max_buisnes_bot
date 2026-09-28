@@ -273,3 +273,107 @@ test("удаление: второе нажатие — DELETE, экран 14 и
   expect(nav.home).toHaveBeenCalledOnce();
   expect(screen.getByText(texts.card.deleted)).toBeInTheDocument();
 });
+
+// --- «Поделиться» (SHARE) ------------------------------------------------------------------------
+
+const SHARE = {
+  code: "abcdEFGH1234",
+  link: "https://max.ru/test_bot?startapp=share_abcdEFGH1234",
+  title: "Аренда",
+  due_date: "2026-11-05",
+};
+const SHARE_TEXT = texts.share.message("Аренда", "5 ноября");
+
+function stubClipboard() {
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  return writeText;
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  Reflect.deleteProperty(navigator, "clipboard");
+});
+
+async function clickShare() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: texts.share.button }));
+  });
+}
+
+test("«Поделиться» есть и у задачи, и у обязательства; ссылка готовится при открытии", async () => {
+  const { source } = await loaded(makeObligationCard());
+  expect(screen.getByRole("button", { name: texts.share.button })).toBeEnabled();
+  expect(source.createShare).toHaveBeenCalledWith("obligation", 1);
+  // Само открытие карточки — не «поделились»: событие пишется только по нажатию.
+  expect(source.track).not.toHaveBeenCalledWith("share_created", expect.anything());
+});
+
+test("в MAX «Поделиться» зовёт shareMaxContent с текстом и ссылкой, пишет share_created", async () => {
+  const shareMaxContent = vi.fn(() => Promise.resolve());
+  window.WebApp = { initData: "signed", initDataUnsafe: {}, shareMaxContent };
+  const writeText = stubClipboard();
+  const { last, source } = await loaded(makeTaskCard());
+  expect(source.createShare).toHaveBeenCalledWith("task", 3);
+  await act(async () => last("createShare").resolve(SHARE));
+
+  await clickShare();
+  expect(shareMaxContent).toHaveBeenCalledWith({ text: SHARE_TEXT, link: SHARE.link });
+  expect(source.track).toHaveBeenCalledWith("share_created", { item_type: "task", item_id: 3 });
+  expect(writeText).not.toHaveBeenCalled();
+  expect(screen.queryByText(texts.share.copied)).not.toBeInTheDocument();
+});
+
+test("вне MAX — фолбэк: текст со ссылкой в буфер и тост «Ссылка скопирована»", async () => {
+  const writeText = stubClipboard();
+  const { last } = await loaded(makeTaskCard());
+  await act(async () => last("createShare").resolve(SHARE));
+
+  await clickShare();
+  expect(writeText).toHaveBeenCalledWith(`${SHARE_TEXT}\n${SHARE.link}`);
+  expect(screen.getByText(texts.share.copied)).toBeInTheDocument();
+});
+
+test("shareMaxContent отклонил вызов (отмена выбора чата) — без тоста и без буфера", async () => {
+  const shareMaxContent = vi.fn(() => Promise.reject(new Error("cancelled")));
+  window.WebApp = { initData: "signed", initDataUnsafe: {}, shareMaxContent };
+  const writeText = stubClipboard();
+  const { last } = await loaded(makeTaskCard());
+  await act(async () => last("createShare").resolve(SHARE));
+
+  await clickShare();
+  expect(shareMaxContent).toHaveBeenCalled();
+  expect(writeText).not.toHaveBeenCalled();
+  expect(screen.queryByText(texts.share.copied)).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.share.failed)).not.toBeInTheDocument();
+});
+
+test("бэкенд без имени бота (link: null) — ссылка из VITE_BOT_URL", async () => {
+  vi.stubEnv("VITE_BOT_URL", "https://max.ru/test_bot");
+  const writeText = stubClipboard();
+  const { last } = await loaded(makeTaskCard());
+  await act(async () => last("createShare").resolve({ ...SHARE, link: null }));
+
+  await clickShare();
+  expect(writeText).toHaveBeenCalledWith(
+    `${SHARE_TEXT}\nhttps://max.ru/test_bot?startapp=share_abcdEFGH1234`,
+  );
+});
+
+test("ссылка не успела подготовиться — запрос по нажатию; ошибка — плашка, карточка на месте", async () => {
+  const writeText = stubClipboard();
+  const { last, source } = await loaded(makeTaskCard());
+  await act(async () => last("createShare").reject(new ApiError("network")));
+
+  await clickShare();
+  expect(source.createShare).toHaveBeenCalledTimes(2);
+  await act(async () => last("createShare").reject(new ApiError("network")));
+  expect(screen.getByRole("alert")).toHaveTextContent(texts.common.error);
+  expect(screen.getByRole("button", { name: texts.card.markDone })).toBeEnabled();
+
+  await userEvent.click(within(screen.getByRole("alert")).getByRole("button"));
+  expect(source.createShare).toHaveBeenCalledTimes(3);
+  await act(async () => last("createShare").resolve(SHARE));
+  expect(writeText).toHaveBeenCalledWith(`${SHARE_TEXT}\n${SHARE.link}`);
+  expect(screen.getByText(texts.share.copied)).toBeInTheDocument();
+});

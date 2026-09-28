@@ -2,7 +2,7 @@
 import { Button, Panel, Typography } from "@maxhub/max-ui";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
-import { addDays, LIST_WINDOW_DAYS, todayIn } from "./calendar";
+import { addDays, DEFAULT_TIMEZONE, LIST_WINDOW_DAYS, todayIn } from "./calendar";
 import { getBackButton, getStartParam } from "./bridge";
 import { errorKind, type ErrorKind } from "./data/http";
 import { type DataSource, getDataSource } from "./data/source";
@@ -14,6 +14,7 @@ import {
   navReducer,
   parseStartParam,
   saveTab,
+  type StartTarget,
   type Tab,
   useBackButton,
 } from "./router";
@@ -23,6 +24,7 @@ import { type CalendarState, ListScreen } from "./screens/ListScreen";
 import { MonthScreen } from "./screens/MonthScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { ShareScreen } from "./screens/ShareScreen";
 import { TaskFormScreen } from "./screens/TaskFormScreen";
 import { ErrorBoundary } from "./shell/ErrorBoundary";
 import { ToastProvider, useToast } from "./shell/Toast";
@@ -45,6 +47,10 @@ const quiet = (p: Promise<unknown>) => void p.catch(() => undefined);
 export default function App({ source: injected }: { source?: DataSource } = {}) {
   const [source] = useState(() => injected ?? getDataSource());
   const [startParam] = useState(getStartParam);
+  const [startTarget] = useState(() => parseStartParam(startParam));
+  // Приглашение «Поделиться» (SHARE): экран поверх входа, пока получатель не ответил.
+  // taskId — добавленная задача (null — «Не нужно» или ссылка недействительна).
+  const [shareDone, setShareDone] = useState<{ taskId: number | null } | null>(null);
   const [me, setMe] = useState<MeState>({ kind: "loading" });
   const [meRetrying, setMeRetrying] = useState(false);
   const openedTracked = useRef(false);
@@ -106,15 +112,31 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
 
   const profile = me.kind === "ready" && me.me.has_profile ? me.me.profile : null;
 
+  // После «Добавить» с профилем — сразу карточка новой задачи поверх списка.
+  const target: StartTarget =
+    shareDone?.taskId != null
+      ? { kind: "item", itemType: "task", id: shareDone.taskId, source: "share" }
+      : startTarget;
+
   let content;
-  if (profile) {
+  if (startTarget?.kind === "share" && shareDone === null) {
+    // Профиль не нужен: получатель может быть новым пользователем, /api/me грузится параллельно.
+    content = (
+      <ShareScreen
+        source={source}
+        code={startTarget.code}
+        today={todayIn(profile?.timezone ?? DEFAULT_TIMEZONE)}
+        onFinish={(task) => setShareDone({ taskId: task?.id ?? null })}
+      />
+    );
+  } else if (profile) {
     const draft = me.kind === "ready" ? (me.me.draft ?? null) : null;
     const draftStale = me.kind === "ready" && me.me.draft_stale === true;
     content = (
       <CalendarApp
         source={source}
         profile={profile}
-        startParam={startParam}
+        target={target}
         draft={draft}
         draftStale={draftStale}
         onProfile={updateProfile}
@@ -129,6 +151,7 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
         error={error}
         retrying={meRetrying}
         onRetry={retryMe}
+        added={shareDone?.taskId != null}
       />
     );
   }
@@ -152,7 +175,8 @@ export default function App({ source: injected }: { source?: DataSource } = {}) 
 interface CalendarAppProps {
   source: DataSource;
   profile: Profile;
-  startParam: string | null;
+  /** Куда открыть при входе: из start_param бота или задача, только что добавленная из приглашения. */
+  target: StartTarget;
   /** Черновик задачи из бота для формы 17 (`start_param=task_draft[_<id>]`). */
   draft: TaskDraft | null;
   /** Черновик из старого сообщения бота: форма 17 пустая, при входе — тост (#96). */
@@ -162,14 +186,7 @@ interface CalendarAppProps {
 }
 
 /** Календарь пользователя с профилем: экраны 14/15/16/17/19/13. Данные общие для вкладок. */
-function CalendarApp({
-  source,
-  profile,
-  startParam,
-  draft,
-  draftStale,
-  onProfile,
-}: CalendarAppProps) {
+function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: CalendarAppProps) {
   const [calendar, setCalendar] = useState<CalendarState>({
     items: null,
     loading: true,
@@ -258,9 +275,7 @@ function CalendarApp({
     [calendar.items, cards, upsert, remove],
   );
 
-  const [stack, dispatch] = useReducer(navReducer, null, () =>
-    initialStack(parseStartParam(startParam), loadTab()),
-  );
+  const [stack, dispatch] = useReducer(navReducer, null, () => initialStack(target, loadTab()));
   const back = useCallback(() => dispatch({ type: "back" }), []);
   const nav = useMemo<Navigation>(
     () => ({

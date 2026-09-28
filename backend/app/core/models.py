@@ -203,3 +203,50 @@ class Feedback(Base):
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     forwarded: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# --- «Поделиться сроком» (SHARE) --------------------------------------------------------------
+# Новые таблицы: create_all добавляет их в базу с данными, существующие не меняются.
+
+
+class SharedItem(Base):
+    """Приглашение «добавить срок себе в календарь»: ссылка `?startapp=share_<code>`.
+
+    Снимок названия и даты на момент «Поделиться»: получатель видит то, что ему отправили,
+    даже если отправитель потом перенёс или удалил событие. Имя отправителя не храним и не отдаём.
+    """
+
+    __tablename__ = "shared_items"
+    __table_args__ = (
+        # повторное «Поделиться» тем же событием с теми же названием и датой — тот же код
+        Index("ix_shared_items_source", "from_user_id", "kind", "source_item_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # URL-safe [A-Za-z0-9_-] — алфавит startapp (dev.max.ru/docs/webapps/introduction)
+    code: Mapped[str] = mapped_column(String(32), unique=True)
+    from_user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.user_id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # obligation | task
+    source_item_id: Mapped[int] = mapped_column(
+        Integer
+    )  # UserObligation.id или Task.id — аналитика
+    title: Mapped[str] = mapped_column(String(60))  # как Task.title: получателю создаётся задача
+    due_date: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SharedItemAccept(Base):
+    """Кто принял приглашение и какая задача создана: повторное принятие не плодит дублей."""
+
+    __tablename__ = "shared_item_accepts"
+    __table_args__ = (UniqueConstraint("share_id", "user_id", name="uq_shared_item_accept"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    share_id: Mapped[int] = mapped_column(ForeignKey("shared_items.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.user_id", ondelete="CASCADE")
+    )
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

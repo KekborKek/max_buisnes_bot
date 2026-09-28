@@ -204,3 +204,43 @@ class MeResponse(BaseModel):
             "draft = null, форма 17 открывается пустой с тостом (#96)"
         ),
     )
+
+
+# --- «Поделиться сроком» (SHARE) ------------------------------------------------------------
+
+
+class ShareInput(BaseModel):
+    """Своё событие, которым делятся: обязательство или задача."""
+
+    item_type: ItemTypeParam
+    item_id: int
+
+
+class ShareOut(BaseModel):
+    """Приглашение: код для `?startapp=share_<code>` и готовая ссылка."""
+
+    code: str = Field(description="URL-safe, [A-Za-z0-9_-]")
+    link: str | None = Field(
+        description=(
+            "https://max.ru/<MAX_BOT_USERNAME>?startapp=share_<code>; "
+            "null — MAX_BOT_USERNAME не задан, мини-апп строит ссылку сам"
+        )
+    )
+    title: str = Field(description="Название, которое получит получатель (до 60 символов)")
+    due_date: date
+
+
+class ShareInvite(BaseModel):
+    """Что видит получатель. Кто отправил — не отдаём."""
+
+    code: str
+    item_type: ItemTypeParam = Field(description="Чем поделились: обязательство или задача")
+    title: str
+    due_date: date
+
+
+class ShareAccepted(BaseModel):
+    """Результат «Добавить»: задача получателя."""
+
+    created: bool = Field(description="false — приглашение уже принято раньше, та же задача")
+    task: ItemCard

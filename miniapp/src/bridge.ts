@@ -8,6 +8,12 @@ export interface MaxBackButton {
   offClick(cb: () => void): void;
 }
 
+/** Параметры `shareMaxContent` / `shareContent` в режиме «текст и ссылка» (dev.max.ru/docs/webapps/bridge). */
+export interface MaxShareParams {
+  text?: string;
+  link?: string;
+}
+
 export interface MaxWebApp {
   initData: string;
   initDataUnsafe: {
@@ -20,6 +26,8 @@ export interface MaxWebApp {
   openCodeReader?: () => Promise<unknown>;
   openLink?: (url: string) => void;
   openMaxLink?: (url: string) => void;
+  /** Поделиться в чат MAX: все платформы, Bridge проверяет клик пользователя. */
+  shareMaxContent?: (params: MaxShareParams) => Promise<void> | void;
   BackButton?: MaxBackButton;
   HapticFeedback?: unknown;
 }
@@ -103,4 +111,71 @@ export function openBotChat(url: string): void {
     return;
   }
   window.open(url, "_blank", "noopener");
+}
+
+/**
+ * Диплинк мини-аппа с параметром запуска: `https://max.ru/<botName>?startapp=<param>` —
+ * `param` придёт в `initDataUnsafe.start_param` (docs/max-api-notes.md, «Диплинки»).
+ * Адрес бота не разбирается — пустая строка.
+ */
+export function miniappStartUrl(botUrl: string, param: string): string {
+  if (!botUrl) return "";
+  try {
+    const url = new URL(botUrl);
+    url.searchParams.set("startapp", param);
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+/** Скопировать текст: Clipboard API, если его нет или он запрещён в WebView — execCommand. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // запрет в WebView или нет жеста — пробуем старый способ
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export type ShareResult = "shared" | "cancelled" | "copied" | "failed";
+
+/**
+ * «Поделиться» (SHARE). В MAX — `shareMaxContent({text, link})`: окно выбора чата MAX на всех
+ * платформах. Bridge проверяет клик пользователя, поэтому метод вызывается синхронно, до
+ * первого await, — звать эту функцию надо прямо из обработчика нажатия.
+ * Метода нет (вне MAX) — текст со ссылкой копируется в буфер.
+ * Метод отклонил вызов — `"cancelled"`, без тоста и без записи в буфер: так бывает при отмене
+ * выбора чата и при нажатии без жеста (ссылка ещё грузилась) — повторное нажатие сработает.
+ * `shareContent` не берём: он только для iOS/Android и отдаёт ссылку в чужие приложения.
+ */
+export async function shareToChat(text: string, link: string): Promise<ShareResult> {
+  const wa = getWebApp();
+  if (wa?.shareMaxContent) {
+    // Вызов как метода объекта: реализация Bridge может опираться на this.
+    try {
+      await wa.shareMaxContent({ text, link });
+      return "shared";
+    } catch {
+      return "cancelled";
+    }
+  }
+  return (await copyText(`${text}\n${link}`)) ? "copied" : "failed";
 }
