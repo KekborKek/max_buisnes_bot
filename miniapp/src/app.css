@@ -112,6 +112,7 @@ body {
 .settings-section {
   display: block;
   padding: 8px 16px 0;
+  font-weight: 600;
 }
 
 /* Тема оформления (FRONT-20): сегмент («Список | Месяц» из .tabs, D8), заголовок — секции. */
@@ -122,12 +123,30 @@ body {
   padding: 0 16px;
 }
 
+/* На 320 px три варианта в ряд не помещаются — переносим, а не обрезаем подписи многоточием. */
+.settings-theme .tabs {
+  flex-wrap: wrap;
+}
+
 /* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
 .settings-ics {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 16px;
+}
+
+/* Длинные подписи кнопок на 320 px — в две строки вместо многоточия: высота по содержимому.
+   Класс однострочного текста внутри Button MAX UI хешированный — ищем по началу имени. */
+.settings-ics button {
+  height: auto;
+  min-height: 60px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.settings-ics button [class*="EllipsisText_singleLine"] {
+  white-space: normal;
 }
 
 .settings-ics-hint {
