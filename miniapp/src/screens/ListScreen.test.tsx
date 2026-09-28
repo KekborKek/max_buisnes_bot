@@ -1,15 +1,42 @@
 // Экран 14: четыре состояния (загрузка, пусто, ошибка, данные).
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { expect, test, vi } from "vitest";
 
 import type { Navigation } from "../router";
 import { NavigationContext } from "../router";
-import { makeItem, PROFILE } from "../test/fakeSource";
+import { makeItem } from "../test/fakeSource";
 import { texts } from "../texts";
 import { type CalendarState, ListScreen } from "./ListScreen";
 
 const TODAY = "2026-09-23";
+
+/** Развёрнутость «Дальше» живёт в оболочке — здесь её заменяет состояние обёртки. */
+function Harness({
+  calendar,
+  onRetry,
+  onExpand,
+}: {
+  calendar: CalendarState;
+  onRetry: () => void;
+  onExpand: (hidden: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <ListScreen
+      today={TODAY}
+      calendar={calendar}
+      onRetry={onRetry}
+      laterExpanded={expanded}
+      onExpandLater={(hidden) => {
+        setExpanded(true);
+        onExpand(hidden);
+      }}
+      onCollapseLater={() => setExpanded(false)}
+    />
+  );
+}
 
 function renderList(calendar: CalendarState, onRetry = vi.fn()) {
   const nav: Navigation = {
@@ -20,12 +47,13 @@ function renderList(calendar: CalendarState, onRetry = vi.fn()) {
     switchTab: vi.fn(),
     home: vi.fn(),
   };
+  const onExpand = vi.fn();
   render(
     <NavigationContext.Provider value={nav}>
-      <ListScreen profile={PROFILE} today={TODAY} calendar={calendar} onRetry={onRetry} />
+      <Harness calendar={calendar} onRetry={onRetry} onExpand={onExpand} />
     </NavigationContext.Provider>,
   );
-  return { nav, onRetry };
+  return { nav, onRetry, onExpand };
 }
 
 const ITEMS = [
@@ -42,9 +70,9 @@ const ITEMS = [
   makeItem({ id: 4, title: "Взнос", category: "contributions", due_date: "2026-09-24" }),
 ];
 
-test("загрузка: шапка с профилем видна сразу, на месте списка скелетон", () => {
+test("загрузка: шапка с кнопкой «Профиль» видна сразу, на месте списка скелетон", () => {
   renderList({ items: null, loading: true, error: null });
-  expect(screen.getByText("ИП · УСН 6% · без сотрудников")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.list.profileButton })).toBeInTheDocument();
   expect(screen.getByTestId("skeleton").children).toHaveLength(3);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
@@ -141,6 +169,16 @@ test("дата другого года — год отдельной строк�
   expect(plainDateCell.textContent).toBe("28 окт");
 });
 
+test("шапка: кнопка «Профиль» с иконкой ведёт на экран 19, строки «ИП · …» нет (29.09)", async () => {
+  const { nav } = renderList({ items: [], loading: false, error: null });
+  const button = screen.getByRole("button", { name: texts.list.profileButton });
+  expect(button).toHaveClass("profile-button");
+  expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(screen.queryByText(/^ИП · /)).not.toBeInTheDocument();
+  await userEvent.click(button);
+  expect(nav.push).toHaveBeenCalledWith({ name: "profile" });
+});
+
 test("переключатель «Список | Месяц»: активная вкладка отмечена", () => {
   renderList({ items: [], loading: false, error: null });
   expect(screen.getByRole("button", { name: texts.list.tabList })).toHaveAttribute(
@@ -151,4 +189,69 @@ test("переключатель «Список | Месяц»: активная
     "aria-pressed",
     "false",
   );
+});
+
+// --- Секция «Дальше» сворачивается до трёх строк (решение человека 29.09) ----------------------
+
+const rowTitles = () =>
+  screen
+    .getAllByRole("button")
+    .filter((b) => b.classList.contains("row"))
+    .map((r) => r.querySelector(".row-title")?.textContent);
+
+/** `n` событий секции «Дальше» (после ближайшего воскресенья 27.09) и одно на этой неделе. */
+function laterItems(n: number) {
+  return [
+    makeItem({ id: 100, title: "На неделе", due_date: "2026-09-24" }),
+    ...Array.from({ length: n }, (_, i) =>
+      makeItem({
+        id: i + 1,
+        title: `Дальше ${i + 1}`,
+        due_date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      }),
+    ),
+  ];
+}
+
+test("«Дальше»: видно 3, «Показать ещё N» разворачивает до конца, «Свернуть» — обратно", async () => {
+  const { onExpand } = renderList({ items: laterItems(7), loading: false, error: null });
+  expect(rowTitles()).toEqual(["На неделе", "Дальше 1", "Дальше 2", "Дальше 3"]);
+  const more = screen.getByRole("button", { name: texts.list.showMore(4) });
+  expect(more).toHaveAttribute("aria-expanded", "false");
+
+  await userEvent.click(more);
+  expect(onExpand).toHaveBeenCalledWith(4);
+  expect(rowTitles()).toEqual([
+    "На неделе",
+    ...Array.from({ length: 7 }, (_, i) => `Дальше ${i + 1}`),
+  ]);
+  const less = screen.getByRole("button", { name: texts.list.showLess });
+  expect(less).toHaveAttribute("aria-expanded", "true");
+  expect(screen.queryByRole("button", { name: texts.list.showMore(4) })).not.toBeInTheDocument();
+
+  await userEvent.click(less);
+  expect(rowTitles()).toEqual(["На неделе", "Дальше 1", "Дальше 2", "Дальше 3"]);
+  expect(screen.getByRole("button", { name: texts.list.showMore(4) })).toBeInTheDocument();
+  expect(onExpand).toHaveBeenCalledOnce();
+});
+
+test("«Дальше» из 3 и меньше строк — без кнопки", () => {
+  renderList({ items: laterItems(3), loading: false, error: null });
+  expect(rowTitles()).toHaveLength(4);
+  expect(screen.queryByRole("button", { name: /^Показать ещё/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.list.showLess })).not.toBeInTheDocument();
+});
+
+test("остальные секции не сворачиваются: 5 просроченных видны все", () => {
+  const overdue = Array.from({ length: 5 }, (_, i) =>
+    makeItem({
+      id: i + 1,
+      title: `Просрочка ${i + 1}`,
+      due_date: `2026-09-1${i}`,
+      status: "overdue",
+    }),
+  );
+  renderList({ items: overdue, loading: false, error: null });
+  expect(rowTitles()).toHaveLength(5);
+  expect(screen.queryByRole("button", { name: /^Показать ещё/ })).not.toBeInTheDocument();
 });

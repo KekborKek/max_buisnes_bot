@@ -76,27 +76,20 @@ body {
   padding: 0 16px;
 }
 
-/* Профиль не обрезаем: на узком экране он переносится, переключатель остаётся справа. */
-.calendar-header__profile {
-  min-width: 0;
-  /* Нативная кнопка без своего вида: нажимается целиком, выглядит как строка текста. */
-  padding: 8px 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: var(--text-secondary);
-  cursor: pointer;
+/* Кнопка «Профиль» (решение человека 29.09): иконка + подпись цветом акцента темы
+   (--text-themed MAX UI, светлая и тёмная), фон прозрачный — не путается с сегментом вкладок.
+   Высота 44 px вместо 40 у size="small" — зона нажатия; app.css подключён после стилей MAX UI. */
+.profile-button {
+  --MaxUi-Button_foreground: var(--text-themed);
+  flex-shrink: 0;
+  height: 44px;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
-.calendar-header__profile > * {
-  color: inherit;
-}
-
-.calendar-header__profile:focus-visible {
-  outline: 2px solid var(--text-secondary);
+.profile-button:focus-visible {
+  outline: 2px solid var(--text-themed);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Экран 19. */
@@ -109,17 +102,68 @@ body {
   color: var(--text-secondary);
 }
 
-/* Тема оформления (FRONT-20): подпись + сегмент («Список | Месяц» из .tabs, D8). */
-.profile-theme {
+/* Строка «Настройки» на экране 19 — вход на экран 13 (#86, 29.09). */
+.settings-entry {
+  cursor: pointer;
+}
+
+/* Экран 13 «Настройки» (29.09): заголовки секций «Напоминания», «Тема оформления»,
+   «Календарь телефона». */
+.settings-section {
+  display: block;
+  padding: 8px 16px 0;
+  font-weight: 600;
+}
+
+/* Тема оформления (FRONT-20): сегмент («Список | Месяц» из .tabs, D8), заголовок — секции. */
+.settings-theme {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 16px;
 }
 
-/* Строка-вход на экран 13 (#86). */
-.settings-entry {
-  cursor: pointer;
+/* На 320 px три варианта в ряд не помещаются — переносим, а не обрезаем подписи многоточием. */
+.settings-theme .tabs {
+  flex-wrap: wrap;
+}
+
+/* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
+.settings-ics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+/* Длинные подписи кнопок на 320 px — в две строки вместо многоточия: высота по содержимому.
+   Класс однострочного текста внутри Button MAX UI хешированный — ищем по началу имени. */
+.settings-ics > button {
+  height: auto;
+  min-height: 60px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.settings-ics > button [class*="EllipsisText_singleLine"] {
+  white-space: normal;
+}
+
+.settings-ics-hint {
+  color: var(--text-secondary);
+}
+
+/* Скопировать не вышло: ссылку можно выделить и скопировать вручную. */
+.settings-ics-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-ics-url {
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
 }
 
 /* Экран 13: «За 1 день» включено всегда. Цвет — как у включённого, приглушён, чтобы не читался
@@ -132,35 +176,21 @@ body {
   cursor: not-allowed;
 }
 
-/* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
-.profile-ics {
+.profile-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 0 16px;
 }
 
-.profile-ics-hint {
-  color: var(--text-secondary);
-}
-
-/* Скопировать не вышло: ссылку можно выделить и скопировать вручную. */
-.profile-ics-manual {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.profile-ics-url {
-  overflow-wrap: anywhere;
-  user-select: all;
-  -webkit-user-select: all;
-}
-
-.profile-actions {
+/* Экран 14: секция списка и кнопка «Показать ещё N» / «Свернуть» под «Дальше» (29.09). */
+.list-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.list-more {
   padding: 0 16px;
 }
 
