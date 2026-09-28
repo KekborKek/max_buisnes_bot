@@ -17,7 +17,19 @@
 только сохранение и предупреждение в лог.
 
 `/feedback_list` — последние обращения, только для `ADMIN_IDS` (как `/demo_remind`); для
-остальных команды как будто нет — ответ экрана 10.
+остальных команды как будто нет — ответ экрана 10. Список уходит без разметки (`fmt=None`):
+чужой `[x](url)` не должен стать у админа замаскированной ссылкой.
+
+Групповой чат: обращение — личное дело, в группе «Написать нам» нет. `/feedback`,
+`/feedback_list`, кнопка из старого сообщения и текст в группе посреди ожидания из лички —
+ответ как на непонятое (экран 10, в группе без «Написать нам»); ожидание в группе не ставится,
+а начатое в личке снимается.
+
+Лимит: не больше `RATE_LIMIT` обращений за `RATE_WINDOW` от одного пользователя — сверх
+`feedback.rate_limited`, ничего не сохраняем. Проверяем и на входе, и при сохранении.
+
+Для внешнего ключа нужен только `User`; `Profile` не создаём — он отмечает начало онбординга
+(`started_at`), и обращение не должно попадать в воронку «начали».
 
 `SUPPORT_URL` бот больше не использует: кнопка — callback и показывается всегда.
 
@@ -26,14 +38,14 @@
 """
 
 import logging
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.bot import keyboards as kb
 from app.bot.context import Ctx
-from app.bot.handlers import fallback
-from app.bot.handlers.common import as_utc, ensure_profile
+from app.bot.handlers import common, fallback
 from app.bot.router import router
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -53,6 +65,8 @@ SOURCES = frozenset({"about", "fallback", "command"})
 MAX_LENGTH = 2000  # сообщение MAX — до 4000 символов; с заголовком пересылки влезает с запасом
 LIST_LIMIT = 10
 LIST_PREVIEW = 100  # символов текста обращения в /feedback_list
+RATE_LIMIT = 5  # обращений от одного пользователя…
+RATE_WINDOW = timedelta(hours=1)  # …за это время
 _KEEP = "feedback_keep_waiting"  # ctx.extra: апдейт обработал сам экран — ожидание не снимать
 
 
@@ -82,8 +96,37 @@ async def _ask(ctx: Ctx, text_key: str = "feedback.prompt", **kwargs: object) ->
     await ctx.reply(t(text_key, **kwargs), attachments=[_cancel_keyboard()])
 
 
+async def _in_group(ctx: Ctx) -> bool:
+    """В группе обращений нет: отвечаем как на непонятое. True — апдейт уже обработан."""
+    if not ctx.is_group:
+        return False
+    await fallback.show_unknown(ctx)
+    return True
+
+
+async def _rate_limited(ctx: Ctx) -> bool:
+    """Лимит частоты исчерпан — ответили, вышли из ожидания. True — дальше не идти."""
+    assert ctx.user_id is not None
+    since = common.now() - RATE_WINDOW
+    count = await ctx.session.scalar(
+        select(func.count())
+        .select_from(Feedback)
+        .where(Feedback.user_id == ctx.user_id, Feedback.created_at >= since)
+    )
+    if (count or 0) < RATE_LIMIT:
+        return False
+    log.info("лимит обращений: user_id=%s, %s за час", ctx.user_id, count)
+    state, data = await ctx.get_state()
+    if state == STATE:
+        await ctx.set_state(None, data)
+    await ctx.reply(t("feedback.rate_limited"))
+    return True
+
+
 async def start(ctx: Ctx, source: str) -> None:
-    if ctx.user_id is None:
+    if ctx.user_id is None or await _in_group(ctx):
+        return
+    if await _rate_limited(ctx):
         return
     await ctx.track("feedback_started", {"source": source})
     await _ask(ctx)
@@ -97,10 +140,12 @@ async def on_start_button(ctx: Ctx) -> None:
 
 @router.on_command(COMMAND)
 async def on_feedback_command(ctx: Ctx) -> None:
-    if ctx.user_id is None:
+    if ctx.user_id is None or await _in_group(ctx):
         return
     parts = (ctx.text or "").strip().split(maxsplit=1)
     if len(parts) > 1:
+        if await _rate_limited(ctx):
+            return
         await ctx.track("feedback_started", {"source": "command"})
         await _accept(ctx, parts[1])
         return
@@ -121,7 +166,18 @@ async def on_cancel(ctx: Ctx) -> None:
 
 @router.on_state(STATE)
 async def on_text_while_waiting(ctx: Ctx) -> None:
+    """Ожидание — по user_id, а не по чату: текст из группы обращением не считаем."""
+    if await _in_group(ctx):
+        return  # ожидание снимет after_handler: _KEEP не ставили
     await _accept(ctx, ctx.text)
+
+
+async def _ensure_user(ctx: Ctx) -> None:
+    """Строка `User` для внешнего ключа; `Profile` не трогаем (см. docstring модуля)."""
+    assert ctx.user_id is not None
+    if await ctx.session.get(User, ctx.user_id) is None:
+        ctx.session.add(User(user_id=ctx.user_id, name=ctx.user_name))
+        await ctx.session.flush()
 
 
 async def _accept(ctx: Ctx, raw: str | None) -> None:
@@ -134,9 +190,12 @@ async def _accept(ctx: Ctx, raw: str | None) -> None:
     if len(text) > MAX_LENGTH:
         await _ask(ctx, "feedback.too_long", limit=MAX_LENGTH, length=len(text))
         return
+    if await _rate_limited(ctx):
+        return
 
-    await ensure_profile(ctx)  # Feedback.user_id ссылается на users
-    item = Feedback(user_id=ctx.user_id, text=text)
+    await _ensure_user(ctx)  # Feedback.user_id ссылается на users
+    # created_at — по common.now(), как и окно лимита: одни часы (и в тестах тоже)
+    item = Feedback(user_id=ctx.user_id, text=text, created_at=common.now())
     ctx.session.add(item)
     await ctx.session.flush()  # нужен id для «Обращение #id»
 
@@ -194,8 +253,8 @@ async def after_handler(ctx: Ctx) -> None:
 
 @router.on_command(LIST_COMMAND)
 async def on_feedback_list(ctx: Ctx) -> None:
-    if ctx.user_id is None:
-        return
+    if ctx.user_id is None or await _in_group(ctx):
+        return  # в группе список увидели бы все участники
     if ctx.user_id not in get_settings().admin_ids:
         await fallback.show_unknown(ctx)  # для обычного пользователя команды как будто нет
         return
@@ -220,10 +279,10 @@ async def on_feedback_list(ctx: Ctx) -> None:
             t(
                 "feedback.list_item",
                 id=item.id,
-                when=as_utc(item.created_at).astimezone(tz).strftime("%d.%m %H:%M"),
+                when=common.as_utc(item.created_at).astimezone(tz).strftime("%d.%m %H:%M"),
                 author=_author(name, item.user_id),
                 status="" if item.forwarded else t("feedback.list_not_forwarded"),
                 text=preview.replace("\n", " "),
             )
         )
-    await ctx.reply("\n".join(lines))
+    await ctx.reply("\n".join(lines), fmt=None)  # текст пользователей — без разметки

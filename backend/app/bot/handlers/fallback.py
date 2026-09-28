@@ -125,7 +125,8 @@ async def show_unknown(ctx: Ctx, *, text_key: str = "fallback.unknown") -> None:
     await ctx.track("fallback_shown", {"case": "unknown"})
 
     text = t(text_key)
-    third = count >= UNKNOWN_LIMIT
+    # В группе «Написать нам» нет (handlers/feedback.py): обращение — только в личке.
+    third = count >= UNKNOWN_LIMIT and not ctx.is_group
     if third:
         text = f"{text}\n{t('fallback.unknown_3')}"
     await ctx.reply(text, attachments=[unknown_keyboard(with_write=third)])

@@ -4,6 +4,9 @@
 Клиент MAX — FakeMax: пересылка админам видна в `fake_max.sent` с `user_id` админа.
 """
 
+import itertools
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 
@@ -11,9 +14,9 @@ from app.bot.dispatcher import process_update
 from app.bot.handlers import common, feedback
 from app.core.config import get_settings
 from app.core.db import SessionLocal
-from app.core.models import DialogState, Feedback
+from app.core.models import DialogState, Feedback, Profile, User
 from app.core.texts import t
-from tests.conftest import FakeMax
+from tests.conftest import FakeMax, load_update
 from tests.test_task_chat import NOW, USER_ID, buttons, events, onboarded, press, write
 
 pytestmark = pytest.mark.usefixtures("fixture_reference")
@@ -22,9 +25,14 @@ ADMINS = [7001, 7002]
 AUTHOR = t("feedback.author", name="Борис", user_id=USER_ID)
 
 
+_group_seq = itertools.count(1)
+
+
 @pytest.fixture(autouse=True)
 def clock(monkeypatch):
-    monkeypatch.setattr(common, "now", lambda: NOW)
+    state = {"now": NOW}
+    monkeypatch.setattr(common, "now", lambda: state["now"])
+    return state
 
 
 @pytest.fixture
@@ -142,11 +150,18 @@ async def test_without_admins_only_saved_and_warned(fake_max, no_admins, caplog)
 
 
 async def test_works_for_new_user_without_profile(fake_max, admins):
-    """Обращение до /start: пользователь создаётся, внешний ключ не падает."""
+    """Обращение до /start: создаётся только `User` для внешнего ключа, `Profile` — нет.
+
+    Profile.started_at — начало онбординга; обращение не должно попадать в воронку «начали».
+    """
     await process_update(write("/feedback Не могу начать"), fake_max)
 
     [item] = await saved()
     assert item.user_id == USER_ID
+    async with SessionLocal() as s:
+        user = await s.get(User, USER_ID)
+        assert user is not None and user.name == "Борис"
+        assert await s.get(Profile, USER_ID) is None
 
 
 # --- отмена, пустое, длинное ----------------------------------------------------------------
@@ -348,9 +363,10 @@ async def test_feedback_list_marks_not_forwarded(fake_max, me_admin):
     )
 
 
-async def test_feedback_list_limited_to_ten(fake_max, me_admin):
+async def test_feedback_list_limited_to_ten(fake_max, me_admin, clock):
     await onboarded()
     for n in range(12):
+        clock["now"] = NOW + timedelta(minutes=20 * n)  # не упираемся в лимит 5 в час
         await process_update(write(f"/feedback Обращение {n}"), fake_max)
     await process_update(write("/feedback_list"), fake_max)
 
@@ -374,3 +390,186 @@ async def test_feedback_list_for_non_admin_is_unknown(fake_max, admins):
 
     assert fake_max.sent[-1]["text"] == t("fallback.unknown")
     assert "Секрет" not in fake_max.sent[-1]["text"]
+
+
+class RecordingMax(FakeMax):
+    """Как FakeMax, но помнит `fmt` каждого сообщения (в `sent` его нет)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fmts: list[str | None] = []
+
+    async def send_message(self, text, *, user_id=None, chat_id=None, attachments=None, fmt=None):
+        self.fmts.append(fmt)
+        return await super().send_message(
+            text, user_id=user_id, chat_id=chat_id, attachments=attachments, fmt=fmt
+        )
+
+
+async def test_feedback_list_is_sent_without_markup(me_admin):
+    """`[x](url)` и `*_` из обращения не становятся у админа ссылкой или разметкой."""
+    fake = RecordingMax()
+    await onboarded()
+    await process_update(write("/feedback Смотри [x](https://evil) и *жирный_курсив*"), fake)
+    await process_update(write("/feedback_list"), fake)
+
+    assert "[x](https://evil)" in fake.sent[-1]["text"]
+    assert "*жирный_курсив*" in fake.sent[-1]["text"]
+    assert fake.fmts[-1] is None
+
+
+async def test_ordinary_replies_keep_markdown(me_admin):
+    fake = RecordingMax()
+    await onboarded()
+    await process_update(write("/feedback_list"), fake)  # пусто — обычный ответ
+    await process_update(write("/about"), fake)
+
+    # fmt=None — только у самого списка; остальные ответы по-прежнему с markdown
+    assert fake.fmts == ["markdown", "markdown"]
+
+
+# --- групповой чат -------------------------------------------------------------------------
+
+
+def group_write(text: str) -> dict:
+    n = next(_group_seq)
+    update = load_update("message_created_group")
+    update["timestamp"] += n
+    update["message"] = dict(update["message"], body={"mid": f"mid-fb-group-{n}", "text": text})
+    return update
+
+
+def group_press(payload: str) -> dict:
+    update = press(payload)
+    update["message"] = dict(update["message"], recipient={"chat_id": 7001, "chat_type": "chat"})
+    return update
+
+
+@pytest.mark.parametrize(
+    "make", [lambda: group_write("/feedback"), lambda: group_press("feedback:start:about")]
+)
+async def test_group_does_not_start_feedback(fake_max, admins, make):
+    await onboarded()
+    await process_update(make(), fake_max)
+
+    msg = fake_max.sent[-1]
+    assert msg["chat_id"] == 7001 and msg["user_id"] is None  # ответ — в группу
+    assert msg["text"] == t("fallback.unknown")
+    assert await state() is None
+    assert named(await events()) == []
+
+
+async def test_group_feedback_with_text_is_not_saved(fake_max, admins):
+    await onboarded()
+    await process_update(group_write("/feedback Текст для всех"), fake_max)
+
+    assert await saved() == []
+    assert to_admins(fake_max) == []
+
+
+async def test_group_feedback_list_does_not_leak(fake_max, me_admin):
+    """Даже админ в группе списка не получает: его увидели бы все участники."""
+    await onboarded()
+    await process_update(write("/feedback Личное обращение"), fake_max)
+    await process_update(group_write("/feedback_list"), fake_max)
+
+    msg = fake_max.sent[-1]
+    assert msg["chat_id"] == 7001
+    assert msg["text"] == t("fallback.unknown")
+    assert all("Личное обращение" not in m["text"] for m in fake_max.sent if m["chat_id"])
+
+
+async def test_group_text_while_waiting_in_dialog_is_not_feedback(fake_max, admins):
+    """Ожидание — по user_id: текст в группе обращением не становится, ожидание снимается."""
+    await onboarded()
+    await process_update(press("feedback:start:about"), fake_max)
+    await process_update(group_write("всем привет"), fake_max)
+
+    assert await saved() == []
+    assert await state() is None
+    assert fake_max.sent[-1]["chat_id"] == 7001
+
+
+async def test_group_third_unknown_has_no_write_button(fake_max, admins, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_bot_username", "")
+    await onboarded()
+    for _ in range(3):
+        await process_update(group_press("nothing:here"), fake_max)
+
+    third = fake_max.sent[-1]
+    assert third["text"] == t("fallback.unknown")
+    assert all(b.get("payload") != "feedback:start:fallback" for row in buttons(third) for b in row)
+
+
+async def test_group_about_has_no_write_button(fake_max, admins):
+    await onboarded()
+    await process_update(group_write("/about"), fake_max)
+
+    payloads = [b.get("payload") for row in buttons(fake_max.sent[-1]) for b in row]
+    assert "feedback:start:about" not in payloads
+
+
+# --- сбой после сохранения -----------------------------------------------------------------
+
+
+async def test_failure_after_accept_drops_forward_and_feedback(fake_max, admins, monkeypatch):
+    """Упало после `_accept` (до коммита): отката хватает — админам ничего, в базе пусто."""
+    await onboarded()
+    await process_update(press("feedback:start:about"), fake_max)
+
+    async def boom(ctx):
+        raise RuntimeError("коммит не прошёл")
+
+    monkeypatch.setattr(feedback, "after_handler", boom)
+    await process_update(write("Обращение, которое не сохранится"), fake_max)
+
+    assert await saved() == []
+    assert to_admins(fake_max) == []
+    assert fake_max.sent[-1]["text"] == t("fallback.service")
+    assert t("feedback.sent") not in [m["text"] for m in fake_max.sent]
+
+
+# --- лимит частоты -------------------------------------------------------------------------
+
+
+async def test_rate_limit_five_per_hour(fake_max, admins, clock):
+    await onboarded()
+    for n in range(feedback.RATE_LIMIT):
+        clock["now"] = NOW + timedelta(minutes=n)
+        await process_update(write(f"/feedback Обращение {n}"), fake_max)
+    assert len(await saved()) == feedback.RATE_LIMIT
+
+    clock["now"] = NOW + timedelta(minutes=30)
+    sent_before = len(to_admins(fake_max))
+    await process_update(write("/feedback Шестое"), fake_max)
+    assert fake_max.sent[-1]["text"] == t("feedback.rate_limited")
+    await process_update(press("feedback:start:about"), fake_max)
+    assert fake_max.sent[-1]["text"] == t("feedback.rate_limited")
+    assert await state() is None  # в ожидание не ставим
+    assert len(await saved()) == feedback.RATE_LIMIT
+    assert len(to_admins(fake_max)) == sent_before
+
+    # через час от первого — снова можно
+    clock["now"] = NOW + timedelta(hours=1, minutes=1)
+    await process_update(write("/feedback Через час"), fake_max)
+    assert fake_max.sent[-len(ADMINS) - 1]["text"] == t("feedback.sent")
+    assert len(await saved()) == feedback.RATE_LIMIT + 1
+
+
+async def test_rate_limit_checked_on_save_too(fake_max, admins):
+    """Начал ждать до лимита, а лимит добрался, пока писал, — при сохранении тоже проверяем."""
+    await onboarded()
+    await process_update(press("feedback:start:about"), fake_max)
+    async with SessionLocal() as s:
+        s.add_all(
+            Feedback(user_id=USER_ID, text=f"раньше {n}", created_at=NOW)
+            for n in range(feedback.RATE_LIMIT)
+        )
+        await s.commit()
+
+    await process_update(write("Ещё одно"), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("feedback.rate_limited")
+    assert [f.text for f in await saved()] == [f"раньше {n}" for n in range(feedback.RATE_LIMIT)]
+    assert await state() is None
+    assert to_admins(fake_max) == []

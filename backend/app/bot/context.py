@@ -101,7 +101,9 @@ class Ctx:
             return {"chat_id": self.chat_id}
         return {}
 
-    async def reply(self, text: str, attachments: list[dict] | None = None) -> None:
+    async def reply(
+        self, text: str, attachments: list[dict] | None = None, *, fmt: str | None = "markdown"
+    ) -> None:
         """Ставит сообщение в очередь: в сеть оно уйдёт после коммита транзакции.
 
         Отправлять прямо отсюда нельзя. SQLite допускает одного писателя, а запрос к MAX API
@@ -116,8 +118,12 @@ class Ctx:
         Ограничение: промежуточное «ищу…» перед долгой работой так не показать — вся очередь
         уходит одним пакетом после коммита. Понадобится — заводим `flush_outbox` (коммит +
         отправка + продолжение), сейчас такого сценария нет.
+
+        `fmt` — как в `MaxClient.send_message`: по умолчанию markdown; `None` — без разметки,
+        для чужого текста (обращения в `/feedback_list`), чтобы `[x](url)` и `*_` не стали
+        ссылкой или форматированием.
         """
-        self.outbox.append({"text": text, "attachments": attachments})
+        self.outbox.append({"text": text, "attachments": attachments, "fmt": fmt})
 
     def drop_outbox(self) -> None:
         """Выбрасывает неотправленное и отложенное: транзакция откатилась, сообщать не о чем."""
@@ -158,7 +164,10 @@ class Ctx:
         for message in pending:
             try:
                 await self.max.send_message(
-                    message["text"], attachments=message["attachments"], **target
+                    message["text"],
+                    attachments=message["attachments"],
+                    fmt=message.get("fmt", "markdown"),
+                    **target,
                 )
             except Exception:
                 failed += 1
