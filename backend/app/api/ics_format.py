@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 CRLF = "\r\n"
 LINE_OCTETS = 75  # §3.1: строка не длиннее 75 октетов без CRLF
 
-PRODID = "-//Pareto//MAX Calendar IP//RU"
+PRODID = "-//Maksimy na parkovke//MAX Calendar IP//RU"
 
 # Управляющие символы, запрещённые в TEXT (§3.3.11); TAB и переводы строк обрабатываются отдельно
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
