@@ -132,6 +132,31 @@ body {
   cursor: not-allowed;
 }
 
+/* «Добавить в календарь телефона» (лента .ics): кнопка и подпись под ней. */
+.profile-ics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.profile-ics-hint {
+  color: var(--text-secondary);
+}
+
+/* Скопировать не вышло: ссылку можно выделить и скопировать вручную. */
+.profile-ics-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-ics-url {
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
 .profile-actions {
   display: flex;
   flex-direction: column;

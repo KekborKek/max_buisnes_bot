@@ -274,6 +274,13 @@ export function createMockSource(scenario: MockScenario): DataSource {
         find("task", id);
         cards = cards.filter((c) => !(c.type === "task" && c.id === id));
       }),
+    // ТЕСТОВЫЕ ДАННЫЕ: адрес-заглушка, ленты за ним нет (.invalid не резолвится).
+    icsLink: () =>
+      read(() => ({
+        url: "https://example.invalid/api/ics/mock.ics",
+        webcal_url: "webcal://example.invalid/api/ics/mock.ics",
+        items: cards.filter((c) => !c.done_at).length,
+      })),
     // Мок сборку не повторяет: события те же, меняется только время сборки.
     rebuild: () =>
       write((): RebuildResult => {

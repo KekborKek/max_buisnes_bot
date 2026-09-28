@@ -2,9 +2,9 @@
 // Профиль при открытии запрашивается заново: его могли поменять в боте («Изменить»).
 // calendar_built пишет бэкенд в POST /api/calendar/rebuild; открытие экрана события не шлёт.
 import { Button, CellList, CellSimple, Typography } from "@maxhub/max-ui";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { botStartUrl, getBotUrl, openBotChat } from "../bridge";
+import { botStartUrl, copyLink, getBotUrl, openBotChat, openCalendarFeed } from "../bridge";
 import { formatNumericDate } from "../calendar";
 import { ApiError, errorKind, type ErrorKind } from "../data/http";
 import type { DataSource } from "../data/source";
@@ -13,7 +13,7 @@ import { Skeleton } from "../shell/Skeleton";
 import { useTheme, type ThemePref } from "../shell/Theme";
 import { useToast } from "../shell/Toast";
 import { texts } from "../texts";
-import type { Profile, RebuildResult } from "../types";
+import type { IcsLink, Profile, RebuildResult } from "../types";
 import { GateScreen } from "./GateScreen";
 
 /** Параметр запуска бота для «Изменить»: бот задаёт вопросы экрана 2 (bot/handlers/start.py). */
@@ -128,6 +128,133 @@ function RemindersEntry({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+type IcsLoad =
+  { kind: "loading" } | { kind: "ready"; link: IcsLink } | { kind: "failed"; error: ErrorKind };
+
+/** Что пользователь нажал: открыть файл (разовая загрузка) или скопировать ссылку для подписки. */
+type IcsAction = "open" | "copy";
+
+/**
+ * Лента .ics (GET /api/ics/link): «Добавить в календарь телефона» и «Скопировать ссылку для
+ * подписки». Bridge открывает ссылку только по клику пользователя, поэтому ссылка запрашивается
+ * заранее, при открытии экрана, а нажатие срабатывает сразу. Нажали раньше ответа — кнопка
+ * «грузится», действие выполнится по ответу (если Bridge не пропустит переход без свежего клика,
+ * второе нажатие сработает с готовой ссылкой). Ошибку заранее запрошенной ссылки показываем только
+ * после нажатия — тогда же запрос повторяется. Открываем https-ссылку, не webcal:// — см.
+ * openCalendarFeed. Событий нет — открывать нечего: тост вместо пустого файла; подписаться можно.
+ */
+function CalendarExport({ source }: { source: DataSource }) {
+  const toast = useToast();
+  const [link, setLink] = useState<IcsLoad>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const [waiting, setWaiting] = useState<IcsAction | null>(null);
+  const [error, setError] = useState<ErrorKind | null>(null);
+  // Скопировать не получилось — ссылка показывается текстом, чтобы скопировать вручную.
+  const [manual, setManual] = useState<string | null>(null);
+  // Нажатие до ответа: читается в колбэке запроса, где состояние было бы устаревшим.
+  const pendingRef = useRef<IcsAction | null>(null);
+
+  const perform = useCallback(
+    (action: IcsAction, ready: IcsLink) => {
+      if (action === "open") {
+        if (ready.items === 0) {
+          toast(texts.profile.icsEmpty);
+          return;
+        }
+        openCalendarFeed(ready.url);
+        return;
+      }
+      void copyLink(ready.url).then((ok) => {
+        if (ok) {
+          setManual(null);
+          toast(texts.profile.icsCopied);
+        } else {
+          setManual(ready.url);
+        }
+      });
+    },
+    [toast],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    source.icsLink().then(
+      (res) => {
+        if (!alive) return;
+        setLink({ kind: "ready", link: res });
+        const action = pendingRef.current;
+        if (action) {
+          pendingRef.current = null;
+          setWaiting(null);
+          perform(action, res);
+        }
+      },
+      (e: unknown) => {
+        if (!alive) return;
+        const kind = errorKind(e);
+        setLink({ kind: "failed", error: kind });
+        if (pendingRef.current) {
+          pendingRef.current = null;
+          setWaiting(null);
+          setError(kind);
+          quiet(source.track("error", { where: "ics", kind }));
+        }
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [source, attempt, perform]);
+
+  const press = (action: IcsAction) => {
+    if (pendingRef.current) return;
+    quiet(source.track("ics_link_requested", { action }));
+    setError(null);
+    if (link.kind === "ready") {
+      perform(action, link.link);
+      return;
+    }
+    pendingRef.current = action;
+    setWaiting(action);
+    if (link.kind === "failed") {
+      setLink({ kind: "loading" });
+      setAttempt((n) => n + 1);
+    }
+  };
+  const retry = () => press(waiting ?? "open");
+
+  return (
+    <div className="profile-ics">
+      {error && <ErrorBanner kind={error} onRetry={retry} retrying={waiting !== null} />}
+      <Button
+        size="large"
+        stretched
+        variant="secondary"
+        loading={waiting === "open"}
+        onClick={() => press("open")}
+      >
+        {texts.profile.ics}
+      </Button>
+      <Button
+        size="large"
+        stretched
+        variant="secondary"
+        loading={waiting === "copy"}
+        onClick={() => press("copy")}
+      >
+        {texts.profile.icsCopy}
+      </Button>
+      {manual && (
+        <div className="profile-ics-manual">
+          <Typography.Label>{texts.profile.icsCopyFailed}</Typography.Label>
+          <Typography.Body className="profile-ics-url">{manual}</Typography.Body>
+        </div>
+      )}
+      <Typography.Label className="profile-ics-hint">{texts.profile.icsHint}</Typography.Label>
+    </div>
+  );
+}
+
 export function ProfileScreen({ source, initial, onProfile, onRebuilt, onReminders }: Props) {
   const toast = useToast();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -213,6 +340,7 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt, onReminde
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
       {profile && <RemindersEntry onOpen={onReminders} />}
+      {profile && <CalendarExport source={source} />}
       <ThemeControl source={source} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (

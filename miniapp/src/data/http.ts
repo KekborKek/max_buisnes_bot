@@ -3,6 +3,7 @@
 import { getInitData, getWebApp } from "../bridge";
 import type {
   CalendarItem,
+  IcsLink,
   ItemCard,
   Me,
   Profile,
@@ -94,6 +95,7 @@ export const httpSource: DataSource = {
   updateTask: (id, input) =>
     request<TaskCard>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteTask: (id) => request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
+  icsLink: () => request<IcsLink>("/api/ics/link"),
   rebuild: () => request<RebuildResult>("/api/calendar/rebuild", { method: "POST" }),
   saveSettings: (input) =>
     request<Profile>("/api/profile/settings", { method: "PUT", body: JSON.stringify(input) }),

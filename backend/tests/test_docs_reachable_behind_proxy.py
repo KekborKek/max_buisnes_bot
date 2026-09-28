@@ -24,7 +24,15 @@ CADDYFILE = ROOT / "deploy" / "Caddyfile"
 
 # Маршруты бэкенда. `/docs` — точный путь: main.py создаёт FastAPI с docs_url=None
 # и вешает свой @app.get("/docs"), подпутей (включая oauth2-redirect) у него нет.
-BACKEND_PATHS = ("/docs", "/openapi.json", "/redoc", "/health", "/api/me", "/webhook/max")
+BACKEND_PATHS = (
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/health",
+    "/api/me",
+    "/api/ics/1-abc.ics",
+    "/webhook/max",
+)
 # Всё остальное — мини-апп: и статика, и любой маршрут SPA.
 MINIAPP_PATHS = ("/", "/index.html", "/assets/index.js", "/profile", "/docs-help")
 

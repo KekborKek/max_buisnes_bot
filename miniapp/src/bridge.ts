@@ -101,6 +101,48 @@ export function openExternalLink(url: string): void {
 }
 
 /**
+ * Открыть ленту iCalendar (экран 19, «Добавить в календарь телефона»). В MAX —
+ * `openLink(url)`: ссылка уходит во внешний браузер, а тот передаёт .ics календарю телефона.
+ * Bridge проверяет клик пользователя (dev.max.ru/docs/webapps/bridge): без клика перехода нет,
+ * поэтому звать только синхронно из обработчика нажатия, а ссылку получать заранее.
+ * Передаём https: про схему webcal:// в документации openLink ничего нет [сверить].
+ * Вне MAX — новая вкладка.
+ */
+export function openCalendarFeed(url: string): void {
+  openExternalLink(url);
+}
+
+/**
+ * Скопировать ссылку в буфер обмена: Clipboard API, если его нет или WebView его запретил —
+ * выделение скрытого поля и `execCommand("copy")`. false — не вышло, ссылку покажут текстом.
+ * В документации MAX Bridge метода копирования нет — только веб-API браузера.
+ */
+export async function copyLink(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // запасной путь ниже
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Открыть диалог с ботом. В MAX — `openMaxLink(url)` [сверить: поведение на живом клиенте];
  * вне MAX или без метода — обычная ссылка.
  */
