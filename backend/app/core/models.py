@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -183,3 +184,22 @@ class WrongDateReport(Base):
     obligation_id: Mapped[str] = mapped_column(String(64))
     due_date: Mapped[date] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Feedback(Base):
+    """Обращение «Написать нам» (экраны 10, 11; D13). Просмотр — `/feedback_list` у админа.
+
+    Новая таблица: `create_all` создаёт её и в базе с данными, старые таблицы не трогаются.
+    `forwarded` — дошло ли обращение хотя бы одному из `ADMIN_IDS`; False — пересылка
+    не удалась или админов нет, обращение всё равно сохранено.
+    """
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.user_id", ondelete="CASCADE"), index=True
+    )
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    forwarded: Mapped[bool] = mapped_column(Boolean, default=False)
