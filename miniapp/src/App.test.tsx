@@ -627,3 +627,72 @@ test("экран 19: если профиль не обновился, после
   await act(async () => lastMe().reject(new ApiError("network")));
   expect(screen.getByText("Омск (UTC+6)")).toBeInTheDocument();
 });
+
+// --- «Поделиться сроком» (SHARE): вход по ссылке ?startapp=share_<code> ------------------------
+
+const SHARE_INVITE = {
+  code: "abcdEFGH1234",
+  item_type: "task" as const,
+  title: "Сдать отчёт",
+  due_date: "2026-10-28",
+};
+
+test("share_<code> с профилем: приглашение, «Добавить» — карточка новой задачи поверх списка", async () => {
+  window.history.replaceState(null, "", "/?start_param=share_abcdEFGH1234");
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  // Приглашение грузится, не дожидаясь /api/me.
+  expect(source.getShare).toHaveBeenCalledWith("abcdEFGH1234");
+  await act(async () => lastMe().resolve(makeMe(true)));
+  expect(source.calendar).not.toHaveBeenCalled();
+  await act(async () => last("getShare").resolve(SHARE_INVITE));
+
+  await userEvent.click(screen.getByRole("button", { name: texts.share.add }));
+  const task = makeTaskCard({ id: 42, title: "Сдать отчёт", due_date: "2026-10-28" });
+  await act(async () => last("acceptShare").resolve({ created: true, task }));
+
+  expect(screen.getByText(texts.share.added)).toBeInTheDocument();
+  expect(source.item).toHaveBeenCalledWith("task", 42);
+  await act(async () => last("item").resolve(task));
+  await act(async () => lastCalendar().resolve([]));
+  expect(screen.getByRole("button", { name: texts.card.markDone })).toBeInTheDocument();
+  expect(source.track).toHaveBeenCalledWith("item_card_opened", {
+    item_id: 42,
+    item_type: "task",
+    source: "share",
+  });
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
+});
+
+test("share_<code> без профиля: задача добавляется, потом заглушка 18 с пояснением", async () => {
+  window.history.replaceState(null, "", "/?start_param=share_abcdEFGH1234");
+  const { source, lastMe, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(false)));
+  await act(async () => last("getShare").resolve(SHARE_INVITE));
+  expect(screen.queryByText(texts.gate.title)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: texts.share.add }));
+  await act(async () =>
+    last("acceptShare").resolve({ created: true, task: makeTaskCard({ id: 42 }) }),
+  );
+  expect(screen.getByText(texts.share.gateAdded)).toBeInTheDocument();
+  expect(screen.getByText(texts.gate.title)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.gate.openChat })).toBeInTheDocument();
+  expect(source.calendar).not.toHaveBeenCalled();
+});
+
+test("share_<code>: «Не нужно» — обычный вход, список 14 без карточки", async () => {
+  window.history.replaceState(null, "", "/?start_param=share_abcdEFGH1234");
+  const { source, lastMe, lastCalendar, last } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => last("getShare").resolve(SHARE_INVITE));
+  await userEvent.click(screen.getByRole("button", { name: texts.share.decline }));
+
+  await act(async () => lastCalendar().resolve([]));
+  expect(screen.getByRole("button", { name: texts.list.addTask })).toBeInTheDocument();
+  expect(source.item).not.toHaveBeenCalled();
+  expect(source.acceptShare).not.toHaveBeenCalled();
+});
