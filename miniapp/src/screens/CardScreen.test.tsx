@@ -334,8 +334,8 @@ test("вне MAX — фолбэк: текст со ссылкой в буфер 
   expect(screen.getByText(texts.share.copied)).toBeInTheDocument();
 });
 
-test("shareMaxContent отклонил вызов — тоже фолбэк в буфер", async () => {
-  const shareMaxContent = vi.fn(() => Promise.reject(new Error("no gesture")));
+test("shareMaxContent отклонил вызов (отмена выбора чата) — без тоста и без буфера", async () => {
+  const shareMaxContent = vi.fn(() => Promise.reject(new Error("cancelled")));
   window.WebApp = { initData: "signed", initDataUnsafe: {}, shareMaxContent };
   const writeText = stubClipboard();
   const { last } = await loaded(makeTaskCard());
@@ -343,8 +343,9 @@ test("shareMaxContent отклонил вызов — тоже фолбэк в �
 
   await clickShare();
   expect(shareMaxContent).toHaveBeenCalled();
-  expect(writeText).toHaveBeenCalledWith(`${SHARE_TEXT}\n${SHARE.link}`);
-  expect(screen.getByText(texts.share.copied)).toBeInTheDocument();
+  expect(writeText).not.toHaveBeenCalled();
+  expect(screen.queryByText(texts.share.copied)).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.share.failed)).not.toBeInTheDocument();
 });
 
 test("бэкенд без имени бота (link: null) — ссылка из VITE_BOT_URL", async () => {

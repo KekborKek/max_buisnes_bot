@@ -155,24 +155,26 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export type ShareResult = "shared" | "copied" | "failed";
+export type ShareResult = "shared" | "cancelled" | "copied" | "failed";
 
 /**
  * «Поделиться» (SHARE). В MAX — `shareMaxContent({text, link})`: окно выбора чата MAX на всех
  * платформах. Bridge проверяет клик пользователя, поэтому метод вызывается синхронно, до
  * первого await, — звать эту функцию надо прямо из обработчика нажатия.
- * Метода нет (вне MAX) или он отклонил вызов — текст со ссылкой копируется в буфер.
+ * Метода нет (вне MAX) — текст со ссылкой копируется в буфер.
+ * Метод отклонил вызов — `"cancelled"`, без тоста и без записи в буфер: так бывает при отмене
+ * выбора чата и при нажатии без жеста (ссылка ещё грузилась) — повторное нажатие сработает.
  * `shareContent` не берём: он только для iOS/Android и отдаёт ссылку в чужие приложения.
- * [сверить: отклоняет ли промис отмена выбора чата — тогда пользователь увидит «скопировано»]
  */
 export async function shareToChat(text: string, link: string): Promise<ShareResult> {
-  const share = getWebApp()?.shareMaxContent;
-  if (share) {
+  const wa = getWebApp();
+  if (wa?.shareMaxContent) {
+    // Вызов как метода объекта: реализация Bridge может опираться на this.
     try {
-      await share({ text, link });
+      await wa.shareMaxContent({ text, link });
       return "shared";
     } catch {
-      // ниже — копирование
+      return "cancelled";
     }
   }
   return (await copyText(`${text}\n${link}`)) ? "copied" : "failed";
