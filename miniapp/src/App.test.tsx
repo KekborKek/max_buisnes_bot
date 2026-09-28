@@ -308,6 +308,29 @@ test("новая задача из формы появляется в списк
   vi.useRealTimers();
 });
 
+test("«Дальше» развёрнута — остаётся развёрнутой после карточки 16 и «Назад»; list_expanded", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
+  const { source, lastMe, lastCalendar } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () =>
+    lastCalendar().resolve(
+      [1, 2, 3, 4, 5].map((n) =>
+        makeItem({ id: n, title: `Срок ${n}`, due_date: `2026-10-0${n}` }),
+      ),
+    ),
+  );
+  expect(screen.queryByText("Срок 5")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: texts.list.showMore(2) }));
+  expect(source.track).toHaveBeenCalledWith("list_expanded", { hidden: 2 });
+
+  await userEvent.click(screen.getByText("Срок 5"));
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByText("Срок 5")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.list.showLess })).toBeInTheDocument();
+  vi.useRealTimers();
+});
+
 test("создание из «Списка» по-прежнему ведёт на экран 14, не на «Месяц» (#93)", async () => {
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-23T09:00:00Z") });
   const { source, lastMe, lastCalendar, last } = fakeSource();

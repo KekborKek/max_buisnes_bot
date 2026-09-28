@@ -220,6 +220,17 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
     setAttempt((n) => n + 1);
   };
 
+  // Секция «Дальше» на 14 развёрнута (29.09): держим здесь, чтобы пережить карточку 16 и «Назад».
+  const [laterExpanded, setLaterExpanded] = useState(false);
+  const expandLater = useCallback(
+    (hidden: number) => {
+      setLaterExpanded(true);
+      quiet(source.track("list_expanded", { hidden }));
+    },
+    [source],
+  );
+  const collapseLater = useCallback(() => setLaterExpanded(false), []);
+
   // Месяцы сетки 15 — кеш на сессию; выбранный день переживает переход в карточку и «Назад».
   const months = useMonths(source);
   const { upsert: upsertMonth, remove: removeMonth, reset: resetMonths } = months;
@@ -314,7 +325,16 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
   let screen;
   switch (route.name) {
     case "list":
-      screen = <ListScreen today={todayIn(timezone)} calendar={calendar} onRetry={retryCalendar} />;
+      screen = (
+        <ListScreen
+          today={todayIn(timezone)}
+          calendar={calendar}
+          onRetry={retryCalendar}
+          laterExpanded={laterExpanded}
+          onExpandLater={expandLater}
+          onCollapseLater={collapseLater}
+        />
+      );
       break;
     case "month":
       screen = (

@@ -150,6 +150,11 @@ export const texts = {
     sectionToday: "Сегодня",
     sectionWeek: "Эта неделя",
     sectionLater: "Дальше",
+    /** Секция «Дальше» свёрнута до 3 строк (решение человека 29.09): `hidden` — сколько скрыто.
+     * временный текст техлида (29.09), ждёт UX. */
+    showMore: (hidden: number) => `Показать ещё ${hidden}`,
+    /** временный текст техлида (29.09), ждёт UX. */
+    showLess: "Свернуть",
     statusOverdue: "Просрочено",
     addTask: "+ Задача",
     emptyTitle: "Ближайших сроков нет",

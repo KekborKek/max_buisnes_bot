@@ -159,13 +159,28 @@ export function ItemRow({
   );
 }
 
+/** Сколько строк секции «Дальше» видно в свёрнутом виде (решение человека 29.09). */
+export const LATER_COLLAPSED = 3;
+
 interface Props {
   today: string;
   calendar: CalendarState;
   onRetry: () => void;
+  /** Секция «Дальше» развёрнута. Состояние — у оболочки, чтобы пережить переход в карточку 16. */
+  laterExpanded: boolean;
+  /** «Показать ещё N»: `hidden` — сколько строк было скрыто (для list_expanded). */
+  onExpandLater: (hidden: number) => void;
+  onCollapseLater: () => void;
 }
 
-export function ListScreen({ today, calendar, onRetry }: Props) {
+export function ListScreen({
+  today,
+  calendar,
+  onRetry,
+  laterExpanded,
+  onExpandLater,
+  onCollapseLater,
+}: Props) {
   const { push, switchTab } = useNavigation();
   const { items, loading, error } = calendar;
   const addTask = () => push({ name: "task", draft: false });
@@ -189,17 +204,43 @@ export function ListScreen({ today, calendar, onRetry }: Props) {
         </section>
       )}
       {items !== null &&
-        groupSections(items, today).map((section) => (
-          <CellList
-            key={section.key}
-            mode="island"
-            header={<CellHeader>{SECTION_TITLE[section.key]}</CellHeader>}
-          >
-            {section.items.map((item) => (
-              <ItemRow key={`${item.type}_${item.id}`} item={item} today={today} source="list" />
-            ))}
-          </CellList>
-        ))}
+        groupSections(items, today).map((section) => {
+          // Сворачивается только «Дальше»: первые LATER_COLLAPSED строк, остальное — по кнопке.
+          const collapsible = section.key === "later" && section.items.length > LATER_COLLAPSED;
+          const hidden = collapsible ? section.items.length - LATER_COLLAPSED : 0;
+          const shown =
+            collapsible && !laterExpanded ? section.items.slice(0, LATER_COLLAPSED) : section.items;
+          return (
+            <div key={section.key} className="list-section">
+              <CellList
+                mode="island"
+                header={<CellHeader>{SECTION_TITLE[section.key]}</CellHeader>}
+              >
+                {shown.map((item) => (
+                  <ItemRow
+                    key={`${item.type}_${item.id}`}
+                    item={item}
+                    today={today}
+                    source="list"
+                  />
+                ))}
+              </CellList>
+              {collapsible && (
+                <div className="list-more">
+                  <Button
+                    size="medium"
+                    variant="secondary"
+                    stretched
+                    aria-expanded={laterExpanded}
+                    onClick={() => (laterExpanded ? onCollapseLater() : onExpandLater(hidden))}
+                  >
+                    {laterExpanded ? texts.list.showLess : texts.list.showMore(hidden)}
+                  </Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       {!isEmpty && (
         <div className="bottom-bar">
           <Button size="large" stretched onClick={addTask}>

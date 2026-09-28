@@ -1,6 +1,7 @@
 // Экран 14: четыре состояния (загрузка, пусто, ошибка, данные).
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { expect, test, vi } from "vitest";
 
 import type { Navigation } from "../router";
@@ -11,6 +12,32 @@ import { type CalendarState, ListScreen } from "./ListScreen";
 
 const TODAY = "2026-09-23";
 
+/** Развёрнутость «Дальше» живёт в оболочке — здесь её заменяет состояние обёртки. */
+function Harness({
+  calendar,
+  onRetry,
+  onExpand,
+}: {
+  calendar: CalendarState;
+  onRetry: () => void;
+  onExpand: (hidden: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <ListScreen
+      today={TODAY}
+      calendar={calendar}
+      onRetry={onRetry}
+      laterExpanded={expanded}
+      onExpandLater={(hidden) => {
+        setExpanded(true);
+        onExpand(hidden);
+      }}
+      onCollapseLater={() => setExpanded(false)}
+    />
+  );
+}
+
 function renderList(calendar: CalendarState, onRetry = vi.fn()) {
   const nav: Navigation = {
     route: { name: "list" },
@@ -20,12 +47,13 @@ function renderList(calendar: CalendarState, onRetry = vi.fn()) {
     switchTab: vi.fn(),
     home: vi.fn(),
   };
+  const onExpand = vi.fn();
   render(
     <NavigationContext.Provider value={nav}>
-      <ListScreen today={TODAY} calendar={calendar} onRetry={onRetry} />
+      <Harness calendar={calendar} onRetry={onRetry} onExpand={onExpand} />
     </NavigationContext.Provider>,
   );
-  return { nav, onRetry };
+  return { nav, onRetry, onExpand };
 }
 
 const ITEMS = [
@@ -161,4 +189,69 @@ test("переключатель «Список | Месяц»: активная
     "aria-pressed",
     "false",
   );
+});
+
+// --- Секция «Дальше» сворачивается до трёх строк (решение человека 29.09) ----------------------
+
+const rowTitles = () =>
+  screen
+    .getAllByRole("button")
+    .filter((b) => b.classList.contains("row"))
+    .map((r) => r.querySelector(".row-title")?.textContent);
+
+/** `n` событий секции «Дальше» (после ближайшего воскресенья 27.09) и одно на этой неделе. */
+function laterItems(n: number) {
+  return [
+    makeItem({ id: 100, title: "На неделе", due_date: "2026-09-24" }),
+    ...Array.from({ length: n }, (_, i) =>
+      makeItem({
+        id: i + 1,
+        title: `Дальше ${i + 1}`,
+        due_date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      }),
+    ),
+  ];
+}
+
+test("«Дальше»: видно 3, «Показать ещё N» разворачивает до конца, «Свернуть» — обратно", async () => {
+  const { onExpand } = renderList({ items: laterItems(7), loading: false, error: null });
+  expect(rowTitles()).toEqual(["На неделе", "Дальше 1", "Дальше 2", "Дальше 3"]);
+  const more = screen.getByRole("button", { name: texts.list.showMore(4) });
+  expect(more).toHaveAttribute("aria-expanded", "false");
+
+  await userEvent.click(more);
+  expect(onExpand).toHaveBeenCalledWith(4);
+  expect(rowTitles()).toEqual([
+    "На неделе",
+    ...Array.from({ length: 7 }, (_, i) => `Дальше ${i + 1}`),
+  ]);
+  const less = screen.getByRole("button", { name: texts.list.showLess });
+  expect(less).toHaveAttribute("aria-expanded", "true");
+  expect(screen.queryByRole("button", { name: texts.list.showMore(4) })).not.toBeInTheDocument();
+
+  await userEvent.click(less);
+  expect(rowTitles()).toEqual(["На неделе", "Дальше 1", "Дальше 2", "Дальше 3"]);
+  expect(screen.getByRole("button", { name: texts.list.showMore(4) })).toBeInTheDocument();
+  expect(onExpand).toHaveBeenCalledOnce();
+});
+
+test("«Дальше» из 3 и меньше строк — без кнопки", () => {
+  renderList({ items: laterItems(3), loading: false, error: null });
+  expect(rowTitles()).toHaveLength(4);
+  expect(screen.queryByRole("button", { name: /^Показать ещё/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.list.showLess })).not.toBeInTheDocument();
+});
+
+test("остальные секции не сворачиваются: 5 просроченных видны все", () => {
+  const overdue = Array.from({ length: 5 }, (_, i) =>
+    makeItem({
+      id: i + 1,
+      title: `Просрочка ${i + 1}`,
+      due_date: `2026-09-1${i}`,
+      status: "overdue",
+    }),
+  );
+  renderList({ items: overdue, loading: false, error: null });
+  expect(rowTitles()).toHaveLength(5);
+  expect(screen.queryByRole("button", { name: /^Показать ещё/ })).not.toBeInTheDocument();
 });

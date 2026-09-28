@@ -164,6 +164,17 @@ body {
   padding: 0 16px;
 }
 
+/* Экран 14: секция списка и кнопка «Показать ещё N» / «Свернуть» под «Дальше» (29.09). */
+.list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-more {
+  padding: 0 16px;
+}
+
 .tabs {
   display: flex;
   flex-shrink: 0;
