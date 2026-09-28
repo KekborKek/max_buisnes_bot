@@ -76,6 +76,8 @@ export interface IcsLink {
   url: string;
   /** Та же лента по схеме webcal:// — подписка в календаре. */
   webcal_url: string;
+  /** Событий в ленте сейчас; 0 — добавлять пока нечего. */
+  items: number;
 }
 
 /** Черновик задачи из бота (экраны 9, 10): `DialogState` → `/api/me`. Даты может не быть. */

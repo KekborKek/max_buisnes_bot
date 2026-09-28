@@ -263,6 +263,7 @@ export function createMockSource(scenario: MockScenario): DataSource {
       read(() => ({
         url: "https://example.invalid/api/ics/mock.ics",
         webcal_url: "webcal://example.invalid/api/ics/mock.ics",
+        items: cards.filter((c) => !c.done_at).length,
       })),
     // Мок сборку не повторяет: события те же, меняется только время сборки.
     rebuild: () =>
