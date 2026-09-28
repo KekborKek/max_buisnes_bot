@@ -314,19 +314,11 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
   let screen;
   switch (route.name) {
     case "list":
-      screen = (
-        <ListScreen
-          profile={profile}
-          today={todayIn(timezone)}
-          calendar={calendar}
-          onRetry={retryCalendar}
-        />
-      );
+      screen = <ListScreen today={todayIn(timezone)} calendar={calendar} onRetry={retryCalendar} />;
       break;
     case "month":
       screen = (
         <MonthScreen
-          profile={profile}
           today={todayIn(timezone)}
           months={months.cache}
           selected={monthDay}

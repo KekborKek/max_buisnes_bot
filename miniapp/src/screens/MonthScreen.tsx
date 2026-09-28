@@ -20,7 +20,6 @@ import { ErrorBanner } from "../shell/ErrorBanner";
 import { Skeleton } from "../shell/Skeleton";
 import type { MonthCache, MonthState } from "../store";
 import { texts } from "../texts";
-import type { Profile } from "../types";
 import { CalendarHeader, ItemRow } from "./ListScreen";
 
 const LOADING: MonthState = { items: null, loading: true, error: null };
@@ -31,7 +30,6 @@ export function monthTitle(month: string): string {
 }
 
 interface Props {
-  profile: Profile;
   today: string;
   months: MonthCache;
   /** Выбранный день; null — сегодня (по умолчанию). */
@@ -42,15 +40,7 @@ interface Props {
   onRetry(month: string): void;
 }
 
-export function MonthScreen({
-  profile,
-  today,
-  months,
-  selected,
-  onSelect,
-  onLoad,
-  onRetry,
-}: Props) {
+export function MonthScreen({ today, months, selected, onSelect, onLoad, onRetry }: Props) {
   const { push } = useNavigation();
   const day = selected ?? today;
   const month = monthOf(day);
@@ -79,7 +69,7 @@ export function MonthScreen({
 
   return (
     <div className="screen screen--with-bar">
-      <CalendarHeader profile={profile} tab="month" />
+      <CalendarHeader tab="month" />
       {error && <ErrorBanner kind={error} onRetry={() => onRetry(month)} retrying={loading} />}
       <section className="month" aria-busy={loading || undefined}>
         <div className="month-nav">

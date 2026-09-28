@@ -76,27 +76,20 @@ body {
   padding: 0 16px;
 }
 
-/* Профиль не обрезаем: на узком экране он переносится, переключатель остаётся справа. */
-.calendar-header__profile {
-  min-width: 0;
-  /* Нативная кнопка без своего вида: нажимается целиком, выглядит как строка текста. */
-  padding: 8px 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: var(--text-secondary);
-  cursor: pointer;
+/* Кнопка «Профиль» (решение человека 29.09): иконка + подпись цветом акцента темы
+   (--text-themed MAX UI, светлая и тёмная), фон прозрачный — не путается с сегментом вкладок.
+   Высота 44 px вместо 40 у size="small" — зона нажатия; app.css подключён после стилей MAX UI. */
+.profile-button {
+  --MaxUi-Button_foreground: var(--text-themed);
+  flex-shrink: 0;
+  height: 44px;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
-.calendar-header__profile > * {
-  color: inherit;
-}
-
-.calendar-header__profile:focus-visible {
-  outline: 2px solid var(--text-secondary);
+.profile-button:focus-visible {
+  outline: 2px solid var(--text-themed);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Экран 19. */

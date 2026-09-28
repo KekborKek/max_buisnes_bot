@@ -413,9 +413,10 @@ test("пометка «ТЕСТОВЫЕ ДАННЫЕ» видна только �
 
 // --- Экран 19: переход с шапки 14 и 15, пересборка ------------------------------------------
 
-const HEADER = /^ИП · /;
+/** Кнопка «Профиль» в шапке 14/15 (решение человека 29.09 — вместо строки «ИП · …»). */
+const HEADER = texts.list.profileButton;
 
-test("шапка экрана 14 ведёт на экран 19, «Назад» — на список без перезагрузки", async () => {
+test("кнопка «Профиль» в шапке экрана 14 ведёт на экран 19, «Назад» — на список без перезагрузки", async () => {
   const { source, lastMe, lastCalendar } = fakeSource();
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
@@ -432,7 +433,7 @@ test("шапка экрана 14 ведёт на экран 19, «Назад» �
   expect(source.calendar).toHaveBeenCalledOnce();
 });
 
-test("шапка экрана 15 тоже ведёт на экран 19", async () => {
+test("кнопка «Профиль» в шапке экрана 15 тоже ведёт на экран 19", async () => {
   localStorage.setItem("calendar.tab", "month");
   const { source, lastMe } = fakeSource();
   render(<App source={source} />);
@@ -441,7 +442,7 @@ test("шапка экрана 15 тоже ведёт на экран 19", async 
   expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
 });
 
-test("после «Пересобрать» список грузится заново, шапка — по свежему профилю", async () => {
+test("после «Пересобрать» список грузится заново", async () => {
   const { source, lastMe, lastCalendar, last } = fakeSource();
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
@@ -460,7 +461,6 @@ test("после «Пересобрать» список грузится зан
   await act(async () => lastCalendar().resolve([makeItem({ title: "Декларация" })]));
   expect(screen.getByText("Декларация")).toBeInTheDocument();
   expect(screen.queryByText("Аванс")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: HEADER })).toHaveTextContent(texts.regime.usn15);
 });
 
 // --- Экран 13: из бота (start_param=settings) и со строки экрана 19 --------------------------

@@ -5,7 +5,7 @@ import { expect, test, vi } from "vitest";
 
 import type { Navigation } from "../router";
 import { NavigationContext } from "../router";
-import { makeItem, PROFILE } from "../test/fakeSource";
+import { makeItem } from "../test/fakeSource";
 import { texts } from "../texts";
 import { type CalendarState, ListScreen } from "./ListScreen";
 
@@ -22,7 +22,7 @@ function renderList(calendar: CalendarState, onRetry = vi.fn()) {
   };
   render(
     <NavigationContext.Provider value={nav}>
-      <ListScreen profile={PROFILE} today={TODAY} calendar={calendar} onRetry={onRetry} />
+      <ListScreen today={TODAY} calendar={calendar} onRetry={onRetry} />
     </NavigationContext.Provider>,
   );
   return { nav, onRetry };
@@ -42,9 +42,9 @@ const ITEMS = [
   makeItem({ id: 4, title: "Взнос", category: "contributions", due_date: "2026-09-24" }),
 ];
 
-test("загрузка: шапка с профилем видна сразу, на месте списка скелетон", () => {
+test("загрузка: шапка с кнопкой «Профиль» видна сразу, на месте списка скелетон", () => {
   renderList({ items: null, loading: true, error: null });
-  expect(screen.getByText("ИП · УСН 6% · без сотрудников")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.list.profileButton })).toBeInTheDocument();
   expect(screen.getByTestId("skeleton").children).toHaveLength(3);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
@@ -139,6 +139,16 @@ test("дата другого года — год отдельной строк�
   expect(plainDateCell.querySelector(".row-date__year")).toBeNull();
   expect(plainDateCell).not.toHaveAttribute("aria-label");
   expect(plainDateCell.textContent).toBe("28 окт");
+});
+
+test("шапка: кнопка «Профиль» с иконкой ведёт на экран 19, строки «ИП · …» нет (29.09)", async () => {
+  const { nav } = renderList({ items: [], loading: false, error: null });
+  const button = screen.getByRole("button", { name: texts.list.profileButton });
+  expect(button).toHaveClass("profile-button");
+  expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(screen.queryByText(/^ИП · /)).not.toBeInTheDocument();
+  await userEvent.click(button);
+  expect(nav.push).toHaveBeenCalledWith({ name: "profile" });
 });
 
 test("переключатель «Список | Месяц»: активная вкладка отмечена", () => {

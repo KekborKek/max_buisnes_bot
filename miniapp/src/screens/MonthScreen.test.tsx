@@ -7,7 +7,7 @@ import { expect, test, vi } from "vitest";
 import type { Navigation } from "../router";
 import { NavigationContext } from "../router";
 import type { MonthCache } from "../store";
-import { makeItem, PROFILE } from "../test/fakeSource";
+import { makeItem } from "../test/fakeSource";
 import { texts } from "../texts";
 import type { CalendarItem } from "../types";
 import { MonthScreen } from "./MonthScreen";
@@ -26,7 +26,6 @@ function Harness({
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <MonthScreen
-      profile={PROFILE}
       today={TODAY}
       months={months}
       selected={selected}
@@ -81,7 +80,7 @@ const ITEMS = [
 test("загрузка: шапка и сетка сразу, точек нет, под сеткой скелетон", () => {
   const { onLoad, container } = renderMonth();
   expect(onLoad).toHaveBeenCalledWith("2026-10");
-  expect(screen.getByText("ИП · УСН 6% · без сотрудников")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.list.profileButton })).toBeInTheDocument();
   expect(screen.getByText("Октябрь 2026")).toBeInTheDocument();
   for (const w of texts.month.weekdays) expect(screen.getByText(w)).toBeInTheDocument();
   expect(dayButtons(container)).toHaveLength(31);
@@ -91,6 +90,12 @@ test("загрузка: шапка и сетка сразу, точек нет, 
     "aria-pressed",
     "true",
   );
+});
+
+test("шапка: кнопка «Профиль» ведёт на экран 19", async () => {
+  const { nav } = renderMonth();
+  await userEvent.click(screen.getByRole("button", { name: texts.list.profileButton }));
+  expect(nav.push).toHaveBeenCalledWith({ name: "profile" });
 });
 
 test("месяц пуст: monthEmpty в предложном падеже, «+ Задача» одна и ведёт на форму с датой сегодня", async () => {

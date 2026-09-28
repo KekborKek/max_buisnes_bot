@@ -132,9 +132,9 @@ export const texts = {
   },
 
   list: {
-    profile: (regime: string, employees: string) => `ИП · ${regime} · ${employees}`,
-    withoutEmployees: "без сотрудников",
-    withEmployees: "есть сотрудники",
+    /** Кнопка в шапке 14/15 → экран 19 (решение человека 29.09: вместо строки «ИП · …»).
+     * временный текст техлида (29.09), ждёт UX. */
+    profileButton: "Профиль",
     tabList: "Список",
     tabMonth: "Месяц",
     sectionOverdue: "Просрочено",
