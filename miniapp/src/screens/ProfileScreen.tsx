@@ -178,7 +178,8 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt, onSetting
         <ErrorBanner kind={rebuildError} onRetry={rebuild} retrying={rebuilding} />
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
-      {profile && <SettingsEntry onOpen={onSettings} />}
+      {/* Настройки не зависят от загрузки профиля: тема и .ics доступны и при ошибке. */}
+      <SettingsEntry onOpen={onSettings} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (
         <div className="profile-actions">

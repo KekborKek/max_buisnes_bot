@@ -521,7 +521,7 @@ test("профиль → «Настройки» → «Назад» ведёт о
 
   await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
   expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
-  expect(screen.queryByText(texts.settings.title)).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.settings.days)).not.toBeInTheDocument();
   // Экран 19 при открытии, как всегда, запрашивает профиль заново.
   await act(async () => lastMe().resolve(makeMe(true)));
   expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();

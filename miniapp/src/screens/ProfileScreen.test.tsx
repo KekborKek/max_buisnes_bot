@@ -174,9 +174,9 @@ test("строка «Настройки» открывается с клавиа
   expect(onSettings).toHaveBeenCalledTimes(2);
 });
 
-test("пока профиль грузится, строки «Настройки» нет", () => {
+test("строка «Настройки» есть и пока профиль грузится (тема и .ics не зависят от профиля)", () => {
   renderProfile();
-  expect(screen.queryByRole("button", { name: texts.profile.settings })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: texts.profile.settings })).toBeInTheDocument();
 });
 
 test("решение 29.09: на профиле нет темы, «Напоминаний» и календаря телефона; ленту не запрашивает", async () => {

@@ -138,14 +138,14 @@ body {
 
 /* Длинные подписи кнопок на 320 px — в две строки вместо многоточия: высота по содержимому.
    Класс однострочного текста внутри Button MAX UI хешированный — ищем по началу имени. */
-.settings-ics button {
+.settings-ics > button {
   height: auto;
   min-height: 60px;
   padding-top: 12px;
   padding-bottom: 12px;
 }
 
-.settings-ics button [class*="EllipsisText_singleLine"] {
+.settings-ics > button [class*="EllipsisText_singleLine"] {
   white-space: normal;
 }
 
