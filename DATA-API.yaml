@@ -1,4 +1,4 @@
-# DATA-API 1.0 — «Календарь обязательств ИП», команда «Парето».
+# DATA-API 1.0 — «Календарь обязательств ИП», команда «Максимы на парковке».
 # Секретов в файле нет.
 #
 # АВТОРИЗАЦИЯ. API — бэкенд мини-приложения MAX. Роль max_user = любой пользователь MAX,
@@ -20,7 +20,7 @@ schemaVersion: "1.0"
 
 solution:
   name: "Календарь обязательств ИП"
-  teamId: "pareto"
+  teamId: "maksimy-na-parkovke"
 
 api:
   baseUrl: "https://vse-uspel.ru"
