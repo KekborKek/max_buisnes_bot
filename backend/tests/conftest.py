@@ -100,6 +100,18 @@ async def fresh_db():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def fresh_demo_rate_limit(monkeypatch):
+    """Лимит `/demo_remind` (in-memory, см. bot/handlers/demo.py) — сбрасываем между тестами.
+
+    Живёт в памяти процесса, а не в БД (модели не меняем), поэтому `fresh_db` его не чистит —
+    без сброса тесты в одном процессе pytest делили бы состояние и мешали друг другу.
+    """
+    from app.bot.handlers import demo
+
+    monkeypatch.setattr(demo, "_last_used", {})
+
+
 # --- API мини-приложения (T10) ------------------------------------------------------------
 
 

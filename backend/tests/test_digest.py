@@ -585,6 +585,7 @@ async def test_demo_digest_for_admin(fake_max, no_bot_name, wednesday, admin):
     assert msg["attachments"] == digest.digest_keyboard()
     assert await _digests() == []  # демо не трогает настоящее расписание
     assert await _events("reminder_sent") == []
+    assert await _events("demo_remind_used") == [{"kind": "digest", "is_admin": True}]
 
 
 async def test_demo_digest_empty_week(fake_max, no_bot_name, wednesday, admin):
@@ -596,11 +597,15 @@ async def test_demo_digest_empty_week(fake_max, no_bot_name, wednesday, admin):
     assert fake_max.sent[-1]["text"] == t("demo.digest_empty")
 
 
-async def test_demo_digest_for_non_admin_is_unknown(fake_max, no_bot_name, wednesday, monkeypatch):
-    monkeypatch.setattr(get_settings(), "support_url", "")
+async def test_demo_digest_for_non_admin_same_as_admin(fake_max, no_bot_name, wednesday):
+    """Открыта всем (решение 28.09): не-админ получает ту же сводку, что и админ."""
     await _user()
     await _week_with_two_items()
 
     await process_update(write("/demo_remind digest"), fake_max)
 
-    assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+    msg = fake_max.sent[-1]
+    assert msg["text"] == TWO_ITEMS
+    assert msg["attachments"] == digest.digest_keyboard()
+    assert await _digests() == []  # демо не трогает настоящее расписание
+    assert await _events("demo_remind_used") == [{"kind": "digest", "is_admin": False}]

@@ -1,15 +1,28 @@
 """Демо-команда `/demo_remind <kind>` (docs/spec/reminders.md, «Демо»; T13b, #72).
 
-Только для `user_id` из `ADMIN_IDS` (`settings.admin_ids`): сразу присылает себе напоминание
-указанного вида по ближайшему невыполненному обязательству — тем же текстом и кнопками, что
-шлёт планировщик (`app/calendar/reminders.py: render_reminder`). `Notification` не создаём:
-демо не должно попадать в настоящее расписание отправки. Кнопки напоминания кодируют
-`item_type`/`item_id` (`r:<action>:<item_type>:<item_id>`), а не `notification_id`, поэтому
-«Отметить выполненным» и «Как сделать» у демо-сообщения работают как у настоящего — эти
-обработчики читают событие из БД напрямую (handlers/done.py, handlers/reminders.py).
+Открыта всем — решение 28.09: жюри проверяет бота своими аккаунтами MAX и не может ждать настоящих
+напоминаний днями, поэтому команда доступна ЛЮБОМУ пользователю, а не только `ADMIN_IDS`. Сразу
+присылает пользователю САМОМУ СЕБЕ напоминание указанного вида по его собственному ближайшему
+невыполненному обязательству — тем же текстом и кнопками, что шлёт планировщик
+(`app/calendar/reminders.py: render_reminder`). Чужие данные команда не читает: `user_id` всегда
+берётся из `ctx.user_id`, сообщение всегда уходит через `ctx.reply` (тому же пользователю).
+`Notification` не создаём: демо не должно попадать в настоящее расписание отправки. Кнопки
+напоминания кодируют `item_type`/`item_id` (`r:<action>:<item_type>:<item_id>`), а не
+`notification_id`, поэтому «Отметить выполненным» и «Как сделать» у демо-сообщения работают как у
+настоящего — эти обработчики читают событие из БД напрямую
+(handlers/done.py, handlers/reminders.py).
 
-Для не-админа команда как будто не существует: ответ ровно `fallback.show_unknown`, неотличимый
-от любого другого непонятого текста.
+`ADMIN_IDS` (`settings.admin_ids`) больше не ограничивает доступ к команде: только помечает вызов
+в аналитике (`is_admin`) — пригодится, если понадобится отличить проверки жюри от вызовов команды.
+
+В групповом чате (`ctx.is_group`) команда не выполняется: демо-напоминание несёт личные сроки
+вызвавшего, показывать их всем участникам чата нельзя. Ответ — `fallback.show_unknown`, как для
+любого непонятого текста (допущение ревью 28.09; альтернатива — молчание, выбрали ответ ради
+единообразия с остальными неизвестными командами в группах).
+
+Защита от спама: простой лимит в памяти процесса — не чаще одного вызова в `_RATE_LIMIT_SECONDS`
+секунд на `user_id` (см. `_last_used`). В БД не хранится: моделей не меняем (решение 28.09), рестарт
+процесса лимит сбрасывает — для демо-команды хакатона этого достаточно.
 
 `/demo_remind digest` — сводка экрана 12 за текущую неделю (#77), см. `_demo_digest`. В подсказку
 `demo.usage` вид `digest` не входит: `KINDS` — виды напоминаний по одному обязательству.
@@ -17,14 +30,16 @@
 `task`-уведомления демо не показывает: схема 30/7/1/overdue к своим задачам не относится
 (D11, reminders.md), а демо явно «по ближайшему обязательству».
 
-Аналитика: событие на сам показ демо-напоминания не заводим — такого события нет в таблице
-`docs/spec/product.md` (см. отчёт в PR). Клики по кнопкам демо-сообщения трекаются как обычно
-существующими обработчиками; `reminder_clicked.kind` для них будет `"unknown"` (сообщение не
-отправлялось планировщиком, `Notification` со статусом `sent` не существует) — известное и
-принятое допущение, не блокер.
+Аналитика: `demo_remind_used {kind, is_admin}` — на каждый вызов с распознанным видом (включая
+`digest` и случай «обязательств нет»); такого события раньше не было в `docs/spec/product.md`,
+завели по задаче открытия команды всем (см. отчёт в PR). Клики по кнопкам демо-сообщения трекаются
+как обычно существующими обработчиками; `reminder_clicked.kind` для них будет `"unknown"`
+(сообщение не отправлялось планировщиком, `Notification` со статусом `sent` не существует) —
+известное и принятое допущение, не блокер.
 """
 
 import logging
+from datetime import datetime
 from typing import Final
 
 from sqlalchemy import select
@@ -45,6 +60,22 @@ COMMAND = "/demo_remind"
 # Только виды по обязательствам: демо явно «по ближайшему обязательству» (reminders.md, «Демо»);
 # `task` в схему 30/7/1/overdue не входит (D11) и демо его не показывает.
 KINDS: Final[tuple[str, ...]] = ("d30", "d7", "d1", "overdue", "snooze")
+
+_RATE_LIMIT_SECONDS: Final[int] = 10
+# user_id -> момент последнего разрешённого вызова. Память процесса (см. docstring выше);
+# один бэкенд-процесс на всё приложение (AGENTS.md), поэтому лимит общий и переживает рестарт
+# только в пределах текущего запуска.
+_last_used: dict[int, datetime] = {}
+
+
+def _rate_limited(user_id: int) -> bool:
+    """True — пользователь уже вызывал команду недавно; иначе засчитывает вызов и пускает дальше."""
+    moment = common.now()
+    last = _last_used.get(user_id)
+    if last is not None and (moment - last).total_seconds() < _RATE_LIMIT_SECONDS:
+        return True
+    _last_used[user_id] = moment
+    return False
 
 
 def _parse_kind(text: str | None) -> str:
@@ -92,17 +123,28 @@ async def _demo_digest(ctx: Ctx, user_id: int) -> None:
 async def demo_remind(ctx: Ctx) -> None:
     if ctx.user_id is None:
         return
-    if ctx.user_id not in get_settings().admin_ids:
-        # Для обычного пользователя команды как будто не существует (reminders.md, «Демо»).
+    if ctx.is_group:
+        # Групповой чат (docs/spec/reminders.md, «Демо», допущение ревью 28.09): демо-напоминание
+        # несёт личные сроки вызвавшего — их не показываем всем в чате. Команда как будто не
+        # существует, тот же ответ, что и на любой другой непонятый текст.
         await fallback.show_unknown(ctx)
+        return
+    is_admin = ctx.user_id in get_settings().admin_ids
+
+    if _rate_limited(ctx.user_id):
+        # Временный текст техлида (28.09), ждёт UX — content/texts.yaml: demo.rate_limited.
+        await ctx.reply(t("demo.rate_limited", seconds=_RATE_LIMIT_SECONDS))
         return
 
     kind = _parse_kind(ctx.text)
+    if kind != digest.KIND and kind not in KINDS:
+        await ctx.reply(t("demo.usage", kinds=", ".join(KINDS)))
+        return
+
+    await ctx.track("demo_remind_used", {"kind": kind, "is_admin": is_admin})
+
     if kind == digest.KIND:
         await _demo_digest(ctx, ctx.user_id)
-        return
-    if kind not in KINDS:
-        await ctx.reply(t("demo.usage", kinds=", ".join(KINDS)))
         return
 
     reference = loader.get_reference()

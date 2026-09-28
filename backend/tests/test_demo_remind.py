@@ -4,11 +4,16 @@
 раньше не умел ловить команду с аргументом (`on_text` сравнивает текст целиком), и без этого
 демо не может показать напоминание нужного вида по команде `/demo_remind d7`.
 
+Решение 28.09 (открыть /demo_remind всем): команда больше не проверяет `ADMIN_IDS` на входе —
+`admin_ids` только помечает вызов в аналитике (`is_admin`). Взамен — простой лимит в памяти
+процесса, не чаще одного вызова в 10 секунд на пользователя (`demo._last_used`, сбрасывается
+между тестами фикстурой `fresh_demo_rate_limit` в conftest.py).
+
 Справочник — тестовые фикстуры (`backend/tests/fixtures/obligations.yaml`), «сейчас» и
 онбординг — как в test_task_chat (23.09.2026 12:00 МСК, среда).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -22,7 +27,7 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.models import Notification, UserObligation
 from app.core.texts import t
-from tests.test_task_chat import NOW, TODAY, USER_ID, events, labels, onboarded, press, write
+from tests.test_task_chat import NOW, TODAY, USER_ID, events, onboarded, press, write
 
 pytestmark = pytest.mark.usefixtures("fixture_reference")
 
@@ -40,11 +45,6 @@ def clock(monkeypatch):
 @pytest.fixture
 def admin(monkeypatch):
     monkeypatch.setattr(get_settings(), "admin_ids", [USER_ID])
-
-
-@pytest.fixture
-def no_support(monkeypatch):
-    monkeypatch.setattr(get_settings(), "support_url", "")
 
 
 @pytest.fixture
@@ -106,6 +106,10 @@ async def test_admin_gets_reminder_of_each_kind(fake_max, admin, no_bot_name, ki
         kind, "obligation", item_id, with_snooze=True
     )
     assert await _notifications() == []  # Notification не создаём (issue #72, п.1)
+    assert [name for name, _ in await events()][-1] == "demo_remind_used"
+    assert [props for name, props in await events() if name == "demo_remind_used"] == [
+        {"kind": kind, "is_admin": True}
+    ]
 
 
 async def test_demo_reminder_case_insensitive_kind(fake_max, admin, no_bot_name):
@@ -147,33 +151,129 @@ async def test_admin_with_only_done_obligation_gets_no_items(fake_max, admin):
     assert fake_max.sent[-1]["text"] == t("demo.no_items")
 
 
-# --- не-админ: неотличимо от «не понял» ----------------------------------------------------
+# --- не-админ: команда открыта всем (решение 28.09) ------------------------------------------
 
 
-async def test_non_admin_command_is_indistinguishable_from_unknown_text(
-    fake_max, no_bot_name, no_support
-):
-    """Не-админ: /demo_remind как будто не существует — ровно тот же ответ, что и на «привет»."""
+async def test_non_admin_gets_reminder_same_as_admin(fake_max, no_bot_name):
+    """Не-админ получает демо-напоминание — раньше вместо этого был экран 10 («не понял»)."""
     await onboarded()
-    await process_update(write("привет"), fake_max)
-    plain = fake_max.sent[-1]
+    item_id = await _obligation()
 
     await process_update(write("/demo_remind d7"), fake_max)
-    from_command = fake_max.sent[-1]
 
-    assert from_command == plain
-    assert from_command["text"] == t("fallback.unknown")
-    assert labels(from_command) == [[t("fallback.btn_about")]]
+    msg = fake_max.sent[-1]
+    expected_text, _ = _expected("d7")
+    assert msg["text"] == expected_text
+    assert msg["attachments"] == rem.reminder_keyboard(
+        "d7", "obligation", item_id, with_snooze=True
+    )
+    assert msg["text"] != t("fallback.unknown")
+    assert await _notifications() == []  # Notification не создаём (issue #72, п.1)
+    assert [props for name, props in await events() if name == "demo_remind_used"] == [
+        {"kind": "d7", "is_admin": False}
+    ]
 
 
-async def test_non_admin_with_calendar_still_gets_unknown(fake_max, no_bot_name, no_support):
-    """Не-админ с собранным календарём — тот же экран 10, календарь тут ни при чём."""
-    await onboarded()
-    await _obligation(user_id=USER_ID)
+async def test_non_admin_without_undone_obligations_gets_no_items(fake_max, no_bot_name):
+    """Без собранного календаря — прежний ответ `demo.no_items` (не экран 10)."""
+    await onboarded()  # календарь не собран — обязательств нет
 
     await process_update(write("/demo_remind d7"), fake_max)
+
+    assert fake_max.sent[-1]["text"] == t("demo.no_items")
+
+
+# --- групповой чат: демо несёт личные сроки, всем в чате их не показываем (ревью 28.09) --------
+
+
+def _write_in_group(text: str, *, chat_id: int = 7001) -> dict:
+    """Тот же апдейт, что `write()`, но из группового чата (`recipient.chat_type = "chat"`)."""
+    update = write(text)
+    update["message"]["recipient"] = dict(
+        update["message"]["recipient"], chat_type="chat", chat_id=chat_id
+    )
+    return update
+
+
+async def test_group_chat_command_is_unknown_even_for_admin(fake_max, admin, no_bot_name):
+    """Групповой чат: команда не выполняется даже для админа — ответ как на непонятый текст."""
+    await onboarded()
+    await _obligation()
+
+    await process_update(_write_in_group("/demo_remind d7"), fake_max)
+
+    msg = fake_max.sent[-1]
+    assert msg["text"] == t("fallback.unknown")
+    assert msg["chat_id"] == 7001  # ответ в чат, а не в личку автору
+    assert await _notifications() == []
+    assert [name for name, _ in await events() if name == "demo_remind_used"] == []
+
+
+async def test_group_chat_command_is_unknown_for_non_admin(fake_max, no_bot_name):
+    await onboarded()
+    await _obligation()
+
+    await process_update(_write_in_group("/demo_remind digest"), fake_max)
 
     assert fake_max.sent[-1]["text"] == t("fallback.unknown")
+
+
+# --- лимит спама: не чаще раза в 10 секунд на пользователя ------------------------------------
+
+
+async def test_rate_limit_blocks_immediate_repeat(fake_max, no_bot_name):
+    """Второй вызов сразу после первого (то же «сейчас», часы заморожены) — ответ про лимит."""
+    await onboarded()
+    await _obligation()
+
+    await process_update(write("/demo_remind d7"), fake_max)
+    first = fake_max.sent[-1]["text"]
+
+    await process_update(write("/demo_remind d1"), fake_max)
+    second = fake_max.sent[-1]
+
+    assert first != t("demo.rate_limited", seconds=10)
+    assert second["text"] == t("demo.rate_limited", seconds=10)
+    assert second["attachments"] is None
+    # Второй (заблокированный) вызов не пишет своё событие использования.
+    used = [name for name, _ in await events() if name == "demo_remind_used"]
+    assert used == ["demo_remind_used"]
+
+
+async def test_rate_limit_releases_after_window(fake_max, no_bot_name, monkeypatch):
+    """Через 10+ секунд лимит снят — команда снова отвечает напоминанием."""
+    await onboarded()
+    await _obligation()
+
+    await process_update(write("/demo_remind d7"), fake_max)
+
+    monkeypatch.setattr(common, "now", lambda: NOW + timedelta(seconds=11))
+    await process_update(write("/demo_remind d1"), fake_max)
+
+    msg = fake_max.sent[-1]
+    expected_text, _ = _expected("d1")
+    assert msg["text"] == expected_text
+
+
+def _write_as(user_id: int, text: str) -> dict:
+    """`write()` фиксирует `sender.user_id = USER_ID` — подменяем на другого пользователя."""
+    update = write(text)
+    update["message"]["sender"] = dict(update["message"]["sender"], user_id=user_id)
+    return update
+
+
+async def test_rate_limit_is_per_user(fake_max, no_bot_name):
+    """Лимит одного пользователя не блокирует другого."""
+    other_id = USER_ID + 1
+    await onboarded()
+    await onboarded(user_id=other_id)
+    await _obligation()
+    await _obligation(user_id=other_id)
+
+    await process_update(write("/demo_remind d7"), fake_max)
+    await process_update(_write_as(other_id, "/demo_remind d7"), fake_max)
+
+    assert fake_max.sent[-1]["text"] != t("demo.rate_limited", seconds=10)
 
 
 # --- кнопки демо-сообщения работают без Notification -----------------------------------------
