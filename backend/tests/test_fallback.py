@@ -111,26 +111,33 @@ async def test_unknown_callback_is_unknown(fake_max, no_bot_name, no_support):
     assert labels(fake_max.sent[-1]) == [[t("fallback.btn_about")]]
 
 
-async def test_third_unknown_in_a_row_offers_write_to_us(fake_max, no_bot_name, support):
+WRITE_BUTTON = {
+    "type": "callback",
+    "text": t("fallback.btn_write"),
+    "payload": "feedback:start:fallback",
+}
+
+
+async def test_third_unknown_in_a_row_offers_write_to_us(fake_max, no_bot_name, no_support):
+    """«Написать нам» — обращение в боте (D13): кнопка есть и без SUPPORT_URL."""
     await onboarded()
     for text in ("привет", "ага", "ну"):
         await process_update(write(text), fake_max)
 
     first, second, third = fake_max.sent
     assert first["text"] == second["text"] == t("fallback.unknown")
+    assert labels(first) == labels(second) == [[t("fallback.btn_about")]]
     assert third["text"] == f"{t('fallback.unknown')}\n{t('fallback.unknown_3')}"
     assert labels(third) == [[t("fallback.btn_about")], [t("fallback.btn_write")]]
-    assert buttons(third)[1][0] == {"type": "link", "text": t("fallback.btn_write"), "url": SUPPORT}
+    assert buttons(third)[1][0] == WRITE_BUTTON
 
 
-async def test_without_support_url_no_write_button(fake_max, no_bot_name, no_support):
+async def test_support_url_no_longer_turns_write_button_into_link(fake_max, no_bot_name, support):
     await onboarded()
-    for text in ("привет", "ага", "ну", "эх"):
+    for text in ("привет", "ага", "ну"):
         await process_update(write(text), fake_max)
 
-    for msg in fake_max.sent:
-        assert msg["text"] == t("fallback.unknown")
-        assert labels(msg) == [[t("fallback.btn_about")]]
+    assert buttons(fake_max.sent[-1])[1][0] == WRITE_BUTTON
 
 
 async def test_successful_action_resets_unknown_counter(fake_max, no_bot_name, support):

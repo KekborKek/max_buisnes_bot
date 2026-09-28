@@ -109,20 +109,21 @@ async def test_about_works_mid_onboarding(fake_max):
 # --- ссылки D13 ----------------------------------------------------------------------------
 
 
-async def test_privacy_line_and_write_button_shown_when_urls_set(fake_max, monkeypatch):
+async def test_privacy_line_shown_and_write_button_is_callback_when_urls_set(
+    fake_max, monkeypatch
+):
+    """D13 после «Написать нам в боте»: SUPPORT_URL ботом не используется, ссылки нет."""
     monkeypatch.setattr(get_settings(), "support_url", "https://max.ru/support")
     monkeypatch.setattr(get_settings(), "privacy_url", "https://max.ru/privacy")
 
     msg = await run(fake_max, write("/about"))
 
     assert t("about.privacy", privacy_url="https://max.ru/privacy") in msg["text"]
-    write_buttons = [b for row in keyboard(msg) for b in row if b.get("type") == "link"]
-    assert write_buttons == [
-        {"type": "link", "text": t("about.btn_write"), "url": "https://max.ru/support"}
-    ]
+    assert all(b.get("type") != "link" for row in keyboard(msg) for b in row)
+    assert payloads(msg) == [["start:check", "feedback:start:about"]]
 
 
-async def test_privacy_line_and_write_button_hidden_without_urls(fake_max, monkeypatch):
+async def test_privacy_line_hidden_write_button_shown_without_urls(fake_max, monkeypatch):
     monkeypatch.setattr(get_settings(), "support_url", "")
     monkeypatch.setattr(get_settings(), "privacy_url", "")
 
@@ -130,6 +131,10 @@ async def test_privacy_line_and_write_button_hidden_without_urls(fake_max, monke
 
     assert "Как мы обрабатываем данные" not in msg["text"]
     assert all(b.get("type") != "link" for row in keyboard(msg) for b in row)
+    write_buttons = [b for row in keyboard(msg) for b in row if b["text"] == t("about.btn_write")]
+    assert write_buttons == [
+        {"type": "callback", "text": t("about.btn_write"), "payload": "feedback:start:about"}
+    ]
 
 
 # --- вторая кнопка: check или open -----------------------------------------------------------
@@ -138,7 +143,7 @@ async def test_privacy_line_and_write_button_hidden_without_urls(fake_max, monke
 async def test_calendar_not_built_shows_check_button(fake_max):
     msg = await run(fake_max, write("/about"))
 
-    assert payloads(msg) == [["start:check"]]
+    assert payloads(msg) == [["start:check", "feedback:start:about"]]
 
 
 async def test_calendar_built_shows_open_app_button(fake_max, monkeypatch):
@@ -148,7 +153,8 @@ async def test_calendar_built_shows_open_app_button(fake_max, monkeypatch):
 
     msg = await run(fake_max, write("/about"))
 
-    [[open_btn]] = keyboard(msg)
+    [[open_btn, write_btn]] = keyboard(msg)
+    assert write_btn["payload"] == "feedback:start:about"
     assert open_btn == {
         "type": "open_app",
         "text": t("about.btn_open"),
@@ -156,26 +162,17 @@ async def test_calendar_built_shows_open_app_button(fake_max, monkeypatch):
     }
 
 
-async def test_calendar_built_without_bot_username_hides_open_app(fake_max, monkeypatch):
+async def test_calendar_built_without_bot_username_shows_only_write_button(
+    fake_max, monkeypatch
+):
+    """Без MAX_BOT_USERNAME «Открыть календарь» нет, но «Написать нам» остаётся."""
     monkeypatch.setattr(get_settings(), "max_bot_username", "")
     await run(fake_max, press("start:check"))
     await mark_built()
 
     msg = await run(fake_max, write("/about"))
 
-    assert keyboard(msg) == []
-
-
-async def test_calendar_built_with_support_url_shows_only_write_button(fake_max, monkeypatch):
-    """Без MAX_BOT_USERNAME первой кнопки нет, но «Написать нам» остаётся."""
-    monkeypatch.setattr(get_settings(), "max_bot_username", "")
-    monkeypatch.setattr(get_settings(), "support_url", "https://max.ru/support")
-    await run(fake_max, press("start:check"))
-    await mark_built()
-
-    msg = await run(fake_max, write("/about"))
-
-    assert payloads(msg) == [[None]]  # единственная кнопка — link, у неё нет payload
+    assert payloads(msg) == [["feedback:start:about"]]
 
 
 # --- справочник недоступен -------------------------------------------------------------------
@@ -197,6 +194,6 @@ async def test_reference_unavailable_shows_body_without_date_no_error(
     assert msg["text"] != t("common.error")
     assert "нет файла obligations.yaml" in caplog.text
     # кнопка всё равно есть: экран не переходит в состояние ошибки
-    assert payloads(msg) == [["start:check"]]
+    assert payloads(msg) == [["start:check", "feedback:start:about"]]
 
     monkeypatch.setattr(loader, "get_reference", real)

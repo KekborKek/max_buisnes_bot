@@ -1,6 +1,7 @@
 """Контекст одного апдейта: кто написал, что прислал, как ответить, какое состояние диалога."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +35,7 @@ class Ctx:
     callback_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     outbox: list[dict] = field(default_factory=list)  # см. reply/send_outbox
+    deferred: list[Callable[[], Awaitable[None]]] = field(default_factory=list)  # см. defer
 
     @classmethod
     def from_update(cls, update: dict, session: AsyncSession, max_client: MaxClient) -> "Ctx":
@@ -118,8 +120,27 @@ class Ctx:
         self.outbox.append({"text": text, "attachments": attachments})
 
     def drop_outbox(self) -> None:
-        """Выбрасывает неотправленное: транзакция откатилась, сообщать не о чем."""
+        """Выбрасывает неотправленное и отложенное: транзакция откатилась, сообщать не о чем."""
         self.outbox.clear()
+        self.deferred.clear()
+
+    def defer(self, job: Callable[[], Awaitable[None]]) -> None:
+        """Работа после коммита и после отправки ответа пользователю — сеть вне транзакции.
+
+        Для сообщений не автору апдейта (пересылка обращения админам, handlers/feedback.py):
+        `reply` шлёт только в текущий чат. Своей сессии у задачи нет — нужна база, открывает
+        свою. Транзакция откатилась — отложенное выбрасывается вместе с ответами (`drop_outbox`).
+        """
+        self.deferred.append(job)
+
+    async def run_deferred(self) -> None:
+        """Выполняет отложенное по очереди; ошибка одной задачи не мешает остальным."""
+        jobs, self.deferred = self.deferred, []
+        for job in jobs:
+            try:
+                await job()
+            except Exception:
+                log.exception("отложенная задача упала для %s", self.update_type)
 
     async def send_outbox(self) -> int:
         """Отправляет накопленное. Вызывать только когда транзакция уже закрыта.

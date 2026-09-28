@@ -7,6 +7,7 @@ from app.bot.handlers import (  # noqa: F401
     digest,
     done,
     fallback,
+    feedback,
     howto,
     nds_answer,
     onboarding,
