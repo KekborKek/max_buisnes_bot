@@ -25,7 +25,16 @@ def _warn_dev_initdata_once() -> None:
     )
 
 
-async def current_launch(x_max_init_data: str | None = Header(default=None)) -> dict:
+INIT_DATA_HEADER_DESCRIPTION = (
+    "Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`). "
+    "Бэкенд проверяет подпись токеном бота и берёт из них пользователя. "
+    "Без заголовка или с неверной подписью — 401."
+)
+
+
+async def current_launch(
+    x_max_init_data: str | None = Header(default=None, description=INIT_DATA_HEADER_DESCRIPTION),
+) -> dict:
     s = get_settings()
     # Флаг не зависит от наличия токена: иначе dev-режим ломался бы в час, когда
     # MAX_BOT_TOKEN попадёт в .env (issue #8). APP_ENV=prod запрещает его всегда.
