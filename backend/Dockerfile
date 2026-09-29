@@ -1,11 +1,14 @@
 # Сборка из корня репозитория: docker compose build backend
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_DEFAULT_TIMEOUT=60 PIP_RETRIES=10
+# Индекс пакетов. При нестабильном доступе к PyPI — зеркало через PIP_INDEX_URL в .env
+ARG PIP_INDEX_URL=https://pypi.org/simple
 WORKDIR /srv/backend
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install --index-url "$PIP_INDEX_URL" -r requirements.txt
 
 COPY backend/app ./app
 COPY backend/scripts ./scripts

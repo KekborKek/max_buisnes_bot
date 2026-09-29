@@ -1,7 +1,13 @@
 openapi: 3.1.0
 info:
   title: MAX Business Bot API
+  description: API мини-приложения «Календарь обязательств ИП» для MAX. Авторизация
+    — заголовок `X-Max-Init-Data` с подписанными данными запуска MAX Bridge; логинов
+    и паролей нет. Обязательные проверки — DATA-API.yaml в корне репозитория.
   version: 0.1.0
+servers:
+- url: https://vse-uspel.ru
+  description: Прод (адрес из DATA-API.yaml)
 paths:
   /api/calendar:
     get:
@@ -35,7 +41,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -52,6 +64,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/items/{item_type}/{item_id}:
     get:
       tags:
@@ -81,7 +99,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -97,6 +121,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/items/{item_type}/{item_id}/done:
     post:
       tags:
@@ -126,7 +156,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -142,6 +178,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
     delete:
       tags:
       - miniapp
@@ -170,7 +212,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -186,6 +234,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/obligations/{item_id}/report:
     post:
       tags:
@@ -206,7 +260,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '204':
           description: Successful Response
@@ -218,6 +278,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/tasks:
     post:
       tags:
@@ -232,7 +298,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       requestBody:
         required: true
         content:
@@ -252,6 +324,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/tasks/{task_id}:
     patch:
       tags:
@@ -272,7 +350,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       requestBody:
         required: true
         content:
@@ -294,6 +378,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
     delete:
       tags:
       - miniapp
@@ -313,7 +403,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '204':
           description: Successful Response
@@ -325,6 +421,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/calendar/rebuild:
     post:
       tags:
@@ -341,7 +443,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -360,6 +468,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/profile/settings:
     put:
       tags:
@@ -379,7 +493,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       requestBody:
         required: true
         content:
@@ -405,6 +525,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/shares:
     post:
       tags:
@@ -428,7 +554,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       requestBody:
         required: true
         content:
@@ -448,6 +580,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/shares/{code}:
     get:
       tags:
@@ -468,7 +606,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -484,6 +628,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/shares/{code}/accept:
     post:
       tags:
@@ -512,7 +662,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -528,6 +684,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/ics/link:
     get:
       tags:
@@ -542,7 +704,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -558,6 +726,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/ics/{token}.ics:
     get:
       tags:
@@ -614,7 +788,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       responses:
         '200':
           description: Successful Response
@@ -628,6 +808,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /api/events:
     post:
       tags:
@@ -642,7 +828,13 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
+          description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+            Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без
+            заголовка или с неверной подписью — 401.
           title: X-Max-Init-Data
+        description: Подписанные данные запуска мини-приложения из MAX Bridge (`window.WebApp.initData`).
+          Бэкенд проверяет подпись токеном бота и берёт из них пользователя. Без заголовка
+          или с неверной подписью — 401.
       requestBody:
         required: true
         content:
@@ -658,6 +850,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Нет заголовка X-Max-Init-Data или неверная подпись initData
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
   /health:
     get:
       tags:
@@ -684,6 +882,8 @@ paths:
                 additionalProperties: true
                 type: object
                 title: Response Health Health Get
+        '503':
+          description: База данных не отвечает (status и db — error)
 components:
   schemas:
     CalendarItem:
@@ -1316,3 +1516,12 @@ components:
       - msg
       - type
       title: ValidationError
+    ErrorDetail:
+      type: object
+      title: ErrorDetail
+      required:
+      - detail
+      properties:
+        detail:
+          type: string
+          title: Detail

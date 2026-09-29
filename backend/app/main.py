@@ -2,12 +2,14 @@
 
 import asyncio
 import contextlib
+import copy
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, Response
 from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text as sql_text
 
@@ -74,9 +76,59 @@ async def lifespan(app: FastAPI):
         await app.state.max_client.close()
 
 
-app = FastAPI(title="MAX Business Bot API", version="0.1.0", lifespan=lifespan, docs_url=None)
+API_DESCRIPTION = (
+    "API мини-приложения «Календарь обязательств ИП» для MAX. Авторизация — заголовок "
+    "`X-Max-Init-Data` с подписанными данными запуска MAX Bridge; логинов и паролей нет. "
+    "Обязательные проверки — DATA-API.yaml в корне репозитория."
+)
+
+app = FastAPI(
+    title="MAX Business Bot API",
+    version="0.1.0",
+    description=API_DESCRIPTION,
+    lifespan=lifespan,
+    docs_url=None,
+)
 app.include_router(webhook_router)
 app.include_router(api_router)
+
+INIT_DATA_HEADER = "x-max-init-data"
+UNAUTHORIZED_RESPONSE = {
+    "description": "Нет заголовка X-Max-Init-Data или неверная подпись initData",
+    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorDetail"}}},
+}
+ERROR_DETAIL_SCHEMA = {
+    "type": "object",
+    "title": "ErrorDetail",
+    "required": ["detail"],
+    "properties": {"detail": {"type": "string", "title": "Detail"}},
+}
+
+
+def custom_openapi() -> dict:
+    """Схема FastAPI плюс ответ 401 у всех операций с initData.
+
+    401 бросает зависимость current_launch, а FastAPI не переносит ответы зависимостей
+    в схему — без этого контракт расходится с DATA-API.yaml (проверка me-unauthorized).
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title, version=app.version, description=app.description, routes=app.routes
+    )
+    for operations in schema.get("paths", {}).values():
+        for operation in operations.values():
+            params = operation.get("parameters", [])
+            if any(p.get("in") == "header" and p.get("name") == INIT_DATA_HEADER for p in params):
+                operation.setdefault("responses", {})["401"] = copy.deepcopy(UNAUTHORIZED_RESPONSE)
+    schema.setdefault("components", {}).setdefault("schemas", {})["ErrorDetail"] = (
+        ERROR_DETAIL_SCHEMA
+    )
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 
 @app.get("/docs", include_in_schema=False)
@@ -93,7 +145,12 @@ async def swagger_ui_html() -> HTMLResponse:
     )
 
 
-@app.get("/health", tags=["service"], summary="Проверка, что сервис жив")
+@app.get(
+    "/health",
+    tags=["service"],
+    summary="Проверка, что сервис жив",
+    responses={503: {"description": "База данных не отвечает (status и db — error)"}},
+)
 async def health(response: Response) -> dict:
     """БД проверяем настоящим запросом, а не константами (issue #21): Docker HEALTHCHECK
     ходит именно сюда, и без этой проверки контейнер с мёртвой базой считается здоровым.
