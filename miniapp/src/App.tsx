@@ -20,6 +20,7 @@ import {
 } from "./router";
 import { CardScreen } from "./screens/CardScreen";
 import { GateScreen } from "./screens/GateScreen";
+import { IcsScreen } from "./screens/IcsScreen";
 import { type CalendarState, ListScreen } from "./screens/ListScreen";
 import { MonthScreen } from "./screens/MonthScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
@@ -367,6 +368,7 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
           onProfile={onProfile}
           onRebuilt={rebuilt}
           onSettings={() => nav.push({ name: "settings", source: "profile" })}
+          onPhoneCalendar={() => nav.push({ name: "ics" })}
         />
       );
       break;
@@ -374,6 +376,9 @@ function CalendarApp({ source, profile, target, draft, draftStale, onProfile }: 
       screen = (
         <SettingsScreen source={source} route={route} profile={profile} onSaved={settingsSaved} />
       );
+      break;
+    case "ics":
+      screen = <IcsScreen source={source} route={route} />;
       break;
     case "task":
       screen = (

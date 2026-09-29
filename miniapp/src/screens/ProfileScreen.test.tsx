@@ -35,6 +35,7 @@ function renderProfile() {
   const onProfile = vi.fn();
   const onRebuilt = vi.fn();
   const onSettings = vi.fn();
+  const onPhoneCalendar = vi.fn();
   render(
     <ToastProvider>
       <ProfileScreen
@@ -43,10 +44,11 @@ function renderProfile() {
         onProfile={onProfile}
         onRebuilt={onRebuilt}
         onSettings={onSettings}
+        onPhoneCalendar={onPhoneCalendar}
       />
     </ToastProvider>,
   );
-  return { ...fake, onProfile, onRebuilt, onSettings };
+  return { ...fake, onProfile, onRebuilt, onSettings, onPhoneCalendar };
 }
 
 async function renderReady(profile: Profile = FRESH) {
@@ -179,6 +181,32 @@ test("строка «Настройки» есть и пока профиль г
   expect(screen.getByRole("button", { name: texts.profile.settings })).toBeInTheDocument();
 });
 
+// --- Строка «Календарь телефона» — под «Настройки» (решение 29.09, задача UI-EXPORT) -----------
+
+test("строка «Календарь телефона» после строки «Настройки» ведёт на отдельный экран", async () => {
+  const { onPhoneCalendar } = await renderReady();
+  const settings = screen.getByRole("button", { name: texts.profile.settings });
+  const entry = screen.getByRole("button", { name: texts.profile.phoneCalendar });
+  expect(settings.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await userEvent.click(entry);
+  expect(onPhoneCalendar).toHaveBeenCalledOnce();
+});
+
+test("строка «Календарь телефона» открывается с клавиатуры: Enter и пробел", async () => {
+  const { onPhoneCalendar } = await renderReady();
+  const entry = screen.getByRole("button", { name: texts.profile.phoneCalendar });
+  entry.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(onPhoneCalendar).toHaveBeenCalledTimes(1);
+  await userEvent.keyboard(" ");
+  expect(onPhoneCalendar).toHaveBeenCalledTimes(2);
+});
+
+test("строка «Календарь телефона» есть и пока профиль грузится", () => {
+  renderProfile();
+  expect(screen.getByRole("button", { name: texts.profile.phoneCalendar })).toBeInTheDocument();
+});
+
 test("решение 29.09: на профиле нет темы, «Напоминаний» и календаря телефона; ленту не запрашивает", async () => {
   const { source } = await renderReady();
   expect(screen.getByRole("button", { name: "Изменить данные" })).toBeInTheDocument();
@@ -187,9 +215,9 @@ test("решение 29.09: на профиле нет темы, «Напоми�
   expect(screen.queryByRole("group", { name: texts.settings.theme })).not.toBeInTheDocument();
   expect(screen.queryByText(texts.settings.theme)).not.toBeInTheDocument();
   expect(screen.queryByText("Напоминания")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: texts.settings.ics })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: texts.settings.icsCopy })).not.toBeInTheDocument();
-  expect(screen.queryByText(texts.settings.icsHint)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.ics.onceButton })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: texts.ics.subscribeButton })).not.toBeInTheDocument();
+  expect(screen.queryByText(texts.ics.onceHint)).not.toBeInTheDocument();
   expect(source.icsLink).not.toHaveBeenCalled();
 });
 
