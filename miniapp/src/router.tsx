@@ -22,7 +22,10 @@ export type Route =
   /** Экран 19 — профиль и «Пересобрать», по нажатию на шапку 14 и 15. */
   | { name: "profile" }
   /** Экран 13 — настройки напоминаний: со строки экрана 19 или из бота (`start_param=settings`). */
-  | { name: "settings"; source: SettingsSource };
+  | { name: "settings"; source: SettingsSource }
+  /** Экран «Календарь телефона» — со строки экрана 19, «Назад» ведёт обратно в профиль (решение
+   * человека 29.09, вынесено из экрана «Настройки»). */
+  | { name: "ics" };
 
 export type SettingsSource = "profile" | "bot";
 

@@ -495,10 +495,9 @@ test("?start_param=settings открывает экран «Настройки»
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
   expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
-  // Все три секции экрана «Настройки» (29.09): напоминания, тема, календарь телефона.
+  // Обе секции экрана «Настройки» (29.09): напоминания, тема (календарь телефона — отдельный экран).
   expect(screen.getByText(texts.settings.sectionReminders)).toBeInTheDocument();
   expect(screen.getByRole("group", { name: texts.settings.theme })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: texts.settings.ics })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: texts.settings.save })).toBeDisabled();
   expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "bot" });
 
@@ -525,6 +524,24 @@ test("профиль → «Настройки» → «Назад» ведёт о
   // Экран 19 при открытии, как всегда, запрашивает профиль заново.
   await act(async () => lastMe().resolve(makeMe(true)));
   expect(screen.getByRole("button", { name: texts.profile.rebuild })).toBeInTheDocument();
+});
+
+// --- Экран «Календарь телефона»: со строки экрана 19 (задача UI-EXPORT, 29.09) -----------------
+
+test("профиль → «Календарь телефона» → «Назад» ведёт обратно в профиль", async () => {
+  const { source, lastMe, lastCalendar } = fakeSource();
+  render(<App source={source} />);
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await act(async () => lastCalendar().resolve([makeItem({ title: "Аванс" })]));
+  await userEvent.click(screen.getByRole("button", { name: HEADER }));
+  await act(async () => lastMe().resolve(makeMe(true)));
+  await userEvent.click(screen.getByRole("button", { name: texts.profile.phoneCalendar }));
+  expect(screen.getByText(texts.ics.title)).toBeInTheDocument();
+  expect(source.track).toHaveBeenCalledWith("ics_screen_opened");
+
+  await userEvent.click(screen.getByRole("button", { name: texts.nav.back }));
+  expect(screen.getByText(texts.profile.disclaimer)).toBeInTheDocument();
+  expect(screen.queryByText(texts.ics.sectionOnce)).not.toBeInTheDocument();
 });
 
 test("из бота: сохранение возвращает на список 14 с тостом «Сохранено»", async () => {

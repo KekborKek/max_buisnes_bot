@@ -1,6 +1,7 @@
 // Экран 19. Профиль и «Пересобрать календарь» (docs/screens/should-12-13-19.md).
-// Решение человека 29.09: тема, напоминания и календарь телефона — на экране «Настройки» (13),
-// здесь только характеристики, «Изменить данные», «Пересобрать календарь» и строка «Настройки».
+// Решение человека 29.09: тема и напоминания — на экране «Настройки» (13); здесь — характеристики,
+// «Изменить данные», «Пересобрать календарь» и строки-переходы «Настройки» и «Календарь телефона»
+// (второй экран вынесен из «Настроек» отдельно, тем же решением, задача UI-EXPORT).
 // Профиль при открытии запрашивается заново: его могли поменять в боте («Изменить»).
 // calendar_built пишет бэкенд в POST /api/calendar/rebuild; открытие экрана события не шлёт.
 import { Button, CellList, CellSimple, Typography } from "@maxhub/max-ui";
@@ -40,6 +41,8 @@ interface Props {
   onRebuilt: (result: RebuildResult) => void;
   /** Строка «Настройки» — переход на экран 13 (#86, решение 29.09). */
   onSettings: () => void;
+  /** Строка «Календарь телефона» — переход на отдельный экран (решение 29.09, задача UI-EXPORT). */
+  onPhoneCalendar: () => void;
 }
 
 function ProfileRows({ profile }: { profile: Profile }) {
@@ -72,29 +75,52 @@ function ProfileRows({ profile }: { profile: Profile }) {
   );
 }
 
-/** Строка-вход на экран «Настройки» (13): напоминания, тема, календарь телефона (решение 29.09). */
-function SettingsEntry({ onOpen }: { onOpen: () => void }) {
+/** Строка-переход: общая клавиатурная логика для «Настройки» и «Календарь телефона» (решение
+ * 29.09) — Enter/пробел, как обычная кнопка-ссылка. */
+function EntryRow({ title, onOpen }: { title: string; onOpen: () => void }) {
+  return (
+    <CellSimple
+      role="button"
+      tabIndex={0}
+      className="settings-entry"
+      showChevron
+      title={title}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    />
+  );
+}
+
+/** Строки-входа: «Настройки» (13: напоминания, тема) и «Календарь телефона» (отдельный экран,
+ * решение 29.09) — обе видны и без загруженного профиля. */
+function SettingsEntry({
+  onSettings,
+  onPhoneCalendar,
+}: {
+  onSettings: () => void;
+  onPhoneCalendar: () => void;
+}) {
   return (
     <CellList mode="island">
-      <CellSimple
-        role="button"
-        tabIndex={0}
-        className="settings-entry"
-        showChevron
-        title={texts.profile.settings}
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen();
-          }
-        }}
-      />
+      <EntryRow title={texts.profile.settings} onOpen={onSettings} />
+      <EntryRow title={texts.profile.phoneCalendar} onOpen={onPhoneCalendar} />
     </CellList>
   );
 }
 
-export function ProfileScreen({ source, initial, onProfile, onRebuilt, onSettings }: Props) {
+export function ProfileScreen({
+  source,
+  initial,
+  onProfile,
+  onRebuilt,
+  onSettings,
+  onPhoneCalendar,
+}: Props) {
   const toast = useToast();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -178,8 +204,8 @@ export function ProfileScreen({ source, initial, onProfile, onRebuilt, onSetting
         <ErrorBanner kind={rebuildError} onRetry={rebuild} retrying={rebuilding} />
       )}
       {profile ? <ProfileRows profile={profile} /> : <Skeleton />}
-      {/* Настройки не зависят от загрузки профиля: тема и .ics доступны и при ошибке. */}
-      <SettingsEntry onOpen={onSettings} />
+      {/* Настройки и календарь телефона не зависят от загрузки профиля: доступны и при ошибке. */}
+      <SettingsEntry onSettings={onSettings} onPhoneCalendar={onPhoneCalendar} />
       <Typography.Label className="profile-note">{texts.profile.disclaimer}</Typography.Label>
       {profile && (
         <div className="profile-actions">
