@@ -107,6 +107,9 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<SaveError | null>(null);
+  // Список поясов длинный — свёрнут по умолчанию, виден только выбранный (задача UI-TZ-COLLAPSE).
+  // Выбор из развёрнутого списка список не сворачивает обратно — так проще.
+  const [zonesExpanded, setZonesExpanded] = useState(false);
   // Защита от второго запроса, пока первый в пути, — не дожидаясь перерисовки кнопки.
   const inFlight = useRef(false);
   // Ушли с экрана («Назад») до ответа — профиль в оболочку всё равно, а «Назад» и тост — нет:
@@ -242,29 +245,44 @@ export function SettingsScreen({ source, route, profile, onSaved }: Props) {
         </div>
       </CellList>
 
-      <CellList
-        mode="island"
-        role="radiogroup"
-        aria-label={texts.settings.timezone}
-        aria-describedby={zoneKnown ? undefined : "settings-timezone-hint"}
-        header={<CellHeader>{texts.settings.timezone}</CellHeader>}
-      >
-        {zones.map((zone) => (
-          <CellSimple
-            key={zone}
-            as="label"
-            before={
-              <Radio
-                name="settings-timezone"
-                checked={values.timezone === zone}
-                disabled={saving}
-                onChange={() => set({ timezone: zone })}
-              />
-            }
-            title={texts.timezone[zone] ?? zone}
-          />
-        ))}
-      </CellList>
+      <div className="list-section">
+        <CellList
+          mode="island"
+          role="radiogroup"
+          aria-label={texts.settings.timezone}
+          aria-describedby={zoneKnown ? undefined : "settings-timezone-hint"}
+          header={<CellHeader>{texts.settings.timezone}</CellHeader>}
+        >
+          {/* Свёрнуто — видна только текущая строка (подпись как в развёрнутом списке); полный
+              список — по кнопке «Показать все пояса» ниже. */}
+          {(zonesExpanded ? zones : [values.timezone]).map((zone) => (
+            <CellSimple
+              key={zone}
+              as="label"
+              before={
+                <Radio
+                  name="settings-timezone"
+                  checked={values.timezone === zone}
+                  disabled={saving}
+                  onChange={() => set({ timezone: zone })}
+                />
+              }
+              title={texts.timezone[zone] ?? zone}
+            />
+          ))}
+        </CellList>
+        <div className="list-more">
+          <Button
+            size="medium"
+            variant="secondary"
+            stretched
+            aria-expanded={zonesExpanded}
+            onClick={() => setZonesExpanded((v) => !v)}
+          >
+            {zonesExpanded ? texts.settings.timezoneCollapse : texts.settings.timezoneShowAll}
+          </Button>
+        </div>
+      </div>
       {!zoneKnown && (
         <Typography.Label id="settings-timezone-hint" className="field-error">
           {texts.settings.timezoneUnknown}

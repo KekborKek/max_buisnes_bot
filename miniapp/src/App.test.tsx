@@ -572,6 +572,7 @@ test("экран 19 → «Настройки» → смена пояса → н�
   expect(screen.getByText(texts.settings.title)).toBeInTheDocument();
   expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "profile" });
 
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.timezoneShowAll }));
   await userEvent.click(screen.getByRole("radio", { name: "Владивосток (UTC+10)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   const saved = { ...makeMe(true).profile!, timezone: "Asia/Vladivostok" };
@@ -601,6 +602,7 @@ test("смена пояса сбрасывает кеш месяцев: сетк
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
   await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.timezoneShowAll }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   await act(async () =>
@@ -640,6 +642,7 @@ test("«Назад» с экрана 13 до ответа сохранения: 
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
   await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.timezoneShowAll }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
 
@@ -663,6 +666,7 @@ test("смена пояса после ошибки календаря: спис
   render(<App source={source} />);
   await act(async () => lastMe().resolve(makeMe(true)));
   await act(async () => lastCalendar().reject(new ApiError("network")));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.timezoneShowAll }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   await act(async () =>
@@ -681,6 +685,7 @@ test("экран 19: если профиль не обновился, после
   await userEvent.click(screen.getByRole("button", { name: HEADER }));
   await act(async () => lastMe().resolve(makeMe(true)));
   await userEvent.click(screen.getByRole("button", { name: texts.profile.settings }));
+  await userEvent.click(screen.getByRole("button", { name: texts.settings.timezoneShowAll }));
   await userEvent.click(screen.getByRole("radio", { name: "Омск (UTC+6)" }));
   await userEvent.click(screen.getByRole("button", { name: texts.settings.save }));
   await act(async () =>

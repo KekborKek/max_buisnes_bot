@@ -66,6 +66,9 @@ const hourBtn = (hour: number) =>
   screen.getByRole("button", { name: texts.settings.hourOption(hour) });
 const zone = (label: string) => screen.getByRole("radio", { name: label });
 const saveBtn = () => screen.getByRole("button", { name: texts.settings.save });
+const showAllZonesBtn = () => screen.getByRole("button", { name: texts.settings.timezoneShowAll });
+const collapseZonesBtn = () =>
+  screen.getByRole("button", { name: texts.settings.timezoneCollapse });
 
 test("начальные значения — из профиля; открытие шлёт settings_opened", () => {
   const { source } = renderSettings(CUSTOM, "bot");
@@ -76,9 +79,26 @@ test("начальные значения — из профиля; открыт�
   expect(hourBtn(10)).toHaveAttribute("aria-pressed", "false");
   expect(zone("Екатеринбург (UTC+5)")).toBeChecked();
   expect(sw(texts.settings.digest)).not.toBeChecked();
-  // Пояса — весь список экрана 2.
-  expect(screen.getAllByRole("radio")).toHaveLength(Object.keys(texts.timezone).length);
   expect(source.track).toHaveBeenCalledWith("settings_opened", { source: "bot" });
+});
+
+test("список поясов свёрнут по умолчанию — виден только выбранный; разворот и «Свернуть» обратно", async () => {
+  renderSettings(CUSTOM, "bot");
+  // Свёрнуто: одна строка — текущий пояс, кнопка «Показать все пояса».
+  expect(screen.getAllByRole("radio")).toHaveLength(1);
+  expect(zone("Екатеринбург (UTC+5)")).toBeChecked();
+  expect(showAllZonesBtn()).toHaveAttribute("aria-expanded", "false");
+
+  // Разворот — весь список экрана 2; выбранный пояс остаётся отмеченным.
+  await userEvent.click(showAllZonesBtn());
+  expect(screen.getAllByRole("radio")).toHaveLength(Object.keys(texts.timezone).length);
+  expect(zone("Екатеринбург (UTC+5)")).toBeChecked();
+  expect(collapseZonesBtn()).toHaveAttribute("aria-expanded", "true");
+
+  // «Свернуть» — обратно одна строка.
+  await userEvent.click(collapseZonesBtn());
+  expect(screen.getAllByRole("radio")).toHaveLength(1);
+  expect(showAllZonesBtn()).toHaveAttribute("aria-expanded", "false");
 });
 
 test("профиль без reminders (бэкенд до #85) — умолчания", () => {
@@ -125,6 +145,7 @@ test("сохранение: PUT с полным телом, профиль — �
   await userEvent.click(sw(texts.settings.d30));
   await userEvent.click(sw(texts.settings.d7));
   await userEvent.click(hourBtn(9));
+  await userEvent.click(showAllZonesBtn());
   await userEvent.click(zone("Владивосток (UTC+10)"));
   await userEvent.click(sw(texts.settings.digest));
   await userEvent.click(saveBtn());
@@ -161,6 +182,7 @@ test("двойное нажатие «Сохранить» — один запр
 test("ошибка сети: плашка, значения формы на месте, «Повторить» отправляет снова", async () => {
   const { source, last, nav, onSaved } = renderSettings();
   await userEvent.click(hourBtn(10));
+  await userEvent.click(showAllZonesBtn());
   await userEvent.click(zone("Омск (UTC+6)"));
   await userEvent.click(saveBtn());
   await act(async () => last("saveSettings").reject(new ApiError("network")));
@@ -219,6 +241,8 @@ test("401 — как везде: common.reopen без «Повторить»", a
 
 test("пояс вне списка экрана 2: строка с идентификатором, подсказка, «Сохранить» — после выбора из списка", async () => {
   const { source } = renderSettings({ ...CUSTOM, timezone: "Europe/Berlin" });
+  // Свёрнуто: единственная видимая строка — неизвестный пояс профиля.
+  expect(screen.getAllByRole("radio")).toHaveLength(1);
   expect(zone("Europe/Berlin")).toBeChecked();
   expect(screen.getByText(texts.settings.timezoneUnknown)).toBeInTheDocument();
   expect(saveBtn()).toBeDisabled();
@@ -229,6 +253,7 @@ test("пояс вне списка экрана 2: строка с иденти�
   await userEvent.click(saveBtn());
   expect(source.saveSettings).not.toHaveBeenCalled();
 
+  await userEvent.click(showAllZonesBtn());
   await userEvent.click(zone("Москва, UTC+3"));
   expect(screen.queryByText(texts.settings.timezoneUnknown)).not.toBeInTheDocument();
   expect(saveBtn()).toBeEnabled();
