@@ -45,7 +45,8 @@ body {
   padding: 12px 0 calc(16px + env(safe-area-inset-bottom));
 }
 
-/* Место под закреплённую кнопку «+ Задача». */
+/* Место под закреплённую кнопку «+ Задача»: высота .bottom-bar (56px кнопки + отступы) плюс
+   safe-area — иначе последняя строка списка и «Свернуть» прячутся под панелью. */
 .screen--with-bar {
   padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }
@@ -338,7 +339,11 @@ body {
   padding: 8px 8px 0;
 }
 
-/* Закреплённая внизу кнопка «+ Задача». */
+/* Закреплённая внизу кнопка «+ Задача». Фон — непрозрачный: `--background-secondary` MAX UI
+   полупрозрачный, из-за чего при прокрутке строки списка и «Показать ещё» просвечивали сквозь
+   панель и наслаивались на подпись кнопки (баг с прода). `--page-bg` — тот же непрозрачный цвет
+   фона страницы (см. комментарий вверху файла), верно и в светлой/тёмной теме, и при ручном
+   выборе темы через `data-theme` на <html>. Тонкая граница сверху отделяет панель от списка. */
 .bottom-bar {
   position: fixed;
   right: 0;
@@ -346,7 +351,8 @@ body {
   left: 0;
   padding: 12px calc(16px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
     calc(16px + env(safe-area-inset-left));
-  background: var(--background-secondary);
+  background: var(--page-bg);
+  border-top: 1px solid var(--divider-primary);
 }
 
 /* Тост (D7): один на приложение, над закреплённой кнопкой. */
