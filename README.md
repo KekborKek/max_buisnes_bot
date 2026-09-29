@@ -177,7 +177,7 @@ docker compose --profile prod exec -T backend python scripts/webhook.py set   # 
 | Docker | Docker Engine 24+ с Compose v2 или Docker Desktop (Mac, Windows, Linux; x86_64 и arm64) |
 | Сеть при сборке | Доступ к Docker Hub, PyPI и npm (или зеркало PyPI через `PIP_INDEX_URL`) |
 | Свободные порты | 8000 и 8080 (меняются через `API_PORT`, `MINIAPP_PORT` в `.env`) |
-| Ресурсы | Прод работает на 1 vCPU и 896 МБ RAM; образы: бэкенд ~270 МБ, мини-приложение ~75 МБ |
+| Образы | Бэкенд ~270 МБ, мини-приложение ~75 МБ |
 | Хранилище | SQLite в томе Docker `app-data` (`/srv/data/app.db` в контейнере) |
 | Прод | Профиль `prod`: + Caddy, порты 80 и 443, домен с DNS на сервер, `APP_ENV=prod` |
 
@@ -378,11 +378,3 @@ polling) падает с `SSL: CERTIFICATE_VERIFY_FAILED`. Это подтвер
 `backend/app/core/max_client.py` (см. `docs/max-api-notes.md`, раздел TLS). Корневой сертификат лежит в
 `deploy/certs/russian_trusted_root_ca.crt` и подхватывается автоматически — ни в Docker, ни при
 `make dev-api`/`make dev-bot` ничего вручную настраивать не нужно.
-
-**Важно:** это именно английский `Russian Trusted Root CA` (RSA, отпечаток SHA256
-`D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31`),
-а не более новый ГОСТ-центр «Минцифры России НУЦ» (2025) — это два разных, не связанных удостоверяющих
-центра. При замене файла в `deploy/certs/` всегда сверяйте отпечаток:
-```bash
-openssl x509 -in deploy/certs/russian_trusted_root_ca.crt -noout -fingerprint -sha256
-```
