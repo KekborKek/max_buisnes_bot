@@ -100,7 +100,7 @@ MAX Bot API ──вебхук──▶ backend (FastAPI)  ◀──/api── m
 |---|---|---|---|
 | Бэкенд и бот | `backend/` | Python 3.12, FastAPI, SQLAlchemy, httpx | `backend/Dockerfile`, сервис `backend` |
 | Мини-приложение | `miniapp/` | React 19, @maxhub/max-ui, MAX Bridge, Vite | `miniapp/Dockerfile` (сборка + nginx), сервис `miniapp` |
-| Справочники (сроки, производственный календарь, пороги НДС) | `content/obligations.yaml`, `workdays.yaml`, `nds.yaml` | YAML | входят в образ бэкенда |
+| Справочники (сроки, производственный календарь, пороги НДС) | `content/obligations.yaml`, `workdays.yaml`, `nds.yaml`, `regime_limits.yaml` | YAML | входят в образ бэкенда |
 | Тексты | `content/texts.yaml`, `miniapp/src/texts.ts` | — | — |
 | Прокси и HTTPS | `deploy/Caddyfile` | Caddy 2 | сервис `caddy`, только профиль `prod` |
 
@@ -177,7 +177,7 @@ docker compose --profile prod exec -T backend python scripts/webhook.py set   # 
 | Docker | Docker Engine 24+ с Compose v2 или Docker Desktop (Mac, Windows, Linux; x86_64 и arm64) |
 | Сеть при сборке | Доступ к Docker Hub, PyPI и npm (или зеркало PyPI через `PIP_INDEX_URL`) |
 | Свободные порты | 8000 и 8080 (меняются через `API_PORT`, `MINIAPP_PORT` в `.env`) |
-| Образы | Бэкенд ~270 МБ, мини-приложение ~75 МБ |
+| Образы | Бэкенд ~300 МБ, мини-приложение ~76 МБ |
 | Хранилище | SQLite в томе Docker `app-data` (`/srv/data/app.db` в контейнере) |
 | Прод | Профиль `prod`: + Caddy, порты 80 и 443, домен с DNS на сервер, `APP_ENV=prod` |
 
@@ -203,6 +203,8 @@ docker compose --profile prod exec -T backend python scripts/webhook.py set   # 
 | `PIP_INDEX_URL` | Индекс пакетов Python при сборке образа (зеркало, если PyPI недоступен) | `https://pypi.org/simple` |
 | `DOMAIN` | Домен сервера для Caddy (только профиль `prod`) | `example.com` |
 | `MAX_CA_BUNDLE` | Путь к дополнительному корню TLS для `httpx`. По умолчанию — `deploy/certs/russian_trusted_root_ca.crt`, трогать не нужно | закомментирована |
+
+Прочие настройки имеют рабочие значения по умолчанию и задаются только при необходимости: пути к справочникам `OBLIGATIONS_FILE`, `WORKDAYS_FILE`, `NDS_FILE` (есть в `.env.example`), срок годности данных запуска `INITDATA_MAX_AGE_SECONDS` (86400 с), `DATABASE_URL` — полный список в [`backend/app/core/config.py`](backend/app/core/config.py).
 
 ## Порты
 | Порт | Сервис | Что на нём |
